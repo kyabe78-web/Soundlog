@@ -1856,19 +1856,41 @@
   }
 
   function coverStyle(album) {
-    return `background:linear-gradient(135deg,${album.from},${album.to});`;
+    return `background:linear-gradient(145deg,${album.from},${album.to});`;
   }
 
-  function coverHtml(album, small) {
-    const lines = (album.title + " ").split(" ").slice(0, 4).join(" ");
+  const COVER_FALLBACK_SVG =
+    '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
+
+  function bestArtworkUrl(album) {
+    let url = String((album && album.artworkUrl) || "").trim();
+    if (!url) return "";
+    return url
+      .replace(/100x100bb/gi, "600x600bb")
+      .replace(/\/100x100-/gi, "/600x600-")
+      .replace(/cover_medium/gi, "cover_big");
+  }
+
+  function coverHtml(album, small, sizeHint) {
+    if (!album) return "";
+    const size = sizeHint || (small ? "sm" : "md");
+    const artUrl = bestArtworkUrl(album);
     const grad = coverStyle(album);
-    const art = album.artworkUrl
-      ? `<img class="cover-img" src="${escapeHtml(album.artworkUrl)}" alt="" loading="lazy" onerror="this.remove();this.parentElement.classList.remove('has-img');" />`
+    const label = escapeHtml(`${album.title} — ${album.artist || ""}`.trim());
+    const titleBit = escapeHtml(small ? album.title.slice(0, 20) : album.title);
+    const frameCls = ["cover-frame", "cover-frame--" + size, artUrl ? "has-art" : ""].filter(Boolean).join(" ");
+    const coverCls = artUrl ? "cover has-img" : "cover is-fallback";
+    const img = artUrl
+      ? `<img class="cover-img" src="${escapeHtml(artUrl)}" alt="${label}" loading="lazy" decoding="async" width="600" height="600" />`
       : "";
-    const cls = album.artworkUrl ? "cover has-img" : "cover";
-    return `<div class="${cls}" style="${grad}" role="img" aria-label="${escapeHtml(album.title)}">${art}<span class="cover-text">${escapeHtml(
-      small ? album.title.slice(0, 18) : lines
-    )}</span></div>`;
+    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}">
+      <div class="cover-glow" style="${grad}" aria-hidden="true"></div>
+      <div class="${coverCls}" style="${grad}" role="img" aria-label="${label}">
+        ${img}
+        <span class="cover-fallback-icon" aria-hidden="true">${COVER_FALLBACK_SVG}</span>
+        <span class="cover-text">${titleBit}</span>
+      </div>
+    </div>`;
   }
 
   function toast(msg) {
@@ -3338,7 +3360,7 @@
       <div class="two-col album-detail-grid">
       <div>
         <div class="album-hero">
-          ${coverHtml(al)}
+          ${coverHtml(al, false, "lg")}
           <div>
             <h1 class="page-title" style="margin-bottom:0.25rem">${escapeHtml(al.title)}</h1>
             <p class="page-sub" style="margin:0">${escapeHtml(al.artist)} · ${al.year} · ${escapeHtml(al.genre)}</p>
@@ -5274,9 +5296,10 @@
   }
 
   function renderAlbumRow(al, q) {
-    const cover = al.artworkUrl
-      ? `<img src="${escapeHtmlS(al.artworkUrl)}" alt="" loading="lazy" />`
-      : `<span style="background:linear-gradient(135deg,${escapeHtmlS(al.from || "#444")},${escapeHtmlS(al.to || "#222")});width:100%;height:100%;display:block"></span>`;
+    const artUrl = bestArtworkUrl(al);
+    const cover = artUrl
+      ? `<img src="${escapeHtmlS(artUrl)}" alt="" loading="lazy" decoding="async" />`
+      : `<span style="background:linear-gradient(145deg,${escapeHtmlS(al.from || "#444")},${escapeHtmlS(al.to || "#222")});width:100%;height:100%;display:block"></span>`;
     return `<button type="button" class="sp-row" role="option" data-type="album" data-id="${escapeHtmlS(al.id)}">
       <span class="sp-row__art">${cover}</span>
       <span class="sp-row__main">
@@ -5288,8 +5311,9 @@
   }
 
   function renderTrackRow(t, q) {
-    const cover = t.album_artwork_url
-      ? `<img src="${escapeHtmlS(t.album_artwork_url)}" alt="" loading="lazy" />`
+    const artUrl = bestArtworkUrl({ artworkUrl: t.album_artwork_url });
+    const cover = artUrl
+      ? `<img src="${escapeHtmlS(artUrl)}" alt="" loading="lazy" decoding="async" />`
       : `<span class="sp-row__art--track-ph" aria-hidden="true">♪</span>`;
     return `<button type="button" class="sp-row" role="option" data-type="track" data-artist="${escapeHtmlS(t.artist_name)}" data-album="${escapeHtmlS(t.album_name)}">
       <span class="sp-row__art">${cover}</span>
@@ -5569,6 +5593,23 @@
     closePopover();
     render();
   });
+
+  document.addEventListener(
+    "error",
+    (e) => {
+      const img = e.target;
+      if (!img || !img.classList || !img.classList.contains("cover-img")) return;
+      const frame = img.closest(".cover-frame");
+      const cover = img.closest(".cover");
+      if (frame) {
+        frame.classList.add("is-broken");
+        frame.classList.remove("has-art");
+      }
+      if (cover) cover.classList.remove("has-img");
+      img.remove();
+    },
+    true
+  );
 
   bindNotifHub();
   render();

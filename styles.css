@@ -80,7 +80,7 @@
 
   /* Typo */
   --font: "Inter", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Outfit", "Inter", system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
   --font-mono: "JetBrains Mono", "SF Mono", "Menlo", monospace;
 
   /* Layout */
@@ -135,11 +135,7 @@ body {
   font-size: 1rem;
   line-height: 1.55;
   color: var(--text);
-  background:
-    radial-gradient(ellipse 80% 60% at 20% -10%, rgba(232, 168, 107, 0.06) 0%, transparent 60%),
-    radial-gradient(ellipse 60% 40% at 100% 100%, rgba(140, 100, 200, 0.05) 0%, transparent 55%),
-    var(--bg-app);
-  background-attachment: fixed;
+  background: var(--bg-app);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   letter-spacing: -0.005em;

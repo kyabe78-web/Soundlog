@@ -1625,6 +1625,26 @@ input[type="radio"] {
 .cloud-rank-line { margin: 0.5rem 0 0; font-size: 0.95rem; }
 .cloud-stats-foot { font-size: 0.85rem; max-width: 56ch; }
 .cloud-stats-actions { flex-wrap: wrap; gap: 0.5rem; }
+.cloud-platform-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+  margin: 0.5rem 0 1rem;
+}
+.cloud-platform-table th,
+.cloud-platform-table td {
+  padding: 0.55rem 0.45rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+.cloud-platform-table th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+}
+.cloud-platform-table tbody tr:hover td { background: rgba(232, 168, 107, 0.06); }
 
 .cloud-leaderboard {
   list-style: none;

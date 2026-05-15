@@ -6421,53 +6421,132 @@
     return `${h} h ${r} min`;
   }
 
+  function cloudStatsTimeout(promise, ms, label) {
+    return Promise.race([
+      promise,
+      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} : délai dépassé`)), ms)),
+    ]);
+  }
+
   async function openCloudStatsModal() {
     if (!SLCloud || !SLCloud.isSignedIn()) return;
     const uid = SLCloud.me.id;
-    const spReady = SLCloud.spotify && SLCloud.spotify.isConfigured() && SLCloud.spotify.hasToken();
+    let connected = [];
+    try {
+      connected = await SLCloud.getConnectedPlatforms(uid);
+    } catch (_) {}
+    const canSyncHistory =
+      (SLCloud.spotify && SLCloud.spotify.isConfigured() && SLCloud.spotify.hasToken()) ||
+      (connected.includes("lastfm") && window.SLConfig && window.SLConfig.lastfmApiKey);
+
     openModal(`<h2>Mes statistiques</h2>
       <div id="cloud-stats" class="cloud-stats"><p class="feed-note">Calcul…</p></div>
       <p class="modal-actions cloud-stats-actions">
-        <button type="button" class="btn btn-primary" id="cloud-stats-sync-spotify" ${spReady ? "" : "disabled"} title="Session Spotify requise">Sync Spotify (écoutes récentes)</button>
+        <button type="button" class="btn btn-primary" id="cloud-stats-sync-all" ${canSyncHistory ? "" : "disabled"}>Synchroniser les plateformes connectées</button>
         <button type="button" class="btn btn-ghost" id="cloud-stats-close">Fermer</button>
       </p>
-      <p class="feed-note cloud-stats-foot">Le classement combine la <strong>durée des titres importés</strong> (quand connue) et l’<strong>historique « récemment écouté »</strong> Spotify. Réautorise Spotify si la sync est refusée (nouvelle permission).</p>`);
+      <p class="feed-note cloud-stats-foot">Le score cumule les <strong>imports de toutes tes plateformes</strong> (Spotify, Deezer, YouTube, Last.fm…) et l'<strong>historique récent</strong> synchronisable (Spotify + Last.fm). Deezer/YouTube comptent via les durées des playlists importées.</p>`);
     document.getElementById("cloud-stats-close").addEventListener("click", closeModal);
-    const syncBtn = document.getElementById("cloud-stats-sync-spotify");
-    if (syncBtn && spReady) {
+    const syncBtn = document.getElementById("cloud-stats-sync-all");
+    if (syncBtn) {
       syncBtn.addEventListener("click", async () => {
         syncBtn.disabled = true;
         syncBtn.textContent = "Synchronisation…";
         try {
-          const r = await SLCloud.syncSpotifyPlayHistory();
-          toast(`Historique Spotify : ${r.inserted || 0} ligne(s) traitée(s).`);
+          const results = await SLCloud.syncAllConnectedPlatforms();
+          const ok = results.filter((r) => !r.error && (r.inserted || 0) > 0);
+          const err = results.filter((r) => r.error);
+          if (ok.length) {
+            toast(
+              ok.map((r) => `${r.source}${r.username ? " @" + r.username : ""} : ${r.inserted} événement(s)`).join(" · ")
+            );
+          } else if (!results.length) {
+            toast("Aucune plateforme à synchroniser — importe des playlists ou connecte Spotify.");
+          } else {
+            toast("Sync terminée (aucune nouvelle ligne).");
+          }
+          if (err.length) console.warn("[sync platforms]", err);
           await fillCloudStatsPanel(uid);
         } catch (e) {
-          toast(e.message || "Sync impossible — reconnecte Spotify.");
+          toast(e.message || "Synchronisation impossible.");
         } finally {
-          syncBtn.disabled = false;
-          syncBtn.textContent = "Sync Spotify (écoutes récentes)";
+          syncBtn.disabled = !canSyncHistory;
+          syncBtn.textContent = "Synchroniser les plateformes connectées";
         }
       });
     }
+
     async function fillCloudStatsPanel(userId) {
       const node = document.getElementById("cloud-stats");
       if (!node) return;
       node.innerHTML = `<p class="feed-note">Chargement…</p>`;
       try {
-        const [stats, top, recos, rankRow, board] = await Promise.all([
-          SLCloud.getUserStats(userId),
-          SLCloud.getTopArtists(userId, 12),
-          SLCloud.getRecommendations(userId, 12),
-          SLCloud.getListeningRank(userId).catch(() => null),
-          SLCloud.getListeningLeaderboard(14).catch(() => []),
+        const platformP = cloudStatsTimeout(SLCloud.getListeningStatsByPlatform(userId), 20000, "Plateformes");
+        const settled = await Promise.allSettled([
+          cloudStatsTimeout(SLCloud.getUserStats(userId), 12000, "Statistiques"),
+          cloudStatsTimeout(SLCloud.getTopArtists(userId, 12), 12000, "Top artistes"),
+          cloudStatsTimeout(SLCloud.getRecommendations(userId, 12), 12000, "Recommandations"),
+          cloudStatsTimeout(SLCloud.getListeningRank(userId), 12000, "Classement"),
+          cloudStatsTimeout(SLCloud.getListeningLeaderboard(14), 12000, "Leaderboard"),
+          platformP,
+          cloudStatsTimeout(SLCloud.getConnectedPlatforms(userId), 8000, "Connexions"),
         ]);
-        const libMs = stats && (stats.imported_library_ms != null ? stats.imported_library_ms : null);
-        const recMs = stats && (stats.streaming_recent_ms != null ? stats.streaming_recent_ms : null);
-        const recPlays = stats && (stats.streaming_recent_plays != null ? stats.streaming_recent_plays : null);
+
+        const val = (i) => (settled[i].status === "fulfilled" ? settled[i].value : null);
+        let stats = val(0);
+        const top = val(1) || [];
+        const recos = val(2) || [];
+        const rankRow = val(3);
+        const board = val(4) || [];
+        const byPlatform = val(5) || [];
+        connected = val(6) || connected;
+
+        const totals = await SLCloud.computeListeningTotals(userId, byPlatform);
+        const v4Missing = stats && stats.imported_library_ms == null && stats.streaming_recent_ms == null;
+        if (!stats || v4Missing) {
+          stats = {
+            ...(stats || {}),
+            imported_library_ms: totals.imported_ms,
+            streaming_recent_ms: totals.streaming_recent_ms,
+            streaming_recent_plays: totals.streaming_recent_plays,
+            total_imported_tracks: totals.total_imported_tracks,
+          };
+        }
+
+        const libMs = stats.imported_library_ms != null ? stats.imported_library_ms : totals.imported_ms;
+        const recMs = stats.streaming_recent_ms != null ? stats.streaming_recent_ms : totals.streaming_recent_ms;
+        const recPlays = stats.streaming_recent_plays != null ? stats.streaming_recent_plays : totals.streaming_recent_plays;
+        const combinedMs = (Number(libMs) || 0) + (Number(recMs) || 0);
+
+        const connectedLabels = connected.length
+          ? connected.map((s) => (SLCloud.platformLabels && SLCloud.platformLabels[s]) || s).join(", ")
+          : "aucune pour l'instant";
+
+        const platformTable =
+          byPlatform.length > 0
+            ? `<table class="cloud-platform-table"><thead><tr><th>Plateforme</th><th>Imports</th><th>Historique récent</th><th>Total</th></tr></thead><tbody>${byPlatform
+                .map(
+                  (row) => `<tr>
+                    <td><strong>${escapeHtml(row.label)}</strong></td>
+                    <td>${escapeHtml(formatListenMs(row.imported_ms))}<br><span class="feed-note">${row.tracks} titre(s)${row.playlists ? ` · ${row.playlists} playlist(s)` : ""}</span></td>
+                    <td>${escapeHtml(formatListenMs(row.stream_ms))}<br><span class="feed-note">${row.stream_plays || 0} événement(s)</span></td>
+                    <td><strong>${escapeHtml(formatListenMs(row.combined_ms))}</strong></td>
+                  </tr>`
+                )
+                .join("")}</tbody></table>`
+            : `<p class="feed-note">Importe des playlists (Spotify, Deezer, YouTube, Last.fm…) depuis ton profil pour alimenter le calcul.</p>`;
+
+        const migrationHint =
+          v4Missing || settled.some((s) => s.status === "rejected")
+            ? `<p class="feed-note">Certaines données viennent d'un calcul direct. Pour le classement global, exécute <strong>MIGRATION_v4.sql</strong> dans Supabase si ce n'est pas déjà fait.</p>`
+            : "";
+
         const rankLine = rankRow
           ? `<p class="cloud-rank-line"><strong>Rang #${rankRow.rank_listen}</strong> sur ${rankRow.leaderboard_size || "?"} · combiné ${escapeHtml(String(rankRow.combined_minutes))} min</p>`
-          : `<p class="feed-note">Pas encore classé·e — importe des playlists avec durées ou synchronise Spotify.</p>`;
+          : combinedMs > 0
+            ? `<p class="feed-note">Classement global : <strong>${escapeHtml(formatListenMs(combinedMs))}</strong> cumulé sur toutes tes plateformes.</p>`
+            : `<p class="feed-note">Pas encore classé·e — importe des playlists (avec durées quand l'API le permet) puis synchronise l'historique récent.</p>`;
+
         const lb =
           board && board.length
             ? `<ol class="cloud-leaderboard">${board
@@ -6477,20 +6556,26 @@
                       row.name || row.handle || "?"
                     )}</span><span class="cloud-lb-meta">${escapeHtml(String(row.combined_minutes))} min</span>${
                       Number(row.recent_listen_minutes) > 0
-                        ? `<span class="cloud-lb-sub">${escapeHtml(String(row.recent_listen_minutes))} min Spotify récent</span>`
+                        ? `<span class="cloud-lb-sub">${escapeHtml(String(row.recent_listen_minutes))} min historique récent</span>`
                         : ""
                     }</li>`
                 )
                 .join("")}</ol>`
-            : `<p class="feed-note">Classement vide pour l’instant.</p>`;
+            : `<p class="feed-note">Classement vide pour l'instant.</p>`;
+
         node.innerHTML = `
         <section class="cloud-streaming-summary">
-          <h3>Streaming &amp; durée</h3>
-          <p class="feed-note">Volume musical des imports : <strong>${escapeHtml(formatListenMs(libMs))}</strong> · lectures enregistrées (API Spotify) : <strong>${escapeHtml(
+          <h3>Volume d'écoute (toutes plateformes)</h3>
+          <p class="feed-note">Connecté·e : <strong>${escapeHtml(connectedLabels)}</strong></p>
+          <p class="feed-note">Bibliothèque importée : <strong>${escapeHtml(formatListenMs(libMs))}</strong> · historique récent synchronisé : <strong>${escapeHtml(
             formatListenMs(recMs)
           )}</strong>${recPlays != null ? ` <span class="feed-note">(${recPlays} événements)</span>` : ""}</p>
+          <p class="feed-note">Total estimé : <strong>${escapeHtml(formatListenMs(combinedMs))}</strong></p>
           ${rankLine}
         </section>
+        <h3>Détail par plateforme</h3>
+        ${platformTable}
+        ${migrationHint}
         <section class="cloud-stats-grid">
           <article><strong>${stats?.total_listenings || 0}</strong><span>écoutes</span></article>
           <article><strong>${stats?.unique_albums || 0}</strong><span>albums uniques</span></article>
@@ -6498,7 +6583,7 @@
           <article><strong>${stats?.total_lists || 0}</strong><span>listes</span></article>
           <article><strong>${stats?.total_concerts || 0}</strong><span>concerts vus</span></article>
           <article><strong>${stats?.total_wishlist || 0}</strong><span>à écouter</span></article>
-          <article><strong>${stats?.total_imported_tracks || 0}</strong><span>titres importés</span></article>
+          <article><strong>${stats?.total_imported_tracks || totals.total_imported_tracks || 0}</strong><span>titres importés</span></article>
           <article><strong>${stats?.imported_unique_artists || 0}</strong><span>artistes ext.</span></article>
         </section>
         <h3>Classement (durée cumulée)</h3>
@@ -6508,7 +6593,7 @@
         <h3>Recommandé pour toi</h3>
         ${recos.length ? `<ul class="cloud-recos">${recos.map((r) => `<li><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.artist)} <em>(score ${Number(r.score).toFixed(1)})</em></li>`).join("")}</ul>` : `<p class="feed-note">Pas assez de données collectives pour reco — invite des ami·es !</p>`}`;
       } catch (e) {
-        node.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p><p class="feed-note">Si tu viens de déployer la base, exécute <strong>MIGRATION_v4.sql</strong> dans Supabase.</p>`;
+        node.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p><p class="feed-note">Vérifie ta connexion et exécute <strong>MIGRATION_v4.sql</strong> dans Supabase si la modale reste vide.</p>`;
       }
     }
     await fillCloudStatsPanel(uid);

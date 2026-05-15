@@ -515,28 +515,246 @@
     },
 
     // ---------- Statistiques utilisateur ----------
+    platformLabels: {
+      spotify: "Spotify",
+      deezer: "Deezer",
+      youtube: "YouTube",
+      lastfm: "Last.fm",
+      manual: "Import manuel",
+      apple: "Apple Music",
+    },
+
     async getUserStats(userId) {
-      const { data } = await this.client.from("user_stats").select("*").eq("user_id", userId).maybeSingle();
+      const { data, error } = await this.client.from("user_stats").select("*").eq("user_id", userId).maybeSingle();
+      if (error) {
+        console.warn("[user_stats]", error);
+        return null;
+      }
       return data || null;
     },
     async getListeningRank(userId) {
-      const { data } = await this.client.from("leaderboard_listening").select("*").eq("user_id", userId).maybeSingle();
+      const { data, error } = await this.client.from("leaderboard_listening").select("*").eq("user_id", userId).maybeSingle();
+      if (error) {
+        console.warn("[leaderboard_listening]", error);
+        return null;
+      }
       return data || null;
     },
     async getListeningLeaderboard(limit = 32) {
-      const { data } = await this.client
+      const { data, error } = await this.client
         .from("leaderboard_listening")
         .select("user_id,handle,name,rank_listen,library_minutes,recent_listen_minutes,combined_minutes,leaderboard_size")
         .order("rank_listen", { ascending: true })
         .limit(limit);
+      if (error) {
+        console.warn("[leaderboard_listening list]", error);
+        return [];
+      }
       return data || [];
     },
+
+    /** Playlists importées + session Spotify locale = plateformes « connectées ». */
+    async getConnectedPlatforms(userId) {
+      const uid = userId || (this.me && this.me.id);
+      if (!uid) return [];
+      const sources = new Set();
+      try {
+        const playlists = await this.listImportedPlaylists(uid);
+        playlists.forEach((p) => {
+          if (p.source) sources.add(String(p.source).toLowerCase());
+        });
+      } catch (e) {
+        console.warn("[getConnectedPlatforms]", e);
+      }
+      if (this.spotify && this.spotify.isConfigured() && this.spotify.hasToken()) sources.add("spotify");
+      return [...sources].sort();
+    },
+
+    listLastfmUsernamesFromImports(playlists) {
+      const users = new Set();
+      (playlists || []).forEach((p) => {
+        if (p.source !== "lastfm") return;
+        const rid = String(p.remote_id || "");
+        if (rid) users.add(rid);
+        else if (String(p.id || "").startsWith("lastfm:user:")) users.add(String(p.id).slice("lastfm:user:".length));
+      });
+      return [...users];
+    },
+
+    /** Agrège durées / volumes par plateforme (imports + événements streaming). */
+    async getListeningStatsByPlatform(userId) {
+      const uid = userId || (this.me && this.me.id);
+      if (!uid) return [];
+      const bySource = {};
+      const touch = (source) => {
+        const k = String(source || "unknown").toLowerCase();
+        if (!bySource[k]) {
+          bySource[k] = {
+            source: k,
+            label: (this.platformLabels && this.platformLabels[k]) || k,
+            playlists: 0,
+            tracks: 0,
+            tracks_with_duration: 0,
+            imported_ms: 0,
+            stream_plays: 0,
+            stream_ms: 0,
+          };
+        }
+        return bySource[k];
+      };
+
+      try {
+        const playlists = await this.listImportedPlaylists(uid);
+        playlists.forEach((p) => {
+          const row = touch(p.source);
+          row.playlists += 1;
+        });
+      } catch (e) {
+        console.warn("[stats playlists]", e);
+      }
+
+      try {
+        const { data: tracks, error } = await this.client
+          .from("imported_tracks")
+          .select("source,duration_ms")
+          .eq("user_id", uid)
+          .limit(15000);
+        if (error) throw error;
+        (tracks || []).forEach((t) => {
+          const row = touch(t.source);
+          row.tracks += 1;
+          const d = Number(t.duration_ms) || 0;
+          if (d > 0) {
+            row.tracks_with_duration += 1;
+            row.imported_ms += d;
+          }
+        });
+      } catch (e) {
+        console.warn("[stats imported_tracks]", e);
+      }
+
+      try {
+        const { data: events, error } = await this.client
+          .from("streaming_play_events")
+          .select("source,duration_ms")
+          .eq("user_id", uid)
+          .limit(20000);
+        if (error) throw error;
+        (events || []).forEach((e) => {
+          const row = touch(e.source);
+          row.stream_plays += 1;
+          const d = Number(e.duration_ms) || 0;
+          if (d > 0) row.stream_ms += d;
+        });
+      } catch (e) {
+        console.warn("[stats streaming_play_events]", e);
+      }
+
+      const connected = await this.getConnectedPlatforms(uid);
+      connected.forEach((s) => touch(s));
+
+      return Object.values(bySource)
+        .map((row) => ({
+          ...row,
+          combined_ms: row.imported_ms + row.stream_ms,
+          connected: connected.includes(row.source),
+        }))
+        .filter((row) => row.connected || row.tracks > 0 || row.stream_plays > 0 || row.playlists > 0)
+        .sort((a, b) => b.combined_ms - a.combined_ms);
+    },
+
+    /** Stats dérivées des tables brutes si la vue user_stats v4 est absente. */
+    async computeListeningTotals(userId, platformRows) {
+      const rows = platformRows || (await this.getListeningStatsByPlatform(userId));
+      let imported_ms = 0;
+      let streaming_recent_ms = 0;
+      let streaming_recent_plays = 0;
+      let total_imported_tracks = 0;
+      rows.forEach((r) => {
+        imported_ms += r.imported_ms;
+        streaming_recent_ms += r.stream_ms;
+        streaming_recent_plays += r.stream_plays;
+        total_imported_tracks += r.tracks;
+      });
+      return { imported_ms, streaming_recent_ms, streaming_recent_plays, total_imported_tracks };
+    },
+
     /** Enregistre l’historique « Recently Played » Spotify (session locale requise). */
     async syncSpotifyPlayHistory() {
       if (!this.me) throw new Error("Pas connecté Soundlog");
       const events = await this.spotify.fetchAllRecentlyPlayed();
-      if (!events.length) return { inserted: 0 };
-      return { inserted: await this.upsertStreamingPlayEvents(events) };
+      if (!events.length) return { inserted: 0, source: "spotify" };
+      return { inserted: await this.upsertStreamingPlayEvents(events), source: "spotify" };
+    },
+
+    /** Dernières écoutes Last.fm → streaming_play_events (pseudo importé requis). */
+    async syncLastfmPlayHistory(username) {
+      if (!this.me) throw new Error("Pas connecté Soundlog");
+      const key = (window.SLConfig && window.SLConfig.lastfmApiKey) || "";
+      if (!key) throw new Error("lastfmApiKey manquant dans config.js");
+      const user = String(username || "").trim();
+      if (!user) throw new Error("Pseudo Last.fm requis");
+      const events = [];
+      let page = 1;
+      for (let guard = 0; guard < 12; guard++) {
+        const url =
+          `https://ws.audioscrobbler.com/2.0/?method=user.getrecenttracks&user=${encodeURIComponent(user)}` +
+          `&api_key=${encodeURIComponent(key)}&format=json&limit=200&page=${page}`;
+        const res = await fetch(url);
+        const j = await res.json();
+        if (j.error) throw new Error(j.message || "Last.fm inaccessible");
+        const batch = j.recenttracks && j.recenttracks.track;
+        const list = Array.isArray(batch) ? batch : batch ? [batch] : [];
+        if (!list.length) break;
+        list.forEach((t) => {
+          if (t["@attr"] && t["@attr"].nowplaying === "true") return;
+          const played = t.date && (t.date.uts || t.date["#text"]);
+          if (!played) return;
+          const playedAt = t.date && t.date.uts
+            ? new Date(Number(t.date.uts) * 1000).toISOString()
+            : new Date(String(played)).toISOString();
+          const durSec = t.duration ? Number(t.duration) : 0;
+          events.push({
+            source: "lastfm",
+            remote_track_id: t.mbid || `${user}:${t.artist && t.artist["#text"]}:${t.name}`,
+            track_name: t.name || "",
+            artist_name: (t.artist && (t.artist["#text"] || t.artist.name)) || "",
+            duration_ms: durSec > 0 ? durSec * 1000 : 210000,
+            played_at: playedAt,
+          });
+        });
+        const totalPages = Number(j.recenttracks && j.recenttracks["@attr"] && j.recenttracks["@attr"].totalPages) || 1;
+        if (page >= totalPages) break;
+        page += 1;
+      }
+      if (!events.length) return { inserted: 0, source: "lastfm", username: user };
+      return { inserted: await this.upsertStreamingPlayEvents(events), source: "lastfm", username: user };
+    },
+
+    /** Sync historique récent pour chaque plateforme connectée (Spotify + Last.fm importés). */
+    async syncAllConnectedPlatforms() {
+      if (!this.me) throw new Error("Pas connecté Soundlog");
+      const results = [];
+      const playlists = await this.listImportedPlaylists(this.me.id);
+      if (this.spotify && this.spotify.isConfigured() && this.spotify.hasToken()) {
+        try {
+          results.push(await this.syncSpotifyPlayHistory());
+        } catch (e) {
+          results.push({ source: "spotify", inserted: 0, error: e.message || String(e) });
+        }
+      }
+      const lastfmUsers = this.listLastfmUsernamesFromImports(playlists);
+      const key = (window.SLConfig && window.SLConfig.lastfmApiKey) || "";
+      if (key) {
+        for (const user of lastfmUsers) {
+          try {
+            results.push(await this.syncLastfmPlayHistory(user));
+          } catch (e) {
+            results.push({ source: "lastfm", username: user, inserted: 0, error: e.message || String(e) });
+          }
+        }
+      }
+      return results;
     },
     async upsertStreamingPlayEvents(events) {
       if (!this.me || !events.length) return 0;

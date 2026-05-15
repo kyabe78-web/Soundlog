@@ -159,6 +159,7 @@
       previewByAlbumId: {},
       eventInterestLocal: {},
       upcomingTourPreview: [],
+      feedHomeTab: "following",
     };
   }
 
@@ -219,6 +220,7 @@
         eventInterestLocal:
           parsed.eventInterestLocal && typeof parsed.eventInterestLocal === "object" ? parsed.eventInterestLocal : base.eventInterestLocal,
         upcomingTourPreview: Array.isArray(parsed.upcomingTourPreview) ? parsed.upcomingTourPreview : base.upcomingTourPreview,
+        feedHomeTab: parsed.feedHomeTab === "discover" ? "discover" : base.feedHomeTab,
       };
     } catch {
       return defaultState();
@@ -1051,6 +1053,13 @@
     state.upcomingTourPreview = Array.isArray(state.upcomingTourPreview) ? state.upcomingTourPreview : [];
   }
 
+  function isCloudUuid(id) {
+    return (
+      typeof id === "string" &&
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
+    );
+  }
+
   function ensureProfileExtras() {
     state.profile = state.profile || {};
     if (!Array.isArray(state.profile.performanceVideos)) state.profile.performanceVideos = [];
@@ -1238,6 +1247,11 @@
     ensureSocialArrays();
     state.friends = state.friends.filter((id) => id !== userId);
     state.follows = (state.follows || []).filter((id) => id !== userId);
+    if (isCloudUuid(userId) && window.SLCloud && window.SLCloud.isSignedIn()) {
+      void window.SLCloud.removeFriend(userId).catch((e) => {
+        toast("Erreur serveur : " + (e.message || ""));
+      });
+    }
   }
 
   function addNotification({ type, title, body, meta }) {
@@ -1296,10 +1310,18 @@
     render();
   }
 
-  function acceptIncomingFriendRequest(reqId) {
+  async function acceptIncomingFriendRequest(reqId) {
     ensureSocialArrays();
     const req = state.incomingFriendRequests.find((r) => r.id === reqId);
     if (!req) return;
+    try {
+      if (isCloudUuid(req.id) && window.SLCloud && window.SLCloud.isSignedIn()) {
+        await window.SLCloud.respondFriendRequest(req.id, true);
+      }
+    } catch (e) {
+      toast("Erreur : " + (e.message || "impossible d’accepter"));
+      return;
+    }
     state.incomingFriendRequests = state.incomingFriendRequests.filter((r) => r.id !== reqId);
     state.outgoingFriendRequests = (state.outgoingFriendRequests || []).filter((r) => r.toUserId !== req.fromUserId);
     addFriend(req.fromUserId);
@@ -1316,16 +1338,33 @@
     render();
   }
 
-  function declineIncomingFriendRequest(reqId) {
+  async function declineIncomingFriendRequest(reqId) {
     ensureSocialArrays();
+    const req = state.incomingFriendRequests.find((r) => r.id === reqId);
+    try {
+      if (req && isCloudUuid(req.id) && window.SLCloud && window.SLCloud.isSignedIn()) {
+        await window.SLCloud.respondFriendRequest(req.id, false);
+      }
+    } catch (e) {
+      toast("Erreur : " + (e.message || "impossible de refuser"));
+      return;
+    }
     state.incomingFriendRequests = state.incomingFriendRequests.filter((r) => r.id !== reqId);
     persist();
     toast("Demande refusée.");
     render();
   }
 
-  function cancelOutgoingFriendRequest(toUserId) {
+  async function cancelOutgoingFriendRequest(toUserId) {
     ensureSocialArrays();
+    try {
+      if (isCloudUuid(toUserId) && window.SLCloud && window.SLCloud.isSignedIn()) {
+        await window.SLCloud.cancelFriendRequest(toUserId);
+      }
+    } catch (e) {
+      toast("Erreur : " + (e.message || "impossible d’annuler"));
+      return;
+    }
     state.outgoingFriendRequests = state.outgoingFriendRequests.filter((r) => r.toUserId !== toUserId);
     persist();
     toast("Demande annulée.");
@@ -1338,7 +1377,7 @@
     ensureSocialArrays();
     const inc = incomingRequestFrom(uid);
     if (inc) {
-      acceptIncomingFriendRequest(inc.id);
+      void acceptIncomingFriendRequest(inc.id);
       return;
     }
     if (isFriend(uid)) {
@@ -1946,15 +1985,157 @@
     return Math.round((sum / list.length) * 10) / 10;
   }
 
+  function feedCircleIds() {
+    return new Set(["me", ...(state.follows || []), ...(state.friends || [])]);
+  }
+
+  function formatRelativeFeedTime(iso) {
+    if (!iso) return "";
+    const t = new Date(iso).getTime();
+    if (!Number.isFinite(t)) return String(iso).slice(0, 10);
+    const d = Date.now() - t;
+    if (d < 60000) return "à l'instant";
+    if (d < 3600000) return Math.floor(d / 60000) + " min";
+    if (d < 86400000) return Math.floor(d / 3600000) + " h";
+    if (d < 604800000) return Math.floor(d / 86400000) + " j";
+    return String(iso).slice(0, 10);
+  }
+
+  /** @type {{ rows: object[]; at: number; err?: string } | null} */
+  let homeDiscoverFeedCache = null;
+  let homeDiscoverFeedFetchPromise = null;
+
+  function registerPeerFromPublicRow(row) {
+    const uid = row.user_id;
+    if (!uid || !window.__slCloudPeers) return;
+    if (window.__slCloudPeers.has(uid)) return;
+    window.__slCloudPeers.set(uid, {
+      id: uid,
+      name: row.name,
+      handle: row.handle,
+      hue: row.hue,
+      bio: "",
+    });
+  }
+
+  function ensureAlbumFromPublicFeedRow(row) {
+    const id = row.album_id;
+    if (!id) return null;
+    let al = albumById(id);
+    if (al) return al;
+    state.importedAlbums = state.importedAlbums || [];
+    if (!state.importedAlbums.some((a) => a.id === id)) {
+      state.importedAlbums.push({
+        id,
+        title: row.album_title || "?",
+        artist: row.album_artist || "?",
+        year: row.album_year,
+        genre: "",
+        artworkUrl: row.artwork_url || "",
+        from: "#2a2a35",
+        to: "#121218",
+      });
+    }
+    return albumById(id);
+  }
+
+  function publicFeedPostHtml(row) {
+    registerPeerFromPublicRow(row);
+    const al = ensureAlbumFromPublicFeedRow(row);
+    if (!al) return "";
+    const uid = row.user_id;
+    const u = userById(uid);
+    if (!u) return "";
+    const whenIso = String(row.date || row.created_at || "");
+    const when = formatRelativeFeedTime(whenIso);
+    const listenId = row.listening_id;
+    const signed = window.SLCloud && window.SLCloud.isSignedIn && window.SLCloud.isSignedIn();
+    const commentBtn = signed
+      ? `<button type="button" class="feed-post__action-btn" data-cloud-comments-on="${escapeHtml(listenId)}"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</button>`
+      : `<span class="feed-post__action-btn feed-post__action-btn--disabled" title="Connecte-toi pour commenter"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</span>`;
+    return `<article class="feed-post feed-post--cloud-public" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(listenId)}">
+            <header class="feed-post__head">
+              <span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
+              <div class="feed-post__who">
+                <button type="button" class="feed-post__user" data-profile="${escapeHtml(u.id)}">${escapeHtml(u.name)}</button>
+                <span class="feed-post__verb">a noté un album</span>
+                <span class="feed-post__cloud-tag" title="Écoute en ligne">Cloud</span>
+              </div>
+              <time class="feed-post__time" datetime="${escapeHtml(whenIso)}" title="${escapeHtml(whenIso)}">${escapeHtml(when)}</time>
+            </header>
+            <div class="feed-post__media">${coverHtml(al, false)}</div>
+            <div class="feed-post__album">
+              <button type="button" class="feed-post__album-title" data-album-open="${al.id}">${escapeHtml(al.title)}</button>
+              <span class="feed-post__album-meta">${escapeHtml(al.artist)} · ${al.year}</span>
+              ${previewNoteHtml(al)}
+            </div>
+            <div class="feed-post__stars">${starString(row.rating)}</div>
+            ${feedPreviewSectionHtml(al)}
+            <div class="feed-post__caption">${row.comment ? `<p>${escapeHtml(row.comment)}</p>` : `<p class="feed-note feed-post__muted">Pas de critique.</p>`}</div>
+            <footer class="feed-post__actions">
+              <button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>Extrait 30 s</span></button>
+              ${commentBtn}
+              <button type="button" class="feed-post__action-btn" data-album-open="${escapeHtml(al.id)}"><span class="feed-ic feed-ic--disc" aria-hidden="true"></span> Fiche album</button>
+            </footer>
+          </article>`;
+  }
+
+  function triggerHomeDiscoverFeedFetch() {
+    const maxAge = 75000;
+    const W = window.SLCloud;
+    const now = Date.now();
+    if (homeDiscoverFeedCache && homeDiscoverFeedCache.err === "no-cloud" && W && W.ready) {
+      homeDiscoverFeedCache = null;
+    }
+    if (homeDiscoverFeedCache && now - homeDiscoverFeedCache.at < maxAge && !homeDiscoverFeedCache.err) return;
+    if (homeDiscoverFeedFetchPromise) return;
+    if (!W || !W.ready) {
+      homeDiscoverFeedCache = { rows: [], at: now, err: "no-cloud" };
+      return;
+    }
+    homeDiscoverFeedFetchPromise = W.publicFeed(48)
+      .then((rows) => {
+        homeDiscoverFeedCache = { rows: rows || [], at: Date.now() };
+      })
+      .catch((e) => {
+        homeDiscoverFeedCache = { rows: [], at: Date.now(), err: String(e.message || e || "erreur") };
+      })
+      .finally(() => {
+        homeDiscoverFeedFetchPromise = null;
+        if (route.view === "home" && state.feedHomeTab === "discover") render();
+      });
+  }
+
+  function renderHomeDiscoverBody() {
+    triggerHomeDiscoverFeedFetch();
+    if (homeDiscoverFeedFetchPromise && !homeDiscoverFeedCache) {
+      return `<div class="feed-empty-card feed-empty-card--loading"><p class="feed-empty-card__title">Chargement du fil…</p><p class="feed-empty-card__text">Les dernières écoutes publiques arrivent.</p></div>`;
+    }
+    const c = homeDiscoverFeedCache;
+    if (!c) {
+      return `<div class="feed-empty-card feed-empty-card--loading"><p class="feed-empty-card__title">Chargement du fil…</p><p class="feed-empty-card__text">Préparation…</p></div>`;
+    }
+    if (c.err === "no-cloud") {
+      return `<div class="feed-empty-card"><p class="feed-empty-card__title">Découvrir & connecté·es</p><p class="feed-empty-card__text">Ouvre une session Soundlog (Supabase) pour voir le flux public des écoutes.</p><p class="feed-empty-card__actions"><button type="button" class="btn btn-primary btn-sm" id="feed-open-account">Se connecter</button></p></div>`;
+    }
+    if (c.err) {
+      return `<div class="feed-empty-card"><p class="feed-empty-card__title">Fil indisponible</p><p class="feed-empty-card__text">${escapeHtml(c.err)}</p></div>`;
+    }
+    if (!c.rows.length) {
+      return `<div class="feed-empty-card"><p class="feed-empty-card__title">C’est tout calme</p><p class="feed-empty-card__text">Les notes des comptes synchronisés apparaîtront ici.</p></div>`;
+    }
+    return c.rows.map((row) => publicFeedPostHtml(row)).filter(Boolean).join("");
+  }
+
   function feedItems() {
-    const ids = new Set(["me", ...state.follows]);
+    const ids = feedCircleIds();
     return state.listenings
       .filter((l) => ids.has(l.userId))
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   }
 
   function concertFeedItems() {
-    const ids = new Set(["me", ...state.follows]);
+    const ids = feedCircleIds();
     return (state.concertLogs || [])
       .filter((c) => ids.has(c.userId))
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
@@ -2304,6 +2485,48 @@
       })
       .join("");
 
+    const demoUserIds = new Set(USERS.map((u) => u.id));
+    const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
+    const cloudDiscoverPeers = (window.__slCloudPeers
+      ? [...window.__slCloudPeers.keys()].filter((id) => {
+          if (!isCloudUuid(id)) return false;
+          if (meCloud && id === meCloud) return false;
+          return !demoUserIds.has(id);
+        })
+      : []
+    ).slice(0, 24);
+    const cloudDiscoverHtml =
+      cloudDiscoverPeers.length === 0
+        ? ""
+        : `<h3 class="social-subh">Profils Soundlog</h3><div class="social-card-stack">${cloudDiscoverPeers
+            .map((cid) => {
+              const p = window.__slCloudPeers.get(cid);
+              if (!p) return "";
+              const fr = isFriend(cid);
+              const pending = outgoingRequestTo(cid);
+              const fol = (state.follows || []).includes(cid);
+              const hue = p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x");
+              return `<div class="social-card social-card--wide">
+        <div class="avatar" style="background:hsl(${hue},55%,42%)">${escapeHtml((p.name || "?").charAt(0))}</div>
+        <div class="social-card-text">
+          <strong>${escapeHtml(p.name || "?")}</strong>
+          <span class="feed-note">@${escapeHtml(p.handle || "")}</span>
+        </div>
+        <div class="social-card-actions">
+          <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${escapeHtml(cid)}">${fol ? "Abonné" : "Suivre"}</button>
+          ${
+            fr
+              ? `<span class="friend-badge-inline">Ami·e</span>`
+              : pending
+                ? `<span class="feed-note">En attente</span>`
+                : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${escapeHtml(cid)}">Demande d’ami</button>`
+          }
+          <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(cid)}">Profil</button>
+        </div>
+      </div>`;
+            })
+            .join("")}</div>`;
+
     const shoutForm = `<div class="panel shout-panel">
       <h3>Murmures du disquaire</h3>
       <p class="feed-note">Petit pavé public (démo locale) — partagé avec les profils fictifs du carnet.</p>
@@ -2397,6 +2620,25 @@
       ${sentInvitesHtml}
     </section>`;
 
+    const nPendIn = (state.incomingFriendRequests || []).length;
+    const signedCloud = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
+    const socialDash = `<section class="panel social-dash" aria-label="Aperçu de ton réseau">
+      <div class="social-dash__grid">
+        <article class="social-dash__tile"><strong>${state.friends.length}</strong><span>ami·es</span></article>
+        <article class="social-dash__tile"><strong>${(state.follows || []).length}</strong><span>suivi·es</span></article>
+        <article class="social-dash__tile"><strong>${nPendIn}</strong><span>demandes reçues</span></article>
+        <article class="social-dash__tile social-dash__tile--cta">
+          <button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messages</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Fil</button>
+        </article>
+      </div>
+      <p class="feed-note social-dash__hint">${
+        signedCloud
+          ? "Graphe social synchronisé avec ton compte."
+          : "Passe en mode connecté pour DM, fil Découvrir et demandes d’ami en ligne."
+      }</p>
+    </section>`;
+
     return `<div class="social-hub view-social-themed">
       <header class="social-hero">
         <div>
@@ -2406,6 +2648,7 @@
           <p class="social-hero-tools"><button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messagerie (ami·es)</button></p>
         </div>
       </header>
+      ${socialDash}
 
       ${invitePanel}
 
@@ -2455,6 +2698,8 @@
         </section>
         <section class="panel social-section">
           <h2>Repérer des profils</h2>
+          ${cloudDiscoverHtml}
+          <h3 class="social-subh">Carnet de démo (local)</h3>
           <div class="social-card-stack">${discoverHtml}</div>
         </section>
       </div>
@@ -2543,7 +2788,7 @@
   }
 
   function feedStoryStripHtml() {
-    const ids = ["me", ...new Set(state.follows || [])];
+    const ids = ["me", ...new Set([...(state.follows || []), ...(state.friends || [])])];
     return `<div class="feed-stories" aria-label="Raccourcis profils">
       ${ids
         .map((id) => {
@@ -2561,10 +2806,11 @@
   }
 
   function renderHome() {
+    const tab = state.feedHomeTab === "discover" ? "discover" : "following";
     const items = feedItems();
-    const body =
+    const followingBody =
       items.length === 0
-        ? `<div class="feed-empty-card"><p class="feed-empty-card__title">Ton fil est tout calme</p><p class="feed-empty-card__text">Suis des profils dans <strong>Communauté</strong> ou logue une écoute dans le <strong>Journal</strong>.</p></div>`
+        ? `<div class="feed-empty-card"><p class="feed-empty-card__title">Ton fil est tout calme</p><p class="feed-empty-card__text">Ajoute des <strong>ami·es</strong>, suis des profils dans <strong>Communauté</strong>, ou logue une écoute dans le <strong>Journal</strong>.</p></div>`
         : items
             .map((l) => {
               const al = albumById(l.albumId);
@@ -2582,6 +2828,7 @@
                         )} <span class="feed-note">${escapeHtml((c.at || "").slice(0, 10))}</span></li>`;
                       })
                       .join("")}</ul>`;
+              const whenRel = formatRelativeFeedTime(l.date);
               return `<article class="feed-post" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(l.id)}">
             <header class="feed-post__head">
               <span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
@@ -2589,7 +2836,7 @@
                 <button type="button" class="feed-post__user" data-profile="${u.id}">${escapeHtml(u.name)}</button>
                 <span class="feed-post__verb">a noté un album</span>
               </div>
-              <time class="feed-post__time" datetime="${escapeHtml(l.date)}">${escapeHtml(l.date)}</time>
+              <time class="feed-post__time" datetime="${escapeHtml(l.date)}" title="${escapeHtml(l.date)}">${escapeHtml(whenRel)}</time>
             </header>
             <div class="feed-post__media">${coverHtml(al, false)}</div>
             <div class="feed-post__album">
@@ -2609,6 +2856,7 @@
           </article>`;
             })
             .join("");
+    const streamBody = tab === "discover" ? renderHomeDiscoverBody() : followingBody;
     const concerts = concertFeedItems().slice(0, 3);
     const concertTeaser =
       concerts.length === 0
@@ -2627,18 +2875,24 @@
         </ul>
         <button type="button" class="btn btn-ghost btn-sm" data-nav-view="iwas">Voir tout</button>
       </aside>`;
+    const tabFollowingActive = tab === "following" ? " is-active" : "";
+    const tabDiscoverActive = tab === "discover" ? " is-active" : "";
 
     return `<div class="feed-page">
       <header class="feed-page__header">
         <div>
           <h1 class="feed-page__title">Fil</h1>
-          <p class="feed-page__lead">Écoutes de ta communauté — style carnet, rythme réseau social.</p>
+          <p class="feed-page__lead">Le carnet comme réseau social — proches et scène Soundlog.</p>
         </div>
         <button type="button" class="btn btn-primary btn-sm feed-page__cta" data-nav-view="social">Communauté</button>
       </header>
+      <div class="feed-home-tabs" role="tablist" aria-label="Fil d'accueil">
+        <button type="button" role="tab" class="feed-home-tab${tabFollowingActive}" aria-selected="${tab === "following"}" data-feed-tab="following">Suivis &amp; ami·es</button>
+        <button type="button" role="tab" class="feed-home-tab${tabDiscoverActive}" aria-selected="${tab === "discover"}" data-feed-tab="discover">Découvrir</button>
+      </div>
       ${feedStoryStripHtml()}
       <div class="feed-layout">
-        <div class="feed-stream">${body}</div>
+        <div class="feed-stream">${streamBody}</div>
         <div class="feed-side-stack">
           ${adaptiveBannerHtml()}
           ${sonarSuggestHtml()}
@@ -3985,6 +4239,20 @@
         render();
       });
     });
+    $main.querySelectorAll("[data-feed-tab]").forEach((el) => {
+      el.addEventListener("click", () => {
+        const t = el.getAttribute("data-feed-tab") === "discover" ? "discover" : "following";
+        state.feedHomeTab = t;
+        persist();
+        render();
+      });
+    });
+    const feedAcct = document.getElementById("feed-open-account");
+    if (feedAcct) {
+      feedAcct.addEventListener("click", () => {
+        if (typeof openAccountModal === "function") openAccountModal("signin");
+      });
+    }
     $main.querySelectorAll("[data-search-user]").forEach((el) => {
       el.addEventListener("click", () => {
         const id = el.getAttribute("data-search-user");
@@ -4085,9 +4353,15 @@
       b.addEventListener("click", () => {
         const uid = b.getAttribute("data-follow");
         const i = state.follows.indexOf(uid);
-        if (i >= 0) state.follows.splice(i, 1);
-        else state.follows.push(uid);
+        if (i >= 0) {
+          state.follows.splice(i, 1);
+          if (isCloudUuid(uid) && window.SLCloud && window.SLCloud.isSignedIn()) void window.SLCloud.unfollow(uid);
+        } else {
+          state.follows.push(uid);
+          if (isCloudUuid(uid) && window.SLCloud && window.SLCloud.isSignedIn()) void window.SLCloud.follow(uid);
+        }
         persist();
+        if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
         render();
       });
     });
@@ -5234,6 +5508,15 @@
   const cloudPeers = new Map();
   window.__slCloudPeers = cloudPeers;
 
+  function registerCloudPeerProfiles(rows) {
+    if (!rows || !rows.length) return;
+    for (const p of rows) {
+      if (!p || !p.id) continue;
+      if (SLCloud && SLCloud.me && p.id === SLCloud.me.id) continue;
+      cloudPeers.set(p.id, p);
+    }
+  }
+
   // Mirror cloud imports into state so the profile re-renders sans aller-retour réseau
   if (SLCloud && typeof SLCloud.upsertImportedPlaylist === "function") {
     const _origUpsertImp = SLCloud.upsertImportedPlaylist.bind(SLCloud);
@@ -5507,6 +5790,44 @@
     (state.wishlist || []).forEach((aid) => knownIds.add(aid));
 
     state.follows = data.following || [];
+    ensureSocialArrays();
+    const fr = data.friendRequests || { incoming: [], outgoing: [] };
+    const cloudIncoming = (fr.incoming || []).map((r) => ({
+      id: r.id,
+      fromUserId: r.from_user_id,
+      createdAt: r.created_at || new Date().toISOString(),
+    }));
+    const cloudOut = (fr.outgoing || []).map((r) => ({
+      id: r.id,
+      toUserId: r.to_user_id,
+      createdAt: r.created_at || new Date().toISOString(),
+    }));
+    const incFrom = new Set(cloudIncoming.map((r) => r.fromUserId));
+    const outTo = new Set(cloudOut.map((r) => r.toUserId));
+    state.incomingFriendRequests = [
+      ...cloudIncoming,
+      ...(state.incomingFriendRequests || []).filter((r) => !incFrom.has(r.fromUserId)),
+    ];
+    state.outgoingFriendRequests = [
+      ...cloudOut,
+      ...(state.outgoingFriendRequests || []).filter((r) => !outTo.has(r.toUserId)),
+    ];
+    const demoFriendIds = (state.friends || []).filter((id) => !isCloudUuid(id));
+    const cloudFriendProfiles = data.friends || [];
+    const cloudFriendIds = cloudFriendProfiles.map((p) => p.id).filter(Boolean);
+    state.friends = [...new Set([...demoFriendIds, ...cloudFriendIds])];
+    registerCloudPeerProfiles(cloudFriendProfiles);
+    const needProf = new Set();
+    cloudIncoming.forEach((r) => needProf.add(r.fromUserId));
+    cloudOut.forEach((r) => needProf.add(r.toUserId));
+    if (cloudId) needProf.delete(cloudId);
+    const missing = [...needProf].filter((uid) => uid && !cloudPeers.has(uid));
+    if (missing.length && SLCloud.client) {
+      try {
+        const { data: profs } = await SLCloud.client.from("profiles").select("*").in("id", missing);
+        registerCloudPeerProfiles(profs || []);
+      } catch (_) {}
+    }
     state.cloudImportedPlaylists = data.importedPlaylists || [];
     state.cloudImportedTracks = data.importedTracks || [];
     // Pull metadata for unknown albums
@@ -5759,7 +6080,6 @@
     if (!SLCloud || !SLCloud.ready) return;
     try {
       const profiles = await SLCloud.searchProfiles("", 50);
-      cloudPeers.clear();
       for (const p of profiles) if (!SLCloud.me || p.id !== SLCloud.me.id) cloudPeers.set(p.id, p);
     } catch (e) {
       console.warn("[cloud peers]", e);

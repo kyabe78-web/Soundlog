@@ -58,6 +58,9 @@
         { id: "l3", userId: "u3", albumId: "a8", date: "2026-05-08", rating: 4.5, review: "J'ai écouté ça en boucle toute la semaine." },
         { id: "l4", userId: "u1", albumId: "a6", date: "2026-05-06", rating: 4.5, review: "" },
         { id: "l5", userId: "me", albumId: "a4", date: "2026-05-12", rating: 4, review: "Les basses sur Let It Happen 😮" },
+        { id: "l6", userId: "u2", albumId: "a17", date: "2026-05-11", rating: 4.5, review: "Le flow sur Money Trees est indémodable." },
+        { id: "l7", userId: "u3", albumId: "a15", date: "2026-05-07", rating: 5, review: "Écriture fragile, production immense." },
+        { id: "l8", userId: "u1", albumId: "a22", date: "2026-05-05", rating: 4, review: "Parfait pour la nuit pluvieuse." },
       ],
       follows: ["u1", "u2", "u3"],
       friends: ["u2"],
@@ -73,6 +76,24 @@
           read: false,
           at: "2026-05-12T10:00:00.000Z",
           meta: {},
+        },
+        {
+          id: "n-circle",
+          type: "social",
+          title: "Marie a noté un album",
+          body: "Fleetwood Mac — Rumours · 5★ dans ton cercle.",
+          read: false,
+          at: "2026-05-11T20:00:00.000Z",
+          meta: { userId: "u1" },
+        },
+        {
+          id: "n-live",
+          type: "social",
+          title: "Léo était là",
+          body: "Tampon concert · Kendrick Lamar · Accor Arena.",
+          read: false,
+          at: "2026-05-10T14:00:00.000Z",
+          meta: { userId: "u2" },
         },
       ],
       tourAlertSeen: [],
@@ -164,6 +185,9 @@
       carnetTab: "journal",
       diaryFilter: "all",
       socialTab: "community",
+      socialCircleTab: "feed",
+      socialFeedFilter: "all",
+      socialReactions: {},
     };
   }
 
@@ -2813,6 +2837,7 @@
   }
 
   function renderIWasThere() {
+    if (window.SLSocial && window.SLSocial.renderLive) return window.SLSocial.renderLive();
     const items = concertFeedItems();
     const body =
       items.length === 0
@@ -2966,6 +2991,7 @@
   }
 
   function renderSocial() {
+    if (window.SLSocial && window.SLSocial.renderCircle) return window.SLSocial.renderCircle();
     ensureSocialArrays();
     const zone = String((state.settings && state.settings.alertCity) || "").trim();
     const desk = !!(state.settings && state.settings.desktopAlerts);
@@ -3780,7 +3806,8 @@
                       })
                       .join("")}</ul>`;
               const whenRel = formatRelativeFeedTime(l.date);
-              return `<article class="feed-post" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(l.id)}">
+              const liked = !!(state.socialReactions && state.socialReactions[l.id] && state.socialReactions[l.id].like);
+              return `<article class="feed-post soc-feed-card" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(l.id)}">
             <header class="feed-post__head">
               <span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
               <div class="feed-post__who">
@@ -3799,8 +3826,9 @@
             ${feedPreviewSectionHtml(al)}
             <div class="feed-post__caption">${l.review ? `<p>${escapeHtml(l.review)}</p>` : `<p class="feed-note feed-post__muted">Pas de critique.</p>`}</div>
             ${commentsHtml}
-            <footer class="feed-post__actions">
+            <footer class="feed-post__actions soc-feed-card__actions">
               <button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>Extrait 30 s</span></button>
+              <button type="button" class="feed-post__action-btn soc-react-btn${liked ? " is-on" : ""}" data-soc-react="${escapeHtml(l.id)}">♥ J’aime</button>
               <button type="button" class="feed-post__action-btn" data-comment-on="${escapeHtml(l.id)}"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</button>
               <button type="button" class="feed-post__action-btn" data-album-open="${escapeHtml(al.id)}"><span class="feed-ic feed-ic--disc" aria-hidden="true"></span> Fiche album</button>
             </footer>
@@ -3859,6 +3887,7 @@
         <button type="button" role="tab" class="feed-home-tab${tabDiscoverActive}" aria-selected="${tab === "discover"}" data-feed-tab="discover">Tendances</button>
       </div>
       ${feedStoryStripHtml()}
+      ${window.SLSocial && window.SLSocial.renderActivityRail ? window.SLSocial.renderActivityRail() : ""}
       ${renderHomeMurmursBlock()}
       <div class="feed-layout feed-layout--unified">
         <div class="feed-stream feed-stream--main">${streamBody}</div>
@@ -4867,6 +4896,7 @@
     injectDiscoverRecos();
     injectProfileCompatibility();
     injectSocialEventInterests();
+    if (window.SLSocial && window.SLSocial.inject) void window.SLSocial.inject();
     if (route.view === "inbox") requestAnimationFrame(() => openInboxDrawer(route.dmThreadId));
     injectHomeFeedExtras();
     injectInboxHydration();
@@ -5237,6 +5267,39 @@
 
   // Reset cache après import
   function resetRecoCache() { discoverRecosCache = null; }
+
+  if (window.SLSocial && window.SLSocial.install) {
+    window.SLSocial.install({
+      state,
+      persist,
+      escapeHtml,
+      coverHtml,
+      starString,
+      feedPreviewSectionHtml,
+      feedCircleIds,
+      feedItems,
+      feedStoryStripHtml,
+      formatRelativeFeedTime,
+      userById,
+      albumById,
+      USERS,
+      ensureSocialArrays,
+      isFriend,
+      outgoingRequestTo,
+      isCloudUuid,
+      hueFromHandle,
+      feedCommentsFor,
+      computeMusicCompatibilityWith,
+      concertFeedItems,
+      resolveVenueStamp,
+      tourSeenKey,
+      gradientFromKey,
+      cloudSignedIn,
+      publicFeedPostHtml,
+      markNotificationRead,
+      persist,
+    });
+  }
 
   if (window.SLLogListen && window.SLLogListen.install) {
     window.__slMusicCountry = musicCountry;
@@ -5878,6 +5941,40 @@
         }
       });
     }
+    document.querySelectorAll("[data-social-circle-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.socialCircleTab = btn.getAttribute("data-social-circle-tab") || "feed";
+        persist();
+        render();
+      });
+    });
+    document.querySelectorAll("[data-social-feed-filter]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.socialFeedFilter = btn.getAttribute("data-social-feed-filter") || "all";
+        persist();
+        render();
+      });
+    });
+    const cloudShoutBtn = document.getElementById("soc-shout-cloud");
+    if (cloudShoutBtn) {
+      cloudShoutBtn.addEventListener("click", () => {
+        if (window.__sl && window.__sl.openShoutout) window.__sl.openShoutout();
+        else toast("Connecte-toi pour publier un murmure en ligne.");
+      });
+    }
+    document.querySelectorAll("[data-soc-react]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-soc-react");
+        if (!id) return;
+        ensureSocialArrays();
+        state.socialReactions = state.socialReactions || {};
+        const cur = state.socialReactions[id] || {};
+        cur.like = !cur.like;
+        state.socialReactions[id] = cur;
+        persist();
+        btn.classList.toggle("is-on", !!cur.like);
+      });
+    });
     const addShout = document.getElementById("social-add-shout");
     if (addShout) {
       addShout.addEventListener("click", () => {

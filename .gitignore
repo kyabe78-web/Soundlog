@@ -7,3 +7,6 @@ Thumbs.db
 node_modules/
 .cursor/
 *.local
+
+# Snippets / brouillons locaux (non chargés en prod)
+scripts/

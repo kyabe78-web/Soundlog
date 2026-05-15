@@ -1,0 +1,192 @@
+/* Accueil unifié — Phase 2 */
+
+.feed-page--unified {
+  animation: homeIn 0.45s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes homeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+
+.feed-page__header--compact {
+  margin-bottom: 0.5rem;
+}
+
+.feed-page__kicker {
+  margin: 0 0 0.25rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--brand, var(--accent));
+}
+
+.home-quick-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 1rem;
+}
+
+.home-quick-chip {
+  padding: 0.45rem 0.85rem;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 0.2s, transform 0.18s;
+}
+
+.home-quick-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  transform: translateY(-1px);
+}
+
+.home-quick-chip--accent {
+  background: var(--accent-gradient, var(--accent));
+  border-color: transparent;
+  color: #fff;
+}
+
+.home-murmurs-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+  margin-bottom: 1.25rem;
+}
+
+.home-murmurs {
+  padding: 0.85rem 1rem;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.home-murmurs__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.65rem;
+}
+
+.home-murmurs__title {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 600;
+}
+
+.home-murmurs__list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.home-murmur-card {
+  display: flex;
+  gap: 0.65rem;
+  align-items: flex-start;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.home-murmur-card:last-child {
+  border-bottom: 0;
+}
+
+.home-murmur-card__avatar {
+  width: 32px;
+  height: 32px;
+  min-width: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.home-murmur-card__body p {
+  margin: 0.15rem 0 0;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.home-murmurs--cloud .cloud-shoutout {
+  display: flex;
+  gap: 0.65rem;
+  padding: 0.35rem 0;
+}
+
+.feed-layout--unified {
+  display: grid;
+  grid-template-columns: 1fr minmax(0, 280px);
+  gap: 1.25rem;
+  align-items: start;
+}
+
+.feed-stream--main {
+  min-width: 0;
+}
+
+.feed-rail {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  position: sticky;
+  top: 1rem;
+}
+
+.feed-rail-card {
+  padding: 0.85rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.feed-rail-card__kicker {
+  margin: 0 0 0.25rem;
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+
+.feed-rail-card__title {
+  margin: 0 0 0.5rem;
+  font-size: 0.95rem;
+}
+
+.feed-rail-card__list {
+  margin: 0 0 0.5rem;
+  padding-left: 1rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+
+.feed-side-card--sonar {
+  margin: 0;
+}
+
+@media (max-width: 900px) {
+  .feed-layout--unified {
+    grid-template-columns: 1fr;
+  }
+
+  .feed-rail {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .feed-rail > * {
+    flex: 1 1 240px;
+  }
+}

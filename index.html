@@ -26,6 +26,8 @@
     <link rel="stylesheet" href="./libraries-carnet.css" />
     <link rel="stylesheet" href="./social-carnet.css" />
     <link rel="stylesheet" href="./dm-carnet.css" />
+    <link rel="stylesheet" href="./app-shell.css" />
+    <link rel="stylesheet" href="./home-carnet.css" />
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Soundlog — carnet d’écoutes" />
     <meta property="og:description" content="Note, critique et partage tes albums. Phase de test." />
@@ -45,38 +47,25 @@
             <span class="nav-link__icon" aria-hidden="true"></span>
             <span class="nav-link__label">Accueil</span>
           </button>
+          <button type="button" class="nav-link" data-view="explore" data-nav-icon="discover">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Explorer</span>
+          </button>
+          <button type="button" class="nav-link" data-view="carnet" data-nav-icon="diary">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Carnet</span>
+          </button>
           <button type="button" class="nav-link" data-view="social" data-nav-icon="social">
             <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">Communauté</span>
+            <span class="nav-link__label">Social</span>
           </button>
-          <button type="button" class="nav-link" data-view="inbox" data-nav-icon="inbox">
-            <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">Messages</span>
-          </button>
-          <button type="button" class="nav-link" data-view="discover" data-nav-icon="discover">
-            <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">Découvrir</span>
-          </button>
-          <button type="button" class="nav-link" data-view="libraries" data-nav-icon="libraries">
-            <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">Bibliothèques</span>
-          </button>
-          <button type="button" class="nav-link" data-view="diary" data-nav-icon="diary">
-            <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">Journal</span>
-          </button>
-          <button type="button" class="nav-link" data-view="lists" data-nav-icon="lists">
-            <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">Listes</span>
-          </button>
-          <button type="button" class="nav-link" data-view="iwas" data-nav-icon="iwas">
-            <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">I was there !</span>
-          </button>
-          <button type="button" class="nav-link" data-view="wishlist" data-nav-icon="wishlist">
-            <span class="nav-link__icon" aria-hidden="true"></span>
-            <span class="nav-link__label">À écouter</span>
-          </button>
+          <div class="sidebar-nav__group">
+            <span class="sidebar-nav__label">Raccourcis</span>
+            <button type="button" class="nav-link" data-nav-profile="me" data-nav-icon="account">
+              <span class="nav-link__icon" aria-hidden="true"></span>
+              <span class="nav-link__label">Mon profil</span>
+            </button>
+          </div>
         </nav>
 
         <button type="button" class="nav-link sidebar__account" id="sidebar-account" data-nav-icon="account">
@@ -102,6 +91,7 @@
             <h1 class="topbar-title" id="topbar-title">Accueil</h1>
 
             <div class="topbar-actions">
+            <button type="button" class="icon-btn topbar-messages" id="topbar-messages" aria-expanded="false" aria-controls="inbox-drawer" title="Messages">💬</button>
             <div class="notif-wrap" id="notif-wrap">
               <button
                 type="button"
@@ -157,23 +147,26 @@
         <span class="nav-link__icon" aria-hidden="true"></span>
         <span class="nav-link__label">Accueil</span>
       </button>
-      <button type="button" class="nav-link" data-view="discover" data-nav-icon="discover">
+      <button type="button" class="nav-link" data-view="explore" data-nav-icon="discover">
         <span class="nav-link__icon" aria-hidden="true"></span>
-        <span class="nav-link__label">Découvrir</span>
+        <span class="nav-link__label">Explorer</span>
       </button>
-      <button type="button" class="nav-link" data-view="diary" data-nav-icon="diary">
-        <span class="nav-link__icon" aria-hidden="true"></span>
-        <span class="nav-link__label">Journal</span>
-      </button>
+      <button type="button" class="nav-link nav-link--fab" id="nav-log-fab" aria-label="Logger une écoute">+</button>
       <button type="button" class="nav-link" data-view="social" data-nav-icon="social">
         <span class="nav-link__icon" aria-hidden="true"></span>
-        <span class="nav-link__label">Communauté</span>
+        <span class="nav-link__label">Social</span>
       </button>
-      <button type="button" class="nav-link nav-link--menu" id="nav-more" data-nav-icon="menu">
+      <button type="button" class="nav-link" data-view="carnet" data-nav-icon="diary">
         <span class="nav-link__icon" aria-hidden="true"></span>
-        <span class="nav-link__label">Menu</span>
+        <span class="nav-link__label">Carnet</span>
       </button>
     </nav>
+
+    <div class="inbox-drawer-backdrop" id="inbox-drawer-backdrop" hidden aria-hidden="true"></div>
+    <aside class="inbox-drawer" id="inbox-drawer" aria-label="Messages" hidden>
+      <button type="button" class="inbox-drawer__close" id="inbox-drawer-close" aria-label="Fermer">×</button>
+      <div class="inbox-drawer__inner" id="inbox-drawer-mount"></div>
+    </aside>
 
     <div id="modal-root"></div>
     <div id="toast-root"></div>

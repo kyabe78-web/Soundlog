@@ -160,6 +160,9 @@
       eventInterestLocal: {},
       upcomingTourPreview: [],
       feedHomeTab: "following",
+      exploreTab: "albums",
+      carnetTab: "journal",
+      socialTab: "community",
     };
   }
 
@@ -344,7 +347,7 @@
     }
   }
 
-  const route = { view: "home", albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null, dmThreadId: null };
+  const route = { view: "home", hubTab: null, albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null, dmThreadId: null, inboxDrawer: false };
 
   /** Dernière « clé de route » déjà enregistrée par Sonar (évite les doublons entre deux rendus). */
   let adaptiveRouteKeySeen = "__init__";
@@ -2070,9 +2073,169 @@
     });
   }
 
+/* ---- UX v2 : hubs, drawer ---- */
+  function navViewForRoute() {
+    const v = route.view;
+    if (v === "discover" || v === "libraries" || v === "explore") return "explore";
+    if (v === "diary" || v === "wishlist" || v === "lists" || v === "carnet") return "carnet";
+    if (v === "iwas") return "social";
+    return v;
+  }
+
+  function normalizeRouteToHubs() {
+    const map = {
+      discover: { view: "explore", hubTab: "albums" },
+      libraries: { view: "explore", hubTab: "import" },
+      diary: { view: "carnet", hubTab: "journal" },
+      wishlist: { view: "carnet", hubTab: "pile" },
+      lists: { view: "carnet", hubTab: "lists" },
+      iwas: { view: "social", hubTab: "live" },
+    };
+    const m = map[route.view];
+    if (m) {
+      Object.assign(route, m);
+      if (m.hubTab === "albums" || m.hubTab === "import") state.exploreTab = m.hubTab;
+      if (m.hubTab === "journal" || m.hubTab === "pile" || m.hubTab === "lists") state.carnetTab = m.hubTab;
+      if (m.hubTab === "community" || m.hubTab === "live") state.socialTab = m.hubTab;
+    }
+  }
+
+  function hubTabsHtml(tabs, activeId, hubName) {
+    return `<div class="hub-tabs" role="tablist" data-hub="${escapeHtml(hubName)}">${tabs
+      .map(
+        (t) =>
+          `<button type="button" role="tab" class="hub-tab${activeId === t.id ? " is-active" : ""}" data-hub-tab="${escapeHtml(t.id)}" aria-selected="${activeId === t.id}">${escapeHtml(t.label)}</button>`
+      )
+      .join("")}</div>`;
+  }
+
+  function wireHubTabs(hubName, onPick) {
+    document.querySelectorAll(`[data-hub="${hubName}"] [data-hub-tab]`).forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tab = btn.getAttribute("data-hub-tab");
+        if (tab) onPick(tab);
+      });
+    });
+  }
+
+  function renderExploreHub() {
+    const tab = route.hubTab || state.exploreTab || "albums";
+    const tabs = hubTabsHtml(
+      [
+        { id: "albums", label: "Albums" },
+        { id: "import", label: "Importer" },
+      ],
+      tab,
+      "explore"
+    );
+    const title = tab === "import" ? "Bibliothèques" : "Découvrir";
+    const body = tab === "import" ? renderLibraries() : renderDiscover();
+    return `<div class="hub-page view-themed" data-hub-page="explore"><header class="hub-page__head"><p class="hub-page__kicker">Explorer</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
+  }
+
+  function renderCarnetHub() {
+    const tab = route.hubTab || state.carnetTab || "journal";
+    const tabs = hubTabsHtml(
+      [
+        { id: "journal", label: "Journal" },
+        { id: "pile", label: "À écouter" },
+        { id: "lists", label: "Listes" },
+      ],
+      tab,
+      "carnet"
+    );
+    let body = "";
+    let title = "Journal";
+    if (tab === "pile") {
+      body = renderWishlist();
+      title = "À écouter";
+    } else if (tab === "lists") {
+      body = renderLists();
+      title = "Listes";
+    } else {
+      body = renderDiary();
+      title = "Journal";
+    }
+    return `<div class="hub-page view-themed" data-hub-page="carnet"><header class="hub-page__head"><p class="hub-page__kicker">Mon carnet</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
+  }
+
+  function renderSocialHub() {
+    const tab = route.hubTab || state.socialTab || "community";
+    const tabs = hubTabsHtml(
+      [
+        { id: "community", label: "Cercle" },
+        { id: "live", label: "Live" },
+      ],
+      tab,
+      "social"
+    );
+    const body = tab === "live" ? renderIWasThere() : renderSocial();
+    const title = tab === "live" ? "I was there !" : "Communauté";
+    return `<div class="hub-page view-social-themed" data-hub-page="social"><header class="hub-page__head"><p class="hub-page__kicker">Social</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
+  }
+
+  function openInboxDrawer(threadId) {
+    route.inboxDrawer = true;
+    if (threadId) route.dmThreadId = threadId;
+    document.body.classList.add("inbox-drawer-open");
+    const backdrop = document.getElementById("inbox-drawer-backdrop");
+    const drawer = document.getElementById("inbox-drawer");
+    if (backdrop) {
+      backdrop.hidden = false;
+      backdrop.setAttribute("aria-hidden", "false");
+    }
+    if (drawer) drawer.hidden = false;
+    const mount = document.getElementById("inbox-drawer-mount");
+    if (mount) {
+      mount.innerHTML = renderInbox();
+      void injectInboxHydration();
+    }
+    const btn = document.getElementById("topbar-messages");
+    if (btn) btn.setAttribute("aria-expanded", "true");
+  }
+
+  function closeInboxDrawer() {
+    route.inboxDrawer = false;
+    route.dmThreadId = null;
+    document.body.classList.remove("inbox-drawer-open");
+    const backdrop = document.getElementById("inbox-drawer-backdrop");
+    const drawer = document.getElementById("inbox-drawer");
+    if (backdrop) {
+      backdrop.hidden = true;
+      backdrop.setAttribute("aria-hidden", "true");
+    }
+    if (drawer) drawer.hidden = true;
+    const mount = document.getElementById("inbox-drawer-mount");
+    if (mount) mount.innerHTML = "";
+    const btn = document.getElementById("topbar-messages");
+    if (btn) btn.setAttribute("aria-expanded", "false");
+    if ((window.location.hash || "").includes("messagerie")) {
+      navigate(route.view === "inbox" ? "home" : route.view);
+    }
+  }
+
+  function bindInboxDrawerShell() {
+    const closeBtn = document.getElementById("inbox-drawer-close");
+    const backdrop = document.getElementById("inbox-drawer-backdrop");
+    const openBtn = document.getElementById("topbar-messages");
+    if (closeBtn) closeBtn.addEventListener("click", closeInboxDrawer);
+    if (backdrop) backdrop.addEventListener("click", closeInboxDrawer);
+    if (openBtn) {
+      openBtn.addEventListener("click", () => {
+        if (document.body.classList.contains("inbox-drawer-open")) closeInboxDrawer();
+        else openInboxDrawer(route.dmThreadId);
+      });
+    }
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && document.body.classList.contains("inbox-drawer-open")) closeInboxDrawer();
+    });
+  }
+
   const NAV_LABELS = {
     home: "Accueil",
-    social: "Communauté",
+    explore: "Explorer",
+    carnet: "Carnet",
+    social: "Social",
     discover: "Découvrir",
     libraries: "Bibliothèques",
     diary: "Journal",
@@ -2089,17 +2252,20 @@
 
   function setNavActive() {
     document.querySelectorAll(".nav-link[data-view]").forEach((b) => {
-      const active =
-        route.view !== "join" &&
-        (b.dataset.view === route.view || (route.view === "inbox" && b.dataset.view === "social"));
+      const navV = navViewForRoute();
+      const active = route.view !== "join" && b.dataset.view === navV;
       b.classList.toggle("active", active);
     });
+    const msgBtn = document.getElementById("topbar-messages");
+    if (msgBtn) msgBtn.classList.toggle("is-active", document.body.classList.contains("inbox-drawer-open"));
     const titleEl = document.getElementById("topbar-title");
     if (titleEl) {
       if ($search.value.trim()) titleEl.textContent = "Recherche";
       else if (route.view === "album") titleEl.textContent = "Album";
       else if (route.view === "profile") titleEl.textContent = "Profil";
       else if (route.view === "list") titleEl.textContent = "Liste";
+      else if (route.view === "explore") titleEl.textContent = "Explorer";
+      else if (route.view === "carnet") titleEl.textContent = "Carnet";
       else if (route.view === "inbox") titleEl.textContent = "Messages";
       else titleEl.textContent = NAV_LABELS[route.view] || "Soundlog";
     }
@@ -2148,13 +2314,31 @@
   }
 
   function navigate(view, extra) {
+    const legacyNav = {
+      discover: { view: "explore", hubTab: "albums" },
+      libraries: { view: "explore", hubTab: "import" },
+      diary: { view: "carnet", hubTab: "journal" },
+      wishlist: { view: "carnet", hubTab: "pile" },
+      lists: { view: "carnet", hubTab: "lists" },
+      iwas: { view: "social", hubTab: "live" },
+    };
+    if (legacyNav[view]) {
+      const m = legacyNav[view];
+      view = m.view;
+      extra = Object.assign({}, m, extra || {});
+    }
+
     const pop = document.getElementById("notif-popover");
     const bell = document.getElementById("notif-bell");
     if (pop && bell) {
       pop.hidden = true;
       bell.setAttribute("aria-expanded", "false");
     }
-    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null }, extra || {});
+    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null, inboxDrawer: false }, extra || {});
+    if (extra && extra.hubTab != null) route.hubTab = extra.hubTab;
+    else if (view === "explore") route.hubTab = route.hubTab || state.exploreTab || "albums";
+    else if (view === "carnet") route.hubTab = route.hubTab || state.carnetTab || "journal";
+    else if (view === "social") route.hubTab = route.hubTab || state.socialTab || "community";
     window.location.hash = buildHash();
     render();
   }
@@ -2166,6 +2350,19 @@
     if (route.view === "inbox" && route.dmThreadId) return `#messagerie/${route.dmThreadId}`;
     if (route.view === "inbox") return "#messagerie";
     if (route.view === "discover" && route.discoverGenre) return `#decouvrir/${encodeURIComponent(route.discoverGenre)}`;
+    if (route.view === "explore") {
+      const t = route.hubTab || "albums";
+      if (t === "import") return "#bibliotheques";
+      if (route.discoverGenre) return `#decouvrir/${encodeURIComponent(route.discoverGenre)}`;
+      return "#decouvrir";
+    }
+    if (route.view === "carnet") {
+      const t = route.hubTab || "journal";
+      if (t === "pile") return "#a-ecouter";
+      if (t === "lists") return "#listes";
+      return "#journal";
+    }
+    if (route.view === "social" && route.hubTab === "live") return "#i-was-there";
     const map = {
       home: "",
       discover: "decouvrir",
@@ -2214,6 +2411,7 @@
       route.view = "join";
       route.joinInviteRaw = h.slice("rejoindre/".length);
     } else route.view = "home";
+    normalizeRouteToHubs();
   }
 
   function avgAlbumRating(albumId) {
@@ -3378,6 +3576,57 @@
     </div>`;
   }
 
+
+  function renderHomeQuickStrip() {
+    return `<div class="home-quick-strip" role="toolbar" aria-label="Actions rapides">
+      <button type="button" class="home-quick-chip home-quick-chip--accent" id="home-log-listen">+ Logger</button>
+      <button type="button" class="home-quick-chip" data-nav-view="explore">Explorer</button>
+      <button type="button" class="home-quick-chip" id="home-open-messages">Messages</button>
+      <button type="button" class="home-quick-chip" data-nav-view="carnet">Carnet</button>
+    </div>`;
+  }
+
+  function renderLocalShoutCards() {
+    ensureSocialArrays();
+    const rows = (state.shoutouts || [])
+      .slice()
+      .sort((a, b) => (a.at < b.at ? 1 : -1))
+      .slice(0, 4);
+    if (!rows.length) return "";
+    return `<section class="home-murmurs home-murmurs--local"><h2 class="home-murmurs__title">Murmures locaux</h2><div class="home-murmurs__list">${rows
+      .map((s) => {
+        const u = userById(s.userId);
+        if (!u) return "";
+        return `<article class="home-murmur-card"><span class="home-murmur-card__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span><div class="home-murmur-card__body"><strong>${escapeHtml(u.name)}</strong><p>${escapeHtml(s.text)}</p><span class="feed-note">${escapeHtml((s.at || "").slice(0, 16).replace("T", " "))}</span></div></article>`;
+      })
+      .join("")}</div></section>`;
+  }
+
+  function renderHomeMurmursBlock() {
+    const signed = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
+    const local = renderLocalShoutCards();
+    const cloud = signed
+      ? `<section class="home-murmurs home-murmurs--cloud"><header class="home-murmurs__head"><h2 class="home-murmurs__title">Murmures Soundlog</h2><button type="button" class="btn btn-ghost btn-sm" id="home-shoutouts-add">Publier</button></header><div id="home-cloud-shoutouts" class="home-murmurs__list"><p class="feed-note">Chargement…</p></div></section>`
+      : "";
+    if (!local && !cloud) return "";
+    return `<div class="home-murmurs-wrap">${local}${cloud}</div>`;
+  }
+
+  function injectHomeFeedExtras() {
+    if (route.view !== "home") return;
+    const log = document.getElementById("home-log-listen");
+    if (log) log.addEventListener("click", () => openListenModal(null, null));
+    const msg = document.getElementById("home-open-messages");
+    if (msg) msg.addEventListener("click", () => openInboxDrawer());
+    const add = document.getElementById("home-shoutouts-add");
+    if (add) add.addEventListener("click", () => { if (window.__sl && window.__sl.openShoutout) window.__sl.openShoutout(); });
+    const node = document.getElementById("home-cloud-shoutouts");
+    if (node && window.__sl && window.__sl.renderCloudShoutoutsInto) {
+      if (window.__sl.cloudShoutouts && window.__sl.cloudShoutouts.length) window.__sl.renderCloudShoutoutsInto(node);
+      else if (window.__sl.refreshShoutouts) window.__sl.refreshShoutouts();
+    }
+  }
+
   function renderHome() {
     const tab = state.feedHomeTab === "discover" ? "discover" : "following";
     const items = feedItems();
@@ -3451,29 +3700,42 @@
     const tabFollowingActive = tab === "following" ? " is-active" : "";
     const tabDiscoverActive = tab === "discover" ? " is-active" : "";
 
-    return `<div class="feed-page">
-      <header class="feed-page__header">
+    const railSonar = sonarSuggestHtml();
+    const railLive =
+      concerts.length === 0
+        ? ""
+        : `<aside class="feed-rail-card feed-rail-card--live">
+        <p class="feed-rail-card__kicker">Live</p>
+        <h3 class="feed-rail-card__title">I was there !</h3>
+        <ul class="feed-rail-card__list">${concerts
+          .map((c) => {
+            const u = userById(c.userId);
+            const line = `${c.artist}${c.eventTitle && c.eventTitle.trim() ? " — " + c.eventTitle : ""} · ${c.date}`;
+            return `<li><button type="button" class="link" data-profile="${u.id}">${escapeHtml(u.name)}</button> — ${escapeHtml(line)}</li>`;
+          })
+          .join("")}</ul>
+        <button type="button" class="btn btn-ghost btn-sm" data-nav-view="social" data-hub-live="1">Tout voir</button>
+      </aside>`;
+    return `<div class="feed-page feed-page--unified">
+      <header class="feed-page__header feed-page__header--compact">
         <div>
-          <h1 class="feed-page__title">Fil</h1>
-          <p class="feed-page__lead">Le carnet comme réseau social — proches et scène Soundlog.</p>
+          <p class="feed-page__kicker">Ton fil</p>
+          <h1 class="feed-page__title">Accueil</h1>
+          <p class="feed-page__lead">Écoutes de ton cercle, tendances et murmures — tout au même endroit.</p>
         </div>
-        <button type="button" class="btn btn-primary btn-sm feed-page__cta" data-nav-view="social">Communauté</button>
       </header>
+      ${renderHomeQuickStrip()}
       <div class="feed-home-tabs" role="tablist" aria-label="Fil d'accueil">
         <button type="button" role="tab" class="feed-home-tab${tabFollowingActive}" aria-selected="${tab === "following"}" data-feed-tab="following">Suivis &amp; ami·es</button>
-        <button type="button" role="tab" class="feed-home-tab${tabDiscoverActive}" aria-selected="${tab === "discover"}" data-feed-tab="discover">Découvrir</button>
+        <button type="button" role="tab" class="feed-home-tab${tabDiscoverActive}" aria-selected="${tab === "discover"}" data-feed-tab="discover">Tendances</button>
       </div>
       ${feedStoryStripHtml()}
-      <div class="feed-layout">
-        <div class="feed-stream">${streamBody}</div>
-        <div class="feed-side-stack">
-          ${adaptiveBannerHtml()}
-          ${sonarSuggestHtml()}
-          ${concertTeaser}
-        </div>
+      ${renderHomeMurmursBlock()}
+      <div class="feed-layout feed-layout--unified">
+        <div class="feed-stream feed-stream--main">${streamBody}</div>
+        <aside class="feed-rail">${railSonar}${railLive}</aside>
       </div>
-    </div>`;
-  }
+    </div>`;  }
 
   function renderDiscover() {
     const combined = allAlbums();
@@ -4252,29 +4514,29 @@
       html = renderSearchResults($search.value);
     } else {
       switch (route.view) {
-        case "discover":
-          html = renderDiscover();
+        case "explore":
+          html = renderExploreHub();
           break;
+        case "carnet":
+          html = renderCarnetHub();
+          break;
+        case "discover":
         case "libraries":
-          html = renderLibraries();
+          html = renderExploreHub();
           break;
         case "diary":
-          html = renderDiary();
-          break;
         case "lists":
-          html = renderLists();
+        case "wishlist":
+          html = renderCarnetHub();
           break;
         case "iwas":
-          html = renderIWasThere();
-          break;
-        case "wishlist":
-          html = renderWishlist();
+          html = renderSocialHub();
           break;
         case "social":
-          html = renderSocial();
+          html = renderSocialHub();
           break;
         case "inbox":
-          html = renderInbox();
+          html = renderHome();
           break;
         case "join":
           html = renderJoin();
@@ -4298,11 +4560,25 @@
     void $main.offsetWidth;
     $main.classList.add("view-enter");
     bindMainEvents();
+    const hubPageEl = $main.querySelector("[data-hub-page]");
+    if (hubPageEl) {
+      const hubName = hubPageEl.getAttribute("data-hub-page");
+      wireHubTabs(hubName, (tab) => {
+        route.hubTab = tab;
+        if (hubName === "explore") state.exploreTab = tab;
+        if (hubName === "carnet") state.carnetTab = tab;
+        if (hubName === "social") state.socialTab = tab;
+        persist();
+        window.location.hash = buildHash();
+        render();
+      });
+    }
+
     // Déclenche la recherche cloud quand on est sur la page search (si pas en cache)
     if ($search.value.trim() && window.__sl && window.__sl.ensureSearchCloudFor) {
       window.__sl.ensureSearchCloudFor($search.value.trim());
     }
-    if (route.view === "libraries") {
+    if (route.view === "libraries" || (route.view === "explore" && (route.hubTab || state.exploreTab) === "import")) {
       const lq = document.getElementById("lib-q");
       if (lq) {
         requestAnimationFrame(() => {
@@ -4321,6 +4597,8 @@
     injectDiscoverRecos();
     injectProfileCompatibility();
     injectSocialEventInterests();
+    if (route.view === "inbox") requestAnimationFrame(() => openInboxDrawer(route.dmThreadId));
+    injectHomeFeedExtras();
     injectInboxHydration();
     if (route.view === "album") {
       requestAnimationFrame(() => applyAlbumBackdropTint());
@@ -4562,8 +4840,8 @@
     }
   }
 
-function injectInboxHydration() {
-    if (route.view !== "inbox") return;
+  function injectInboxHydration() {
+    if (route.view !== "inbox" && !document.body.classList.contains("inbox-drawer-open")) return;
     const acc = document.getElementById("inbox-open-account");
     if (acc) acc.addEventListener("click", () => openAccountModal("signin"));
     if (!window.SLCloud || !SLCloud.isSignedIn()) return;
@@ -4694,6 +4972,7 @@ function injectInboxHydration() {
 
   // Bloc "Murmures de la communauté" injecté sur la home quand cloud connecté
   function injectCloudShoutoutsBlock() {
+    if (route.view === "home" && document.getElementById("home-cloud-shoutouts")) return;
     if (!(route.view === "home" || (route.view === "social"))) return;
     if (!window.SLCloud || !window.SLCloud.isSignedIn()) return;
     if (document.getElementById("cloud-shoutouts-block")) return;
@@ -5004,6 +5283,11 @@ function injectInboxHydration() {
         e.preventDefault();
         e.stopPropagation();
         const v = b.getAttribute("data-nav-view");
+        if (v === "inbox") { openInboxDrawer(route.dmThreadId); return; }
+        if (b.hasAttribute("data-hub-live") && v === "social") {
+          navigate("social", { hubTab: "live" });
+          return;
+        }
         if (v) navigate(v);
       });
     });
@@ -5017,8 +5301,7 @@ function injectInboxHydration() {
         try {
           const tid = await SLCloud.ensureDmThread(uid);
           route.dmThreadId = tid;
-          window.location.hash = "#messagerie/" + tid;
-          render();
+          openInboxDrawer(tid);
         } catch (e) {
           toast(e.message || "Impossible d’ouvrir la discussion.");
         }
@@ -5664,6 +5947,11 @@ function injectInboxHydration() {
           navigate(btn.dataset.view);
           if (window.matchMedia("(max-width: 1023px)").matches) closeSidebar();
           return;
+        }        const prof = e.target.closest("[data-nav-profile]");
+        if (prof) {
+          navigate("profile", { userId: prof.getAttribute("data-nav-profile") || "me" });
+          if (window.matchMedia("(max-width: 1023px)").matches) closeSidebar();
+          return;
         }
         if (e.target.closest("#nav-more, .nav-link--menu")) {
           openSidebar();
@@ -5686,6 +5974,9 @@ function injectInboxHydration() {
 
   bindMobileShell();
   bindShellNavigation();
+  bindInboxDrawerShell();
+  const logFab = document.getElementById("nav-log-fab");
+  if (logFab) logFab.addEventListener("click", () => openListenModal(null, null));
   document.getElementById("logo-link").addEventListener("click", (e) => {
     e.preventDefault();
     $search.value = "";

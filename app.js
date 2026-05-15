@@ -7261,9 +7261,11 @@
   applyTheme(getTheme());
 
   bindNotifHub();
-  if (SLCloud && SLCloud.available && typeof SLCloud.init === "function") {
-    void SLCloud.init().then(() => syncAccountChrome());
-  }
+  void (async function waitCloudBoot() {
+    if (!SLCloud || typeof SLCloud.whenBooted !== "function") return;
+    await SLCloud.whenBooted();
+    syncAccountChrome();
+  })();
   render();
   void syncTourAlerts({}).then(() => updateHeaderNotifications());
 
@@ -7490,9 +7492,10 @@
   }
 
   async function ensureCloudReady() {
+    if (SLCloud && typeof SLCloud.whenBooted === "function") await SLCloud.whenBooted();
     if (!SLCloud || !SLCloud.available) {
       throw new Error(
-        "Connexion cloud indisponible. Sur Vercel, ajoute SL_SUPABASE_URL et SL_SUPABASE_ANON_KEY (Settings → Environment Variables), puis Redeploy."
+        "Connexion cloud indisponible. Sur Vercel, ajoute SL_SUPABASE_URL et SL_SUPABASE_ANON_KEY (Settings → Environment Variables), puis Redeploy. En local : copie config.example.js vers config.js ou lance vercel dev."
       );
     }
     if (typeof SLCloud.ensureReady === "function") return SLCloud.ensureReady();
@@ -7692,8 +7695,16 @@
     const note = document.getElementById("sidebar-note");
     if (!btn) return;
     if (!SLCloud || !SLCloud.available) {
-      btn.style.display = "none";
-      if (note) note.textContent = "Mode invité — données locales sur cet appareil.";
+      btn.style.display = "";
+      btn.classList.remove("is-signed-in");
+      if (label) {
+        label.innerHTML = `<span>Se connecter</span><small>cloud indisponible ou hors ligne</small>`;
+      }
+      if (note) {
+        note.textContent = window.__slConfigApiMissing && window.__slConfigLocalMissing
+          ? "Mode invité — en local : copie config.example.js → config.js (voir README), ou lance vercel dev."
+          : "Mode invité — données locales. Si le cloud est activé sur ce site, réessaie dans un instant ou vérifie la config Vercel.";
+      }
       return;
     }
     btn.style.display = "";
@@ -7951,10 +7962,6 @@
   if (sidebarAccount) {
     sidebarAccount.addEventListener("click", async (e) => {
       e.preventDefault();
-      if (!SLCloud || !SLCloud.available) {
-        toast("Connexion cloud indisponible — contacte l’administrateur du site.");
-        return;
-      }
       try {
         await ensureCloudReady();
         openAccountModal();
@@ -7988,7 +7995,10 @@
     });
   }
 
-  updateSidebarAccount();
+  void (async function refreshSidebarAfterBoot() {
+    if (SLCloud && typeof SLCloud.whenBooted === "function") await SLCloud.whenBooted();
+    syncAccountChrome();
+  })();
 
   // Charger les profils cloud et les fusionner dans l'annuaire local
   async function refreshCloudPeers() {

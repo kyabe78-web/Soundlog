@@ -22,10 +22,22 @@ const cfg = {
 
 const hasSecrets = !!(cfg.supabaseUrl && cfg.supabaseAnonKey && /^https?:\/\//i.test(cfg.supabaseUrl));
 
-if (isVercel) {
-  const stub = `/* Build Vercel — config runtime via /api/sl-config */
-window.SLConfig = window.SLConfig || ${JSON.stringify({ ...cfg, supabaseUrl: "", supabaseAnonKey: "" }, null, 2)};
+function mergeConfigSnippet(stubObj) {
+  return `/* Build Vercel — ne pas écraser /api/sl-config */
+(function () {
+  var stub = ${JSON.stringify(stubObj, null, 2)};
+  var prev = window.SLConfig || {};
+  var out = Object.assign({}, stub, prev);
+  ["supabaseUrl", "supabaseAnonKey"].forEach(function (k) {
+    if (prev[k]) out[k] = prev[k];
+  });
+  window.SLConfig = out;
+})();
 `;
+}
+
+if (isVercel) {
+  const stub = mergeConfigSnippet({ ...cfg, supabaseUrl: "", supabaseAnonKey: "" });
   fs.writeFileSync(out, stub, "utf8");
   if (hasSecrets) {
     console.log("[generate-config] Build OK — clés vues au build + /api/sl-config en prod.");

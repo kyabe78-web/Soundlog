@@ -23,8 +23,12 @@
     try {
       const r = await fetch("/api/sl-config", { cache: "no-store" });
       if (!r.ok) return false;
+      const ct = (r.headers.get("content-type") || "").toLowerCase();
+      const text = await r.text();
+      if (!text || text.trimStart().startsWith("<")) return false;
+      if (ct && !ct.includes("javascript") && !ct.includes("json") && !ct.includes("text/plain")) return false;
       // eslint-disable-next-line no-new-func
-      new Function(await r.text())();
+      new Function(text)();
       SLCloud.available = hasValidConfig();
       return hasValidConfig();
     } catch (_) {
@@ -33,9 +37,14 @@
   }
 
   const listeners = new Set();
-  function emit(evt, payload) { listeners.forEach((cb) => { try { cb(evt, payload); } catch (_) {} }); }
+  let readyEmitted = false;
+  function emit(evt, payload) {
+    if (evt === "ready") readyEmitted = true;
+    listeners.forEach((cb) => { try { cb(evt, payload); } catch (_) {} });
+  }
 
   let initPromise = null;
+  let bootPromise = null;
 
   const SLCloud = {
     available: HAS_CONFIG,
@@ -44,7 +53,16 @@
     session: null,
     me: null,         // profile row
     pendingError: null,
-    on(cb) { listeners.add(cb); return () => listeners.delete(cb); },
+    on(cb) {
+      listeners.add(cb);
+      if (readyEmitted && this.ready) {
+        try { cb("ready", { session: this.session, me: this.me }); } catch (_) {}
+      }
+      return () => listeners.delete(cb);
+    },
+    whenBooted() {
+      return bootPromise || bootCloud();
+    },
 
     async init() {
       if (!hasValidConfig()) return false;
@@ -82,6 +100,7 @@
 
     /** Attendre que le SDK Supabase soit prêt (évite « Cloud non initialisé » à l’ouverture du menu). */
     async ensureReady() {
+      await this.whenBooted();
       if (!hasValidConfig()) await tryLoadRuntimeConfig();
       if (!hasValidConfig()) {
         throw new Error(
@@ -1378,13 +1397,23 @@
   }
 
   window.SLCloud = SLCloud;
-  (async function bootCloud() {
-    if (!hasValidConfig()) await tryLoadRuntimeConfig();
-    if (hasValidConfig()) {
-      SLCloud.available = true;
-      await SLCloud.init();
+
+  function bootCloud() {
+    if (!bootPromise) {
+      bootPromise = (async () => {
+        if (!hasValidConfig()) await tryLoadRuntimeConfig();
+        if (hasValidConfig()) {
+          SLCloud.available = true;
+          await SLCloud.init();
+          return true;
+        }
+        SLCloud.available = false;
+        return false;
+      })();
     }
-  })();
+    return bootPromise;
+  }
+  bootCloud();
 
   // Si on revient d'un callback Spotify (?code=...&state=...), on échange.
   (async function handleSpotifyCallback() {

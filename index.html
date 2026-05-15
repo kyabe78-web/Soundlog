@@ -177,9 +177,9 @@
     <div id="modal-root"></div>
     <div id="toast-root"></div>
 
-    <!-- Config cloud : /api/sl-config sur Vercel, config.js en local -->
-    <script src="/api/sl-config"></script>
-    <script src="./config.js"></script>
+    <!-- Config cloud : /api/sl-config (Vercel), config.js (local). config.js ne doit pas écraser l’API. -->
+    <script src="/api/sl-config" onerror="window.__slConfigApiMissing=1"></script>
+    <script src="./config.js" onerror="window.__slConfigLocalMissing=1"></script>
     <script src="./cloud.js"></script>
     <script src="./music-search.js"></script>
     <script src="./log-listen.js"></script>

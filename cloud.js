@@ -226,6 +226,21 @@
       return data || null;
     },
 
+    async searchCatalog(q, limit = 24) {
+      const term = String(q || "").trim();
+      if (term.length < 2) return { albums: [], profiles: [] };
+      const { data, error } = await this.client.rpc("search_catalog", { q: term, limit_n: limit });
+      if (error) {
+        console.warn("[SLCloud] searchCatalog", error);
+        return { albums: [], profiles: [] };
+      }
+      const payload = data && typeof data === "object" ? data : {};
+      return {
+        albums: Array.isArray(payload.albums) ? payload.albums : [],
+        profiles: Array.isArray(payload.profiles) ? payload.profiles : [],
+      };
+    },
+
     async searchProfiles(query, limit = 20) {
       const q = String(query || "").trim().toLowerCase();
       if (!q) {

@@ -4782,15 +4782,36 @@
     if (!qq) return "";
     // Cache pour les cloud users
     const cache = __slSearchCache;
-    const cloudUsers = (cache && cache.q === qq) ? (cache.users || []) : [];
+    const cloudUsers = cache && cache.q === qq ? cache.users || [] : [];
+    const cloudAlbums = cache && cache.q === qq ? cache.albums || [] : [];
     const local = (function () {
       // Reuse buildSearchEntities via the same engine (mais search page = sans limite)
       const albumsAll = allAlbums();
       const importedTracks = state.cloudImportedTracks || [];
-      const albums = albumsAll.filter((a) =>
+      const albumsLocal = albumsAll.filter((a) =>
         (a.title || "").toLowerCase().includes(qq) ||
         (a.artist || "").toLowerCase().includes(qq) ||
         (a.genre || "").toLowerCase().includes(qq));
+      const albumIds = new Set(albumsLocal.map((a) => a.id));
+      const albumsFromCloud = [];
+      cloudAlbums.forEach((row) => {
+        if (!row || !row.id || albumIds.has(row.id)) return;
+        albumIds.add(row.id);
+        const g = gradientFromKey(String(row.id));
+        albumsFromCloud.push({
+          id: row.id,
+          title: row.title || "?",
+          artist: row.artist || "?",
+          year: row.year || "",
+          genre: row.genre || "",
+          artworkUrl: row.artwork_url || "",
+          musicbrainzReleaseId: row.musicbrainz_release_id || null,
+          from: g.from,
+          to: g.to,
+          cloudSearch: true,
+        });
+      });
+      const albums = albumsLocal.concat(albumsFromCloud);
       const artistMap = new Map();
       albumsAll.forEach((a) => {
         const k = (a.artist || "").toLowerCase().trim();
@@ -4827,7 +4848,31 @@
       const knownIds = new Set(users.map((u) => u.id));
       cloudUsers.forEach((cu) => {
         if (cu.id === meCloudId && knownIds.has("me")) return;
-        if (!knownIds.has(cu.id)) users.push({ ...cu, cloud: true });
+        if (!knownIds.has(cu.id)) {
+          users.push({
+            id: cu.id,
+            name: cu.name,
+            handle: cu.handle,
+            hue: cu.hue != null ? cu.hue : hueFromHandle(cu.handle || cu.name),
+            bio: cu.bio || "",
+            avatar_url: cu.avatar_url || "",
+            cloud: true,
+          });
+        }
+      });
+      (cache && cache.q === qq && cache.catalogProfiles ? cache.catalogProfiles : []).forEach((cu) => {
+        if (!cu || !cu.id || knownIds.has(cu.id)) return;
+        if (cu.id === meCloudId && knownIds.has("me")) return;
+        knownIds.add(cu.id);
+        users.push({
+          id: cu.id,
+          name: cu.name,
+          handle: cu.handle,
+          hue: cu.hue != null ? cu.hue : hueFromHandle(cu.handle || cu.name),
+          bio: cu.bio || "",
+          avatar_url: cu.avatar_url || "",
+          cloud: true,
+        });
       });
       return { users, artists, albums, tracks };
     })();
@@ -4876,7 +4921,7 @@
     </section>` : "";
 
     const sectionAlbums = (rows) => rows.length ? `<section class="search-section">
-      <h3 class="search-section__title">Albums <small>${rows.length}</small></h3>
+      <h3 class="search-section__title">Albums <small>${rows.length}</small>${rows.some((a) => a.cloudSearch) ? ' <span class="feed-note">· cloud</span>' : ""}</h3>
       <div class="grid-albums">${rows.map((al) => `<div class="album-card" data-album="${al.id}"${albumCardStyle(al)}>
         ${coverHtml(al, true)}
         <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist || "")}</span></div>
@@ -6914,19 +6959,44 @@
     if (!window.SLCloud || !window.SLCloud.ready) return;
     const qq = q.toLowerCase();
     if (__slSearchCache && __slSearchCache.q === qq) return;
-    // Lance asynchroniquement
     (async () => {
       const reqId = ++searchCloudReqId;
       try {
-        const cloudUsers = await window.SLCloud.searchProfiles(q, 20);
+        const [catalog, legacyUsers] = await Promise.all([
+          window.SLCloud.searchCatalog(q, 24),
+          window.SLCloud.searchProfiles(q, 20),
+        ]);
         if (reqId !== searchCloudReqId) return;
-        __slSearchCache = { q: qq, users: cloudUsers };
+        const profileMap = new Map();
+        (legacyUsers || []).forEach((u) => {
+          if (u && u.id) profileMap.set(u.id, u);
+        });
+        (catalog.profiles || []).forEach((u) => {
+          if (u && u.id) profileMap.set(u.id, u);
+        });
+        (catalog.albums || []).forEach((row) => {
+          if (row && row.id) mergeCloudAlbumFromRow(row);
+        });
+        __slSearchCache = {
+          q: qq,
+          users: [...profileMap.values()],
+          albums: catalog.albums || [],
+          catalogProfiles: catalog.profiles || [],
+        };
         if ($main.getAttribute("data-route") === "search" && $search.value.trim().toLowerCase() === qq) {
           render();
         }
       } catch (_) {}
     })();
   }
+
+  function registerPwa() {
+    if (!("serviceWorker" in navigator)) return;
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("/sw.js").catch(() => {});
+    });
+  }
+  registerPwa();
   window.__sl = window.__sl || {};
   window.__sl.ensureSearchCloudFor = ensureSearchCloudFor;
 

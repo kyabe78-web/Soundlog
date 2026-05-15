@@ -444,6 +444,15 @@
         const dt = (row.datetime || "").slice(0, 10);
         const g = d.gradientFromKey((row.artist || "") + dt);
         const fakeAl = { title: row.artist || "Live", artist: row.venue || row.city || "Concert", year: dt.slice(0, 4), from: g.from, to: g.to };
+        const mapQ = [row.venue, row.city].filter(Boolean).join(", ");
+        const mapHref = mapQ
+          ? "https://www.openstreetmap.org/search?query=" + encodeURIComponent(mapQ)
+          : "";
+        const mapBtn = mapHref
+          ? '<a class="btn btn-ghost btn-sm" href="' +
+            d.escapeHtml(mapHref) +
+            '" target="_blank" rel="noopener noreferrer">Carte</a>'
+          : "";
         return (
           '<article class="soc-gig-card soc-gig-card--poster">' +
           '<div class="soc-gig-card__poster" style="--poster-a:' +
@@ -484,6 +493,12 @@
           '" data-ev-url="' +
           d.escapeHtml(row.url || "") +
           '">Intéressé·e</button>' +
+          mapBtn +
+          (row.url
+            ? ' <a class="btn btn-ghost btn-sm" href="' +
+              d.escapeHtml(row.url) +
+              '" target="_blank" rel="noopener noreferrer">Billets</a>'
+            : "") +
           '<div class="event-friends-hint feed-note" data-ev-friends="' +
           d.escapeHtml(evKey) +
           '"></div></div></div></article>'

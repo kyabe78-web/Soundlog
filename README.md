@@ -65,6 +65,13 @@ soundlog/
 - **Carnet** — journal, à écouter, listes
 - **Social** — cercle (fil, personnes, concerts), I was there !
 
+## Phase D (plateforme)
+
+- **PWA** : `manifest.webmanifest` + `sw.js` (shell offline, installable sur mobile)
+- **Recherche cloud** : après `MIGRATION_v7.sql`, albums et profils indexés côté Supabase
+- **Concerts** : liens Carte (OpenStreetMap) + Billets sur les dates Live
+- **Tests e2e** : `npm install && npx playwright install chromium && npm run test:e2e`
+
 ## Licence
 
 Projet personnel.

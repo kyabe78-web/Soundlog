@@ -1,0 +1,20 @@
+{
+  "name": "Soundlog",
+  "short_name": "Soundlog",
+  "description": "Carnet d'écoutes et critiques musicales",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#08090e",
+  "theme_color": "#08090e",
+  "lang": "fr",
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

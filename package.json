@@ -6,6 +6,10 @@
   "scripts": {
     "start": "npx --yes serve . -l 3000",
     "preview": "npx --yes serve . -l 4173",
-    "build": "node scripts/generate-config.js"
+    "build": "node scripts/generate-config.js",
+    "test:e2e": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1"
   }
 }

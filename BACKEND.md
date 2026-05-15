@@ -170,7 +170,14 @@ Pour exporter en CSV : Table Editor → table → menu `…` → **Export as CSV
 
 ---
 
-## 11. Migration v6 — Phase C (MusicBrainz + recos enrichies)
+## 11. Migration v7 — Phase D (recherche full-text)
+
+Après `MIGRATION_v6.sql`, exécute **une fois** `MIGRATION_v7.sql` :
+
+- Extension `pg_trgm` + index GIN sur albums et profils
+- RPC `search_catalog(q, limit_n)` → JSON `{ albums, profiles }` pour la recherche globale connectée
+
+## 12. Migration v6 — Phase C (MusicBrainz + recos enrichies)
 
 Après `MIGRATION_v5.sql`, exécute **une fois** `MIGRATION_v6.sql` dans le SQL Editor :
 

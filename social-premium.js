@@ -18,8 +18,14 @@
   }
 
   function isReactionOn(listenId) {
+    if (d.isListeningLiked) return d.isListeningLiked(listenId);
     ensureReactions();
     return !!(d.state.socialReactions[listenId] && d.state.socialReactions[listenId].like);
+  }
+
+  function likeLabel(listenId) {
+    const suffix = d.likeCountSuffix ? d.likeCountSuffix(listenId) : "";
+    return "♥ J’aime" + suffix;
   }
 
   function circleAlbumScores() {
@@ -287,7 +293,9 @@
       (liked ? " is-on" : "") +
       '" data-soc-react="' +
       d.escapeHtml(l.id) +
-      '">♥ J’aime</button>' +
+      '">' +
+      d.escapeHtml(likeLabel(l.id)) +
+      "</button>" +
       '<button type="button" class="feed-post__action-btn" data-comment-on="' +
       d.escapeHtml(l.id) +
       '"><span class="feed-ic feed-ic--bubble"></span> Commenter</button>' +

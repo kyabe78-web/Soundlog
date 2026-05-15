@@ -205,6 +205,7 @@
       eventInterestLocal: {},
       upcomingTourPreview: [],
       feedHomeTab: "following",
+      feedHomeShown: 15,
       exploreTab: "albums",
       carnetTab: "journal",
       diaryFilter: "all",
@@ -273,6 +274,7 @@
           parsed.eventInterestLocal && typeof parsed.eventInterestLocal === "object" ? parsed.eventInterestLocal : base.eventInterestLocal,
         upcomingTourPreview: Array.isArray(parsed.upcomingTourPreview) ? parsed.upcomingTourPreview : base.upcomingTourPreview,
         feedHomeTab: parsed.feedHomeTab === "discover" ? "discover" : base.feedHomeTab,
+        feedHomeShown: Math.min(80, Math.max(10, parseInt(parsed.feedHomeShown, 10) || base.feedHomeShown)),
       };
     } catch {
       return defaultState();
@@ -1541,6 +1543,111 @@
     state.notifications.forEach((n) => {
       n.read = true;
     });
+    if (cloudSignedIn() && SLCloud && SLCloud.markAllNotificationsRead) {
+      void SLCloud.markAllNotificationsRead();
+    }
+  }
+
+  function mapServerNotification(row) {
+    const meta = row.meta && typeof row.meta === "object" ? { ...row.meta } : {};
+    if (row.actor_id && !meta.userId) meta.userId = row.actor_id;
+    if (meta.listening_id && !meta.listeningId) meta.listeningId = meta.listening_id;
+    return {
+      id: row.id,
+      type: row.type || "info",
+      title: String(row.title || ""),
+      body: String(row.body || ""),
+      read: !!row.read_at,
+      at: row.created_at || new Date().toISOString(),
+      meta,
+      server: true,
+    };
+  }
+
+  async function syncNotificationsFromCloud() {
+    if (!SLCloud || !SLCloud.isSignedIn() || !SLCloud.listNotifications) return;
+    try {
+      const rows = await SLCloud.listNotifications(50);
+      const serverIds = new Set((rows || []).map((r) => r.id));
+      const localOnly = (state.notifications || []).filter((n) => !n.server && !serverIds.has(n.id));
+      state.notifications = [...(rows || []).map(mapServerNotification), ...localOnly].slice(0, 100);
+      updateHeaderNotifications();
+    } catch (e) {
+      console.warn("[notifications sync]", e);
+    }
+  }
+
+  const likeState = { counts: {}, mine: new Set() };
+
+  function isCloudListeningId(id) {
+    return isCloudUuid(id);
+  }
+
+  function isListeningLiked(id) {
+    if (isCloudListeningId(id) && cloudSignedIn()) {
+      if (likeState.mine.has(id)) return true;
+    }
+    return !!(state.socialReactions && state.socialReactions[id] && state.socialReactions[id].like);
+  }
+
+  function likeCountSuffix(id) {
+    const n = isCloudListeningId(id) ? likeState.counts[id] || 0 : 0;
+    return n > 0 ? " · " + n : "";
+  }
+
+  async function refreshLikeStateForIds(ids) {
+    const cloudIds = [...new Set((ids || []).filter(isCloudListeningId))];
+    if (!cloudIds.length || !SLCloud || !SLCloud.isSignedIn()) return;
+    try {
+      const { counts, mine } = await SLCloud.fetchLikeState(cloudIds);
+      Object.assign(likeState.counts, counts || {});
+      (mine || new Set()).forEach((lid) => likeState.mine.add(lid));
+      cloudIds.forEach((lid) => {
+        state.socialReactions = state.socialReactions || {};
+        state.socialReactions[lid] = state.socialReactions[lid] || {};
+        state.socialReactions[lid].like = likeState.mine.has(lid);
+      });
+    } catch (e) {
+      console.warn("[likes]", e);
+    }
+  }
+
+  async function toggleListeningLike(id) {
+    if (!id) return;
+    if (isCloudListeningId(id) && SLCloud && SLCloud.isSignedIn()) {
+      try {
+        const r = await SLCloud.toggleListeningLike(id);
+        state.socialReactions = state.socialReactions || {};
+        state.socialReactions[id] = state.socialReactions[id] || {};
+        state.socialReactions[id].like = !!r.liked;
+        const prev = likeState.counts[id] || 0;
+        if (r.liked) {
+          likeState.mine.add(id);
+          likeState.counts[id] = prev + 1;
+        } else {
+          likeState.mine.delete(id);
+          likeState.counts[id] = Math.max(0, prev - 1);
+        }
+        document.querySelectorAll('[data-soc-react="' + id + '"]').forEach((btn) => {
+          btn.classList.toggle("is-on", !!r.liked);
+          const base = "♥ J’aime";
+          btn.textContent = base + likeCountSuffix(id);
+        });
+        return;
+      } catch (e) {
+        toast("Erreur : " + (e.message || "like"));
+        return;
+      }
+    }
+    ensureSocialArrays();
+    state.socialReactions = state.socialReactions || {};
+    const cur = state.socialReactions[id] || {};
+    cur.like = !cur.like;
+    state.socialReactions[id] = cur;
+    persist();
+    document.querySelectorAll('[data-soc-react="' + id + '"]').forEach((btn) => {
+      btn.classList.toggle("is-on", !!cur.like);
+    });
   }
 
   function isFavoriteArtist(name) {
@@ -2001,7 +2108,10 @@
         x: l.review ? String(l.review).slice(0, 100) : "",
       }))
       .filter((row) => !!albumById(row.a));
-    return { v: 1, n: state.profile.displayName, h: state.profile.handle, t: token, s };
+    const payload = { v: 1, n: state.profile.displayName, h: state.profile.handle, t: token, s };
+    const cloudMe = cloudMeRow();
+    if (cloudMe && cloudMe.id) payload.c = cloudMe.id;
+    return payload;
   }
 
   function peerIdFromInviteToken(t) {
@@ -2107,8 +2217,12 @@
       createdAt: new Date().toISOString(),
     });
     persist();
+    const cloudHint = cloudSignedIn()
+      ? "<p class=\"feed-note\">Lien avec ton <strong>compte en ligne</strong> : la personne pourra t'ajouter en ami·e après connexion, et vos carnets se synchronisent.</p>"
+      : "<p class=\"feed-note\">Copie ce lien (mode local). Pour des invitations avec compte synchronisé, connecte-toi d'abord.</p>";
     openModal(`<h2>Lien d’invitation</h2>
-      <p class="feed-note">Copie ce lien et envoie-le (message, mail…). La personne ouvre Soundlog sur <strong>son</strong> navigateur : elle crée <strong>sa</strong> base locale. Aucun serveur Soundlog — pas de synchro automatique entre appareils.</p>
+      ${cloudHint}
+      <p class="feed-note">La personne ouvre Soundlog sur son navigateur.</p>
       <label>Lien</label>
       <textarea id="invite-url-ta" readonly rows="4" style="width:100%;font-size:0.82rem">${escapeHtml(url)}</textarea>
       <p style="margin-top:0.75rem">
@@ -2642,6 +2756,67 @@
   /** @type {{ rows: object[]; at: number; err?: string } | null} */
   let homeDiscoverFeedCache = null;
   let homeDiscoverFeedFetchPromise = null;
+  /** @type {{ rows: object[]; at: number } | null} */
+  let homeCircleFeedCache = null;
+  let homeCircleFeedFetchPromise = null;
+
+  function triggerHomeCircleFeedFetch() {
+    const maxAge = 75000;
+    const W = window.SLCloud;
+    const now = Date.now();
+    if (!W || !W.ready || !cloudSignedIn()) {
+      homeCircleFeedCache = null;
+      return;
+    }
+    if (homeCircleFeedCache && now - homeCircleFeedCache.at < maxAge) return;
+    if (homeCircleFeedFetchPromise) return;
+    homeCircleFeedFetchPromise = W.publicFeed(96)
+      .then((rows) => {
+        homeCircleFeedCache = { rows: rows || [], at: Date.now() };
+        const ids = (rows || []).map((r) => r.listening_id).filter(Boolean);
+        void refreshLikeStateForIds(ids);
+      })
+      .catch((e) => {
+        console.warn("[home circle feed]", e);
+        homeCircleFeedCache = { rows: [], at: Date.now() };
+      })
+      .finally(() => {
+        homeCircleFeedFetchPromise = null;
+        if (route.view === "home" && state.feedHomeTab !== "discover") render();
+      });
+  }
+
+  function listeningFromPublicRow(row) {
+    registerPeerFromPublicRow(row);
+    ensureAlbumFromPublicFeedRow(row);
+    return {
+      id: row.listening_id,
+      userId: row.user_id,
+      albumId: row.album_id,
+      rating: row.rating,
+      review: row.comment || "",
+      date: row.date || row.created_at,
+      cloud: true,
+    };
+  }
+
+  function unifiedFeedItems() {
+    triggerHomeCircleFeedFetch();
+    const ids = feedCircleIds();
+    const local = state.listenings.filter((l) => ids.has(l.userId));
+    const seen = new Set(local.map((l) => l.id));
+    const merged = [...local];
+    if (cloudSignedIn() && homeCircleFeedCache && homeCircleFeedCache.rows) {
+      homeCircleFeedCache.rows.forEach((row) => {
+        if (!row.user_id || !ids.has(row.user_id)) return;
+        const lid = row.listening_id;
+        if (!lid || seen.has(lid)) return;
+        seen.add(lid);
+        merged.push(listeningFromPublicRow(row));
+      });
+    }
+    return merged.sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  }
 
   function registerPeerFromPublicRow(row) {
     const uid = row.user_id;
@@ -2688,6 +2863,11 @@
     const when = formatRelativeFeedTime(whenIso);
     const listenId = row.listening_id;
     const signed = window.SLCloud && window.SLCloud.isSignedIn && window.SLCloud.isSignedIn();
+    const liked = isListeningLiked(listenId);
+    const likeBtn =
+      signed && listenId
+        ? `<button type="button" class="feed-post__action-btn soc-react-btn${liked ? " is-on" : ""}" data-soc-react="${escapeHtml(listenId)}">♥ J’aime${escapeHtml(likeCountSuffix(listenId))}</button>`
+        : "";
     const commentBtn = signed
       ? `<button type="button" class="feed-post__action-btn" data-cloud-comments-on="${escapeHtml(listenId)}"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</button>`
       : `<span class="feed-post__action-btn feed-post__action-btn--disabled" title="Connecte-toi pour commenter"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</span>`;
@@ -2712,6 +2892,7 @@
             <div class="feed-post__caption">${row.comment ? `<p>${escapeHtml(row.comment)}</p>` : `<p class="feed-note feed-post__muted">Pas de critique.</p>`}</div>
             <footer class="feed-post__actions">
               <button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>Extrait 30 s</span></button>
+              ${likeBtn}
               ${commentBtn}
               <button type="button" class="feed-post__action-btn" data-album-open="${escapeHtml(al.id)}"><span class="feed-ic feed-ic--disc" aria-hidden="true"></span> Fiche album</button>
             </footer>
@@ -2734,6 +2915,8 @@
     homeDiscoverFeedFetchPromise = W.publicFeed(48)
       .then((rows) => {
         homeDiscoverFeedCache = { rows: rows || [], at: Date.now() };
+        const ids = (rows || []).map((r) => r.listening_id).filter(Boolean);
+        void refreshLikeStateForIds(ids);
       })
       .catch((e) => {
         homeDiscoverFeedCache = { rows: [], at: Date.now(), err: String(e.message || e || "erreur") };
@@ -2766,6 +2949,7 @@
   }
 
   function feedItems() {
+    if (cloudSignedIn()) return unifiedFeedItems();
     const ids = feedCircleIds();
     return state.listenings
       .filter((l) => ids.has(l.userId))
@@ -3430,12 +3614,17 @@
     }
     const invName = escapeHtml(String(payload.n || "Ton invité"));
     const invHandle = escapeHtml(String(payload.h || "invite"));
+    const inviterCloudId = payload.c && isCloudUuid(payload.c) ? String(payload.c) : "";
+    const cloudInviteBlock = inviterCloudId
+      ? `<div class="panel join-panel join-panel--cloud"><h2>Compte en ligne</h2><p class="feed-note">Connecte-toi pour envoyer une demande d'ami à ${invName}.</p><p style="margin-top:0.5rem"><button type="button" class="btn btn-primary" id="join-cloud-friend" data-inviter-id="${escapeHtml(inviterCloudId)}">Demande d'ami</button> <button type="button" class="btn btn-ghost" id="join-open-account">Se connecter</button></p></div>`
+      : "";
     return `<div class="join-view">
       <header class="join-hero">
-        <p class="join-hero__kicker">Invitation locale Soundlog</p>
+        <p class="join-hero__kicker">${inviterCloudId ? "Invitation Soundlog" : "Invitation locale Soundlog"}</p>
         <h1 class="page-title join-hero__title">Bienvenue</h1>
-        <p class="page-sub join-hero__lead"><strong>${invName}</strong> (@${invHandle}) t’invite à ouvrir ton propre carnet d’écoutes. Chaque navigateur garde <strong>sa propre base</strong> (localStorage) : ce n’est pas un compte en ligne et rien n’est synchronisé automatiquement entre appareils.</p>
+        <p class="page-sub join-hero__lead"><strong>${invName}</strong> (@${invHandle}) t’invite à rejoindre Soundlog.${inviterCloudId ? " Connecte-toi pour synchroniser ton carnet." : " Mode local : données sur cet appareil uniquement."}</p>
       </header>
+      ${cloudInviteBlock}
       <div class="panel join-panel">
         <h2>Créer ton profil local</h2>
         <label for="join-name">Nom affiché</label>
@@ -3536,9 +3725,12 @@
 
   function renderHome() {
     const tab = state.feedHomeTab === "discover" ? "discover" : "following";
-    const items = feedItems();
+    const allItems = tab === "following" ? feedItems() : [];
+    const shownLimit = Math.max(10, state.feedHomeShown || 15);
+    const items = tab === "following" ? allItems.slice(0, shownLimit) : [];
+    const hasMore = tab === "following" && allItems.length > shownLimit;
     const followingBody =
-      items.length === 0
+      allItems.length === 0 && tab === "following"
         ? `<div class="feed-empty-card"><p class="feed-empty-card__title">Ton fil est tout calme</p><p class="feed-empty-card__text">Ajoute des <strong>ami·es</strong>, suis des profils dans <strong>Communauté</strong>, ou logue une écoute dans le <strong>Journal</strong>.</p></div>`
         : items
             .map((l) => {
@@ -3558,7 +3750,7 @@
                       })
                       .join("")}</ul>`;
               const whenRel = formatRelativeFeedTime(l.date);
-              const liked = !!(state.socialReactions && state.socialReactions[l.id] && state.socialReactions[l.id].like);
+              const liked = isListeningLiked(l.id);
               return `<article class="feed-post soc-feed-card" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(l.id)}">
             <header class="feed-post__head">
               <span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
@@ -3580,13 +3772,16 @@
             ${commentsHtml}
             <footer class="feed-post__actions soc-feed-card__actions">
               <button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>Extrait 30 s</span></button>
-              <button type="button" class="feed-post__action-btn soc-react-btn${liked ? " is-on" : ""}" data-soc-react="${escapeHtml(l.id)}">♥ J’aime</button>
+              <button type="button" class="feed-post__action-btn soc-react-btn${liked ? " is-on" : ""}" data-soc-react="${escapeHtml(l.id)}">♥ J’aime${escapeHtml(likeCountSuffix(l.id))}</button>
               <button type="button" class="feed-post__action-btn" data-comment-on="${escapeHtml(l.id)}"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</button>
               <button type="button" class="feed-post__action-btn" data-album-open="${escapeHtml(al.id)}"><span class="feed-ic feed-ic--disc" aria-hidden="true"></span> Fiche album</button>
             </footer>
           </article>`;
             })
-            .join("");
+            .join("") +
+      (hasMore
+        ? `<p class="feed-load-more-wrap"><button type="button" class="btn btn-ghost" id="feed-load-more">Charger plus (${allItems.length - shownLimit} restantes)</button></p>`
+        : "");
     const streamBody = tab === "discover" ? renderHomeDiscoverBody() : followingBody;
     const concerts = concertFeedItems().slice(0, 3);
     const concertTeaser =
@@ -4283,7 +4478,11 @@
            </div>`
         : "";
 
-    const profileActions = `<div class="profile-actions-row">${followBtn}${friendBlock ? ` <span class="profile-actions-gap"></span> ${friendBlock}` : ""}</div>`;
+    const shareProfileBtn =
+      uuidPeer || (isMe && state.profile.cloudId)
+        ? `<button type="button" class="btn btn-ghost btn-sm" id="profile-copy-link" data-profile-share="${escapeHtml(isMe && state.profile.cloudId ? state.profile.cloudId : uid)}">Copier le lien du profil</button>`
+        : "";
+    const profileActions = `<div class="profile-actions-row">${followBtn}${friendBlock ? ` <span class="profile-actions-gap"></span> ${friendBlock}` : ""} ${shareProfileBtn}</div>`;
 
     const recent = listenings
       .sort((a, b) => (a.date < b.date ? 1 : -1))
@@ -4610,6 +4809,13 @@
     void $main.offsetWidth;
     $main.classList.add("view-enter");
     bindMainEvents();
+    updateOgMetaForRoute();
+    if (route.view === "home" || route.view === "social") {
+      const likeIds = [...document.querySelectorAll("[data-soc-react]")]
+        .map((b) => b.getAttribute("data-soc-react"))
+        .filter(Boolean);
+      void refreshLikeStateForIds(likeIds);
+    }
     const hubPageEl = $main.querySelector("[data-hub-page]");
     if (hubPageEl) {
       const hubName = hubPageEl.getAttribute("data-hub-page");
@@ -5051,6 +5257,10 @@
       persist,
       showDemoCarnet,
       isDemoUserId,
+      isListeningLiked,
+      likeCountSuffix,
+      toggleListeningLike,
+      refreshLikeStateForIds,
     });
   }
 
@@ -5078,6 +5288,8 @@
   }
   window.__sl = window.__sl || {};
   window.__sl.resetRecoCache = resetRecoCache;
+  window.__sl.syncNotificationsFromCloud = syncNotificationsFromCloud;
+  window.__sl.toggleListeningLike = toggleListeningLike;
 
   // Sur le feed home, ajoute un bouton "Commentaires (live)" sur les feed cards quand cloud connecté
   function injectCloudCommentsButtons() {
@@ -5100,6 +5312,42 @@
     ensureSocialArrays();
     const n = state.notifications.find((x) => x.id === id);
     if (n) n.read = true;
+    if (id && isCloudUuid(id) && SLCloud && SLCloud.isSignedIn()) {
+      void SLCloud.markNotificationRead(id);
+    }
+  }
+
+  function updateOgMetaForRoute() {
+    const ogTitle = document.querySelector('meta[property="og:title"]');
+    const ogDesc = document.querySelector('meta[property="og:description"]');
+    let ogImage = document.querySelector('meta[property="og:image"]');
+    if (!ogTitle || !ogDesc) return;
+    if (!ogImage) {
+      ogImage = document.createElement("meta");
+      ogImage.setAttribute("property", "og:image");
+      document.head.appendChild(ogImage);
+    }
+    const baseTitle = "Soundlog — carnet d'écoutes";
+    const baseDesc = "Note, critique et partage tes albums. Letterboxd pour la musique.";
+    if (route.view === "profile" && route.userId) {
+      const u = userById(route.userId);
+      if (u) {
+        ogTitle.setAttribute("content", u.name + " (@ " + u.handle + ") · Soundlog");
+        ogDesc.setAttribute("content", (u.bio || "Profil musical sur Soundlog.").slice(0, 200));
+        const recent = state.listenings
+          .filter((l) => l.userId === route.userId)
+          .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+        const al = recent && albumById(recent.albumId);
+        if (al && al.artworkUrl) ogImage.setAttribute("content", al.artworkUrl);
+        else ogImage.removeAttribute("content");
+        document.title = u.name + " — Soundlog";
+        return;
+      }
+    }
+    ogTitle.setAttribute("content", baseTitle);
+    ogDesc.setAttribute("content", baseDesc);
+    ogImage.removeAttribute("content");
+    document.title = "Soundlog — votre carnet d'écoutes";
   }
 
   function updateHeaderNotifications() {
@@ -5692,15 +5940,62 @@
       btn.addEventListener("click", () => {
         const id = btn.getAttribute("data-soc-react");
         if (!id) return;
-        ensureSocialArrays();
-        state.socialReactions = state.socialReactions || {};
-        const cur = state.socialReactions[id] || {};
-        cur.like = !cur.like;
-        state.socialReactions[id] = cur;
-        persist();
-        btn.classList.toggle("is-on", !!cur.like);
+        void toggleListeningLike(id);
       });
     });
+    const feedMore = document.getElementById("feed-load-more");
+    if (feedMore) {
+      feedMore.addEventListener("click", () => {
+        state.feedHomeShown = Math.min(80, (state.feedHomeShown || 15) + 15);
+        persist();
+        render();
+      });
+    }
+    const profileCopy = document.getElementById("profile-copy-link");
+    if (profileCopy) {
+      profileCopy.addEventListener("click", async () => {
+        const pid = profileCopy.getAttribute("data-profile-share") || route.userId;
+        const url = inviteBaseUrl() + "#profil/" + encodeURIComponent(pid);
+        try {
+          await navigator.clipboard.writeText(url);
+          toast("Lien du profil copié.");
+        } catch (_) {
+          toast(url);
+        }
+      });
+    }
+    const joinCloudFriend = document.getElementById("join-cloud-friend");
+    if (joinCloudFriend) {
+      joinCloudFriend.addEventListener("click", async () => {
+        const inviterId = joinCloudFriend.getAttribute("data-inviter-id");
+        if (!inviterId) return;
+        try {
+          await ensureCloudReady();
+          if (!SLCloud.isSignedIn()) {
+            openAccountModal();
+            toast("Connecte-toi puis reclique sur la demande d'ami.");
+            return;
+          }
+          await SLCloud.sendFriendRequest(inviterId);
+          toast("Demande d'ami envoyée.");
+          window.location.hash = "#profil/" + inviterId;
+          navigate("profile", { userId: inviterId });
+        } catch (e) {
+          toast(e.message || "Impossible d'envoyer la demande.");
+        }
+      });
+    }
+    const joinOpenAccount = document.getElementById("join-open-account");
+    if (joinOpenAccount) {
+      joinOpenAccount.addEventListener("click", async () => {
+        try {
+          await ensureCloudReady();
+          openAccountModal();
+        } catch (e) {
+          toast(e.message || "Cloud indisponible");
+        }
+      });
+    }
     const addShout = document.getElementById("social-add-shout");
     if (addShout) {
       addShout.addEventListener("click", () => {
@@ -6922,6 +7217,8 @@
     }
     persistLocalOnly();
     syncAccountChrome();
+    void syncNotificationsFromCloud();
+    setupRealtimeHooks();
     render();
     schedulePushCloud();
     } catch (e) {
@@ -7220,9 +7517,17 @@
     SLCloud.on((evt) => {
       if (evt === "ready") {
         syncAccountChrome();
-        if (SLCloud.isSignedIn()) void pullCloudIntoState();
+        if (SLCloud.isSignedIn()) {
+          void pullCloudIntoState();
+          void syncNotificationsFromCloud();
+          setupRealtimeHooks();
+        }
       } else if (evt === "auth") {
         syncAccountChrome();
+        if (SLCloud.isSignedIn()) {
+          void syncNotificationsFromCloud();
+          setupRealtimeHooks();
+        }
       } else if (evt === "profile") {
         syncMeFromCloud();
         render();
@@ -7269,18 +7574,11 @@
       onComment: (p) => {
         if (p.eventType !== "INSERT") return;
         const newRow = p.new || {};
-        // si commentaire sur une de mes écoutes
         const mine = state.listenings.find((l) => l.id === newRow.listening_id);
         if (mine && newRow.author_id !== SLCloud.me.id) {
           const peer = cloudPeers.get(newRow.author_id);
           toast(`${peer ? peer.name : "Quelqu'un"} a commenté ton écoute.`);
-          addNotification({
-            type: "comment",
-            title: "Nouveau commentaire",
-            body: (peer ? peer.name : "Un·e ami·e") + " : " + (newRow.text || "").slice(0, 80),
-            meta: { listeningId: newRow.listening_id },
-          });
-          updateHeaderNotifications();
+          void syncNotificationsFromCloud();
         }
         if (currentCommentsListeningId === newRow.listening_id) refreshCommentsPanel();
       },
@@ -7294,13 +7592,34 @@
         if (newRow.to_user_id === SLCloud.me.id) {
           const peer = cloudPeers.get(newRow.from_user_id);
           toast(`${peer ? peer.name : "Quelqu'un"} t'a envoyé une demande d'ami.`);
-          addNotification({
-            type: "friend",
-            title: "Demande d'ami",
-            body: (peer ? peer.name : "Un·e utilisateur·trice") + " veut se connecter.",
-          });
-          updateHeaderNotifications();
+          void syncNotificationsFromCloud();
+          scheduleSoftRender();
         }
+      },
+      onFollow: (p) => {
+        if (p.eventType !== "INSERT") return;
+        const newRow = p.new || {};
+        if (newRow.followee_id === SLCloud.me.id) {
+          const peer = cloudPeers.get(newRow.follower_id);
+          toast(`${peer ? peer.name : "Quelqu'un"} te suit.`);
+          void syncNotificationsFromCloud();
+        }
+      },
+      onNotification: (p) => {
+        if (p.eventType !== "INSERT") return;
+        void syncNotificationsFromCloud();
+        const row = p.new || {};
+        if (row.title) {
+          try {
+            const desk = state.settings && state.settings.desktopAlerts;
+            if (desk && typeof Notification !== "undefined" && Notification.permission === "granted") {
+              new Notification(row.title, { body: String(row.body || "").slice(0, 200) });
+            }
+          } catch (_) {}
+        }
+      },
+      onLike: () => {
+        scheduleSoftRender();
       },
       onDmMessage: () => {
         if (route.view !== "inbox") return;

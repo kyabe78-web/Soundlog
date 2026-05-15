@@ -488,6 +488,94 @@
       return data;
     },
 
+    // ---------- Likes ----------
+    async toggleListeningLike(listeningId) {
+      if (!this.me) throw new Error("Pas connecté");
+      const { data: existing } = await this.client
+        .from("listening_likes")
+        .select("listening_id")
+        .eq("user_id", this.me.id)
+        .eq("listening_id", listeningId)
+        .maybeSingle();
+      if (existing) {
+        const { error } = await this.client
+          .from("listening_likes")
+          .delete()
+          .eq("user_id", this.me.id)
+          .eq("listening_id", listeningId);
+        if (error) throw error;
+        return { liked: false };
+      }
+      const { error } = await this.client
+        .from("listening_likes")
+        .insert({ user_id: this.me.id, listening_id: listeningId });
+      if (error) throw error;
+      return { liked: true };
+    },
+
+    async fetchLikeState(listeningIds) {
+      const ids = [...new Set((listeningIds || []).filter(Boolean))];
+      if (!ids.length) return { counts: {}, mine: new Set() };
+      const { data: countRows, error: cErr } = await this.client
+        .from("listening_likes")
+        .select("listening_id")
+        .in("listening_id", ids);
+      if (cErr) {
+        console.warn("[SLCloud] like counts", cErr);
+        return { counts: {}, mine: new Set() };
+      }
+      const counts = {};
+      (countRows || []).forEach((r) => {
+        counts[r.listening_id] = (counts[r.listening_id] || 0) + 1;
+      });
+      const mine = new Set();
+      if (this.me) {
+        const { data: myRows } = await this.client
+          .from("listening_likes")
+          .select("listening_id")
+          .eq("user_id", this.me.id)
+          .in("listening_id", ids);
+        (myRows || []).forEach((r) => mine.add(r.listening_id));
+      }
+      return { counts, mine };
+    },
+
+    // ---------- Notifications serveur ----------
+    async listNotifications(limit = 40) {
+      if (!this.me) return [];
+      const { data, error } = await this.client
+        .from("notifications")
+        .select("id,recipient_id,actor_id,type,title,body,meta,read_at,created_at,profiles:actor_id(handle,name,hue)")
+        .eq("recipient_id", this.me.id)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) {
+        console.warn("[SLCloud] notifications", error);
+        return [];
+      }
+      return data || [];
+    },
+
+    async markNotificationRead(id) {
+      if (!this.me || !id) return;
+      const { error } = await this.client
+        .from("notifications")
+        .update({ read_at: new Date().toISOString() })
+        .eq("id", id)
+        .eq("recipient_id", this.me.id);
+      if (error) console.warn("[SLCloud] markNotificationRead", error);
+    },
+
+    async markAllNotificationsRead() {
+      if (!this.me) return;
+      const { error } = await this.client
+        .from("notifications")
+        .update({ read_at: new Date().toISOString() })
+        .eq("recipient_id", this.me.id)
+        .is("read_at", null);
+      if (error) console.warn("[SLCloud] markAllNotificationsRead", error);
+    },
+
     // ---------- Feed public ----------
     async publicFeed(limit = 50) {
       const { data } = await this.client
@@ -974,7 +1062,17 @@
     },
 
     // ---------- Realtime ----------
-    realtimeSubscribe({ onListening, onComment, onShoutout, onFriendRequest, onFollow, onDmMessage, onEventInterest }) {
+    realtimeSubscribe({
+      onListening,
+      onComment,
+      onShoutout,
+      onFriendRequest,
+      onFollow,
+      onDmMessage,
+      onEventInterest,
+      onNotification,
+      onLike,
+    }) {
       if (!this.ready) return null;
       const ch = this.client.channel("soundlog-live");
       if (onListening) ch.on("postgres_changes", { event: "*", schema: "public", table: "listenings" }, (p) => onListening(p));
@@ -984,6 +1082,14 @@
       if (onFollow)    ch.on("postgres_changes", { event: "*", schema: "public", table: "follows" }, (p) => onFollow(p));
       if (onDmMessage) ch.on("postgres_changes", { event: "*", schema: "public", table: "dm_messages" }, (p) => onDmMessage(p));
       if (onEventInterest) ch.on("postgres_changes", { event: "*", schema: "public", table: "event_interests" }, (p) => onEventInterest(p));
+      if (onNotification && this.me) {
+        ch.on(
+          "postgres_changes",
+          { event: "INSERT", schema: "public", table: "notifications", filter: `recipient_id=eq.${this.me.id}` },
+          (p) => onNotification(p)
+        );
+      }
+      if (onLike) ch.on("postgres_changes", { event: "*", schema: "public", table: "listening_likes" }, (p) => onLike(p));
       ch.subscribe();
       return ch;
     },

@@ -120,9 +120,10 @@ Ouvre `http://localhost:8765`. Si `config.js` contient des clés valides, le mod
 | Catalogue d'albums (partagé entre utilisateurs) | local-only | ✓ (table `albums` mutualisée) |
 | Follows | ✓ | ✓ |
 | Demandes d'ami | locales uniquement | cross-appareil pour les profils cloud |
-| Commentaires sur écoutes | locales | API prête (table `comments`) — UI à brancher en v2 |
-| Shoutouts (murmures) | locales | API prête (table `shoutouts`) — UI à brancher en v2 |
-| Notifications | locales | local (générées côté client) |
+| Commentaires sur écoutes | locales | cloud (table `comments`) + realtime |
+| Shoutouts (murmures) | locales | cloud (table `shoutouts`) + realtime |
+| Likes sur écoutes | locales | cloud (`listening_likes`, migration v5) |
+| Notifications | locales | cloud (`notifications`, migration v5) + triggers SQL |
 | Préférences Sonar | locales | local |
 
 > En mode **invité** (non connecté), tout reste 100 % local comme avant — aucune requête réseau vers Supabase.
@@ -316,6 +317,7 @@ Coût indicatif : 10-15 € / an pour un `.com`, gratuit en sous-domaine.
 # 2. SQL Editor → colle SCHEMA.sql → Run
 # 3. SQL Editor → colle MIGRATION_v2.sql → Run  (avatars, playlists, stats, realtime)
 # 3b. SQL Editor → colle MIGRATION_v4.sql → Run  (durées streaming, classement)
+# 3c. SQL Editor → colle MIGRATION_v5.sql → Run  (likes + notifications serveur)
 # 4. Copie Project URL et anon key dans config.js
 # 5. (Optionnel) Crée app Spotify Developer → Client ID dans config.js
 # 6. (Optionnel) supabase functions deploy preview-proxy --no-verify-jwt

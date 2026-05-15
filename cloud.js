@@ -451,6 +451,239 @@
       return data || [];
     },
 
+    // ---------- Avatars ----------
+    async uploadAvatar(file) {
+      if (!this.me) throw new Error("Pas connecté");
+      const ext = (file.name.split(".").pop() || "png").toLowerCase();
+      const path = `${this.me.id}/avatar.${ext}`;
+      const { error } = await this.client.storage.from("avatars").upload(path, file, {
+        cacheControl: "3600",
+        upsert: true,
+        contentType: file.type || "image/png",
+      });
+      if (error) throw error;
+      const { data } = this.client.storage.from("avatars").getPublicUrl(path);
+      const url = data.publicUrl + "?t=" + Date.now();
+      await this.updateProfile({ avatar_url: url });
+      return url;
+    },
+
+    // ---------- Statistiques utilisateur ----------
+    async getUserStats(userId) {
+      const { data } = await this.client.from("user_stats").select("*").eq("user_id", userId).maybeSingle();
+      return data || null;
+    },
+    async getTopArtists(userId, limit = 20) {
+      const { data } = await this.client
+        .from("user_top_artists")
+        .select("artist_name,track_count,last_seen")
+        .eq("user_id", userId)
+        .order("track_count", { ascending: false })
+        .limit(limit);
+      return data || [];
+    },
+    async getRecommendations(userId, limit = 12) {
+      const { data, error } = await this.client.rpc("recommendations_for", { uid: userId, limit_n: limit });
+      if (error) { console.warn(error); return []; }
+      return data || [];
+    },
+
+    // ---------- Playlists importées ----------
+    async upsertImportedPlaylist(p) {
+      if (!this.me) throw new Error("Pas connecté");
+      const row = {
+        id: p.id,
+        user_id: this.me.id,
+        source: p.source,
+        remote_id: p.remoteId,
+        name: p.name,
+        description: p.description || "",
+        artwork_url: p.artworkUrl,
+        raw: p.raw || {},
+      };
+      const { error } = await this.client.from("imported_playlists").upsert(row, { onConflict: "id" });
+      if (error) throw error;
+    },
+    async insertImportedTracks(tracks) {
+      if (!this.me || !tracks.length) return;
+      const rows = tracks.map((t) => ({
+        user_id: this.me.id,
+        playlist_id: t.playlistId || null,
+        source: t.source,
+        track_name: t.trackName,
+        artist_name: t.artistName,
+        album_name: t.albumName,
+        album_year: t.albumYear || null,
+        album_artwork_url: t.albumArtworkUrl || null,
+        remote_track_id: t.remoteTrackId || null,
+        remote_album_id: t.remoteAlbumId || null,
+      }));
+      const chunk = 500;
+      for (let i = 0; i < rows.length; i += chunk) {
+        const { error } = await this.client.from("imported_tracks").insert(rows.slice(i, i + chunk));
+        if (error) { console.warn("[imported_tracks insert]", error); throw error; }
+      }
+    },
+    async listImportedPlaylists(userId) {
+      const { data } = await this.client
+        .from("imported_playlists")
+        .select("*")
+        .eq("user_id", userId)
+        .order("imported_at", { ascending: false });
+      return data || [];
+    },
+    async deleteImportedPlaylist(id) {
+      const { error } = await this.client.from("imported_playlists").delete().eq("id", id);
+      if (error) console.warn(error);
+      await this.client.from("imported_tracks").delete().eq("playlist_id", id);
+    },
+
+    // ---------- Realtime ----------
+    realtimeSubscribe({ onListening, onComment, onShoutout, onFriendRequest, onFollow }) {
+      if (!this.ready) return null;
+      const ch = this.client.channel("soundlog-live");
+      if (onListening) ch.on("postgres_changes", { event: "*", schema: "public", table: "listenings" }, (p) => onListening(p));
+      if (onComment)   ch.on("postgres_changes", { event: "*", schema: "public", table: "comments" }, (p) => onComment(p));
+      if (onShoutout)  ch.on("postgres_changes", { event: "*", schema: "public", table: "shoutouts" }, (p) => onShoutout(p));
+      if (onFriendRequest) ch.on("postgres_changes", { event: "*", schema: "public", table: "friend_requests" }, (p) => onFriendRequest(p));
+      if (onFollow)    ch.on("postgres_changes", { event: "*", schema: "public", table: "follows" }, (p) => onFollow(p));
+      ch.subscribe();
+      return ch;
+    },
+    unsubscribe(channel) {
+      if (channel) try { this.client.removeChannel(channel); } catch (_) {}
+    },
+
+    // ---------- Spotify OAuth (PKCE, public client) ----------
+    spotify: {
+      tokenKey: "soundlog_spotify_token",
+      verifierKey: "soundlog_spotify_verifier",
+      get clientId() { return (window.SLConfig && window.SLConfig.spotifyClientId) || ""; },
+      get redirectUri() {
+        return (window.SLConfig && window.SLConfig.spotifyRedirectUri)
+          || (window.location.origin + window.location.pathname);
+      },
+      get scopes() { return "playlist-read-private playlist-read-collaborative user-library-read user-top-read"; },
+      isConfigured() { return !!this.clientId; },
+      hasToken() {
+        try { const t = JSON.parse(localStorage.getItem(this.tokenKey) || "null"); return t && t.access_token && Date.now() < (t.expires_at || 0); } catch { return false; }
+      },
+      getToken() {
+        try { return JSON.parse(localStorage.getItem(this.tokenKey) || "null"); } catch { return null; }
+      },
+      clearToken() { localStorage.removeItem(this.tokenKey); localStorage.removeItem(this.verifierKey); },
+      async authorize() {
+        if (!this.clientId) throw new Error("spotifyClientId manquant dans config.js");
+        const verifier = randomString(96);
+        const challenge = await pkceChallenge(verifier);
+        localStorage.setItem(this.verifierKey, verifier);
+        const params = new URLSearchParams({
+          client_id: this.clientId,
+          response_type: "code",
+          redirect_uri: this.redirectUri,
+          code_challenge_method: "S256",
+          code_challenge: challenge,
+          scope: this.scopes,
+          state: randomString(20),
+        });
+        window.location.href = "https://accounts.spotify.com/authorize?" + params.toString();
+      },
+      async exchangeCode(code) {
+        const verifier = localStorage.getItem(this.verifierKey);
+        if (!verifier) throw new Error("PKCE verifier manquant");
+        const body = new URLSearchParams({
+          client_id: this.clientId,
+          grant_type: "authorization_code",
+          code,
+          redirect_uri: this.redirectUri,
+          code_verifier: verifier,
+        });
+        const res = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        if (!res.ok) throw new Error("Échec token Spotify : " + (await res.text()));
+        const j = await res.json();
+        const stored = { ...j, expires_at: Date.now() + (j.expires_in || 3600) * 1000 };
+        localStorage.setItem(this.tokenKey, JSON.stringify(stored));
+        localStorage.removeItem(this.verifierKey);
+        return stored;
+      },
+      async refresh() {
+        const cur = this.getToken();
+        if (!cur || !cur.refresh_token) return null;
+        const body = new URLSearchParams({
+          client_id: this.clientId,
+          grant_type: "refresh_token",
+          refresh_token: cur.refresh_token,
+        });
+        const res = await fetch("https://accounts.spotify.com/api/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body,
+        });
+        if (!res.ok) return null;
+        const j = await res.json();
+        const stored = { ...cur, ...j, expires_at: Date.now() + (j.expires_in || 3600) * 1000 };
+        localStorage.setItem(this.tokenKey, JSON.stringify(stored));
+        return stored;
+      },
+      async api(path) {
+        let t = this.getToken();
+        if (!t) throw new Error("Pas de session Spotify");
+        if (Date.now() >= (t.expires_at || 0) - 30000) t = await this.refresh();
+        const res = await fetch("https://api.spotify.com/v1" + path, {
+          headers: { Authorization: "Bearer " + t.access_token },
+        });
+        if (res.status === 401) {
+          this.clearToken();
+          throw new Error("Session Spotify expirée");
+        }
+        if (!res.ok) throw new Error("Spotify " + res.status + " " + (await res.text()));
+        return res.json();
+      },
+      async listMyPlaylists() {
+        const out = [];
+        let url = "/me/playlists?limit=50";
+        while (url) {
+          const j = await this.api(url);
+          out.push(...(j.items || []));
+          if (j.next) {
+            const u = new URL(j.next);
+            url = u.pathname.replace("/v1", "") + u.search;
+          } else url = null;
+        }
+        return out;
+      },
+      async listTracksOfPlaylist(playlistId) {
+        const out = [];
+        let url = `/playlists/${playlistId}/tracks?limit=100&fields=items(track(id,name,album(id,name,images,release_date),artists(name))),next`;
+        while (url) {
+          const j = await this.api(url);
+          out.push(...(j.items || []).map((it) => it.track).filter(Boolean));
+          if (j.next) {
+            const u = new URL(j.next);
+            url = u.pathname.replace("/v1", "") + u.search;
+          } else url = null;
+        }
+        return out;
+      },
+      async listLikedTracks() {
+        const out = [];
+        let url = "/me/tracks?limit=50";
+        while (url) {
+          const j = await this.api(url);
+          out.push(...(j.items || []).map((it) => it.track).filter(Boolean));
+          if (j.next) {
+            const u = new URL(j.next);
+            url = u.pathname.replace("/v1", "") + u.search;
+          } else url = null;
+        }
+        return out;
+      },
+    },
+
     // ---------- Sync complet (snapshot push initial + pull) ----------
     async pullEverything() {
       if (!this.me) return null;
@@ -491,7 +724,41 @@
 
   function randomHue() { return Math.floor(Math.random() * 360); }
 
+  // --- Helpers PKCE pour Spotify ---
+  function randomString(len) {
+    const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-._~";
+    const a = new Uint8Array(len);
+    crypto.getRandomValues(a);
+    return Array.from(a, (b) => chars[b % chars.length]).join("");
+  }
+  async function pkceChallenge(verifier) {
+    const data = new TextEncoder().encode(verifier);
+    const hash = await crypto.subtle.digest("SHA-256", data);
+    const b = btoa(String.fromCharCode(...new Uint8Array(hash)));
+    return b.replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
+  }
+
   window.SLCloud = SLCloud;
   // Initialisation immédiate si la config est présente
   if (HAS_CONFIG) SLCloud.init();
+
+  // Si on revient d'un callback Spotify (?code=...&state=...), on échange.
+  (async function handleSpotifyCallback() {
+    try {
+      const url = new URL(window.location.href);
+      const code = url.searchParams.get("code");
+      if (!code) return;
+      // pas un retour Spotify si on n'a pas de verifier en attente
+      if (!localStorage.getItem(SLCloud.spotify.verifierKey)) return;
+      await SLCloud.spotify.exchangeCode(code);
+      url.searchParams.delete("code");
+      url.searchParams.delete("state");
+      url.hash = "#spotify-import";
+      window.history.replaceState({}, "", url.toString());
+      // notifier l'app
+      window.dispatchEvent(new CustomEvent("sl-spotify-connected"));
+    } catch (e) {
+      console.warn("[Spotify callback]", e);
+    }
+  })();
 })();

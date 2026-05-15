@@ -811,6 +811,139 @@ input[type="radio"] {
   font-size: 0.88rem;
 }
 
+/* Avatar */
+.avatar-preview {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  font-weight: 700;
+  font-size: 2rem;
+  color: #fff;
+  box-shadow: var(--shadow-sm);
+}
+.avatar-preview--placeholder { letter-spacing: 0; }
+.profile-avatar-row {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin: 0 0 1rem;
+}
+.cloud-upload {
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  margin: 0.75rem 0;
+  font-size: 0.9rem;
+}
+.cloud-upload input[type="file"] {
+  font: inherit;
+  padding: 0.4rem;
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-hover);
+}
+
+/* Shoutouts cloud */
+.cloud-shoutouts {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+  margin: 0.75rem 0 1rem;
+}
+.cloud-shoutout {
+  display: flex;
+  gap: 0.7rem;
+  background: var(--bg-elevated);
+  padding: 0.7rem 0.85rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-xs);
+}
+.cloud-shoutout__avatar {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+}
+.cloud-shoutout__body { display: flex; flex-direction: column; gap: 0.15rem; flex: 1; min-width: 0; }
+.cloud-shoutout__body strong { font-size: 0.9rem; }
+.cloud-shoutout__body p { margin: 0.1rem 0 0; font-size: 0.92rem; line-height: 1.4; word-wrap: break-word; }
+.cloud-shoutout__time { font-size: 0.74rem; color: var(--text-muted); }
+
+/* Commentaires modale */
+.cloud-comments { display: flex; flex-direction: column; gap: 0.7rem; max-height: 50vh; overflow-y: auto; padding-right: 0.25rem; }
+.cloud-comment { display: flex; gap: 0.65rem; }
+.cloud-comment__avatar {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  color: #fff; font-weight: 700;
+  flex-shrink: 0;
+}
+.cloud-comment__body { flex: 1; min-width: 0; }
+.cloud-comment__body strong { font-size: 0.88rem; }
+.cloud-comment__time { font-size: 0.72rem; color: var(--text-muted); margin-left: 0.4rem; }
+.cloud-comment__body p { margin: 0.15rem 0 0; font-size: 0.92rem; line-height: 1.4; word-wrap: break-word; }
+.cloud-comment-form { margin-top: 0.85rem; }
+.cloud-comment-form textarea {
+  width: 100%; min-height: 70px; font: inherit;
+  padding: 0.55rem 0.7rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--border); background: var(--bg-elevated);
+  color: var(--text); resize: vertical;
+}
+
+/* Stats */
+.cloud-stats h3 { margin: 1.1rem 0 0.4rem; font-size: 0.92rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+.cloud-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 0.6rem;
+  margin: 0.75rem 0;
+}
+.cloud-stats-grid article {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.7rem 0.85rem;
+  text-align: center;
+  display: flex; flex-direction: column; gap: 0.2rem;
+}
+.cloud-stats-grid strong { font-size: 1.45rem; font-family: var(--font-display), inherit; color: var(--accent); }
+.cloud-stats-grid span { font-size: 0.78rem; color: var(--text-muted); }
+.cloud-top-artists, .cloud-recos { margin: 0.4rem 0 0.8rem; padding-left: 1.2rem; }
+.cloud-top-artists li, .cloud-recos li {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.25rem 0; border-bottom: 1px dashed var(--border);
+}
+.cloud-top-artists li em, .cloud-recos li em { font-style: normal; color: var(--text-muted); font-size: 0.82rem; }
+
+/* Spotify */
+.sp-playlists {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0;
+  display: flex; flex-direction: column; gap: 0.35rem;
+  max-height: 40vh; overflow-y: auto;
+}
+.sp-playlists li {
+  background: var(--bg-elevated);
+  padding: 0.5rem 0.7rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+}
+.sp-playlists label { display: flex; align-items: center; gap: 0.7rem; cursor: pointer; font-size: 0.95rem; }
+.sp-playlists label em { margin-left: auto; font-style: normal; color: var(--text-muted); font-size: 0.8rem; }
+.modal-actions--wrap { flex-wrap: wrap; }
+
 /* ---------- 8. Cards / panels génériques ---------- */
 .panel {
   background: var(--bg-card);

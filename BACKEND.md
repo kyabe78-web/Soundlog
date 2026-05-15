@@ -169,12 +169,119 @@ Pour exporter en CSV : Table Editor → table → menu `…` → **Export as CSV
 
 ---
 
-## 11. Aller plus loin
+## 11. Migration v2 — features avancées (avatars, playlists, realtime, stats)
 
-- **Realtime** : Supabase Realtime expose les changements en WebSocket. On peut s'abonner à `friend_requests` pour notifier en temps réel l'apparition d'une nouvelle demande. Hook dans `cloud.js` à ajouter.
-- **Storage** : pour les avatars uploadés, créer un bucket `avatars` (public read) et utiliser `supabase.storage.from('avatars').upload(...)`.
-- **Edge Functions** : pour appeler Apple Music / Deezer / Bandsintown sans CORS, déployer une edge function qui proxy ces APIs avec ta clé.
-- **Email transactionnel** : configurer Resend ou Postmark dans Authentication → Email pour les emails de confirmation / reset password sur ton domaine.
+Après le `SCHEMA.sql` initial, joue **une fois** le fichier `MIGRATION_v2.sql` dans le SQL Editor. Il ajoute :
+
+- Bucket Storage `avatars` (public, écriture limitée au propriétaire via folder UUID)
+- Tables `imported_playlists` + `imported_tracks` (Spotify, Deezer, Apple)
+- Vues agrégées `user_stats` et `user_top_artists`
+- Procédure `recommendations_for(uid)` qui croise écoutes communauté + tracks importées
+- Publications Realtime (`listenings`, `comments`, `shoutouts`, `friend_requests`, `follows`)
+
+Idempotent : peut être rejoué sans casser.
+
+## 12. Realtime
+
+Soundlog s'abonne automatiquement à 5 tables après le login. Tu reçois en direct :
+
+- les écoutes des utilisateurs (toast + soft refresh du feed)
+- les commentaires sur tes propres écoutes (notification + push dans la modale ouverte)
+- les nouveaux murmures (shoutouts) → rafraîchissement automatique
+- les demandes d'ami entrantes (notification dans le hub)
+- les follows
+
+Tout ça en WebSocket sans rechargement. Gratuit jusqu'à 200 connexions simultanées sur le plan free.
+
+## 13. Edge Function `preview-proxy` (élimine les warnings CORS)
+
+Le code source est dans `supabase/functions/preview-proxy/index.ts`. Il proxie Apple/Deezer/Bandsintown en injectant les bons en-têtes CORS.
+
+### Déploiement (10 min)
+
+```bash
+# 1. Installer la CLI Supabase
+npm install -g supabase
+
+# 2. Se connecter
+supabase login
+
+# 3. Lier le projet (PROJECT_REF = ID au début de l'URL : ex. srrpnyvytopgxqxwnomd)
+supabase link --project-ref <PROJECT_REF>
+
+# 4. Déployer la fonction (no-verify-jwt = endpoint public)
+supabase functions deploy preview-proxy --no-verify-jwt
+```
+
+L'URL du déploiement s'affiche : `https://<PROJECT_REF>.functions.supabase.co/preview-proxy`.
+
+### Activer dans Soundlog
+
+Édite `config.js` :
+
+```javascript
+edgeProxyUrl: "https://srrpnyvytopgxqxwnomd.functions.supabase.co/preview-proxy",
+```
+
+À partir de là, tous les appels Bandsintown/Deezer/iTunes passent par cette fonction → CORS clean en prod, console propre.
+
+## 14. Importer ses playlists Spotify
+
+Voir le guide dédié `PLAYLISTS.md`. En résumé : crée une app Spotify Developer (gratuit), copie le Client ID dans `config.js`, et utilise la modale Compte → Mon profil → "Importer depuis Spotify".
+
+## 15. Avatars personnalisés
+
+Une fois `MIGRATION_v2.sql` joué, n'importe quel utilisateur peut uploader son avatar via la modale Compte → Mon profil → "Changer mon avatar". Stocké dans le bucket `avatars/<user-uuid>/`, lecture publique, écriture limitée au propriétaire (RLS Storage). Max 2 Mo recommandé côté UI.
+
+## 16. Statistiques utilisateur
+
+La modale Compte → Mon profil → **Mes statistiques** affiche :
+- Compteurs (écoutes, albums uniques, listes, concerts, wishlist, tracks importées)
+- Top 12 artistes (via vue `user_top_artists`)
+- 12 recommandations cross-utilisateurs (via RPC `recommendations_for`)
+
+Données toujours fraîches, calculées côté Postgres.
+
+## 17. Murmures (shoutouts) live
+
+Le bouton "Publier un murmure" (modale profil) poste dans la table `shoutouts`. Le bloc "Murmures du disquaire" en tête de la home affiche les 8 derniers de la communauté, mis à jour en realtime + refresh périodique 90 s.
+
+## 18. Confirmation email + email transactionnel
+
+### Activer la confirmation email (recommandé en prod)
+
+1. Supabase → Authentication → Providers → Email
+2. Toggle **`Confirm email`** = ON
+3. Sauvegarde
+
+⚠️ Avec confirm email ON, l'inscription fonctionne quand même côté Soundlog (le profil est créé après confirmation au prochain login). Si tu veux un compte instant, garde-le OFF en démo.
+
+### Configurer Resend pour les emails (5 min)
+
+1. Crée un compte sur [https://resend.com](https://resend.com) (gratuit, 3000 emails/mois).
+2. Ajoute et vérifie ton domaine (DNS).
+3. Génère une **API Key**.
+4. Dans Supabase → **Authentication → Email → SMTP Settings** :
+   - Host : `smtp.resend.com`
+   - Port : `465`
+   - Username : `resend`
+   - Password : ta Resend API Key
+   - Sender name : `Soundlog`
+   - Sender email : `noreply@ton-domaine.com`
+5. Save.
+
+Les emails de confirmation, reset password, magic link partent maintenant depuis ton domaine — crédibilité maximale.
+
+## 19. Domaine perso
+
+1. Achète un domaine (Namecheap, OVH, Cloudflare Registrar).
+2. Vercel → Project → Settings → Domains → **Add**.
+3. Suis les instructions DNS (CNAME ou A record). Vercel gère le SSL automatiquement.
+4. Une fois le domaine actif, ajoute-le aussi dans :
+   - Supabase → Authentication → URL Configuration → Site URL
+   - Spotify Developer → Redirect URIs
+
+Coût indicatif : 10-15 € / an pour un `.com`, gratuit en sous-domaine.
 
 ---
 
@@ -196,8 +303,10 @@ Pour exporter en CSV : Table Editor → table → menu `…` → **Export as CSV
 ```bash
 # 1. Crée le projet Supabase
 # 2. SQL Editor → colle SCHEMA.sql → Run
-# 3. Copie l'URL et l'anon key
-# 4. Édite config.js avec les deux valeurs
-# 5. python3 -m http.server 8765  (test local)
-# 6. git push  (déploie sur Vercel)
+# 3. SQL Editor → colle MIGRATION_v2.sql → Run  (avatars, playlists, stats, realtime)
+# 4. Copie Project URL et anon key dans config.js
+# 5. (Optionnel) Crée app Spotify Developer → Client ID dans config.js
+# 6. (Optionnel) supabase functions deploy preview-proxy --no-verify-jwt
+# 7. python3 -m http.server 8765  (test local)
+# 8. git push  (déploie sur Vercel)
 ```

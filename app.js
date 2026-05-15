@@ -224,6 +224,14 @@
   let previewAudio = null;
   let previewAlbumId = null;
 
+  // Si une Edge Function proxy est configurée, on l'utilise pour les APIs externes
+  // (élimine les CORS warnings côté Bandsintown/Deezer en prod).
+  function viaEdgeProxy(externalUrl) {
+    const cfg = window.SLConfig || {};
+    if (!cfg.edgeProxyUrl) return externalUrl;
+    return cfg.edgeProxyUrl + "?url=" + encodeURIComponent(externalUrl);
+  }
+
   function persist() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     if (typeof window.__slSchedulePushCloud === "function") window.__slSchedulePushCloud();
@@ -460,7 +468,7 @@
   }
 
   async function fetchDeezerAlbums(q) {
-    const url = `https://api.deezer.com/search/album?q=${encodeURIComponent(q)}&limit=25`;
+    const url = viaEdgeProxy(`https://api.deezer.com/search/album?q=${encodeURIComponent(q)}&limit=25`);
     const r = await fetch(url);
     if (!r.ok) throw new Error("Deezer");
     const j = await r.json();
@@ -539,7 +547,7 @@
   }
 
   async function fetchDeezerPreviewByAlbumId(albumId, al) {
-    const meta = await fetch(`https://api.deezer.com/album/${encodeURIComponent(albumId)}`);
+    const meta = await fetch(viaEdgeProxy(`https://api.deezer.com/album/${encodeURIComponent(albumId)}`));
     if (meta.ok && al && al.artist) {
       try {
         const mj = await meta.json();
@@ -553,7 +561,7 @@
         }
       } catch (_) {}
     }
-    const tr = await fetch(`https://api.deezer.com/album/${encodeURIComponent(albumId)}/tracks`);
+    const tr = await fetch(viaEdgeProxy(`https://api.deezer.com/album/${encodeURIComponent(albumId)}/tracks`));
     if (!tr.ok) throw new Error("Deezer tracks");
     const tj = await tr.json();
     const pick = pickLeadDeezerTrack(tj.data);
@@ -589,7 +597,7 @@
   }
 
   async function fetchDeezerAlbumPreview(al) {
-    const searchUrl = `https://api.deezer.com/search/album?q=${encodeURIComponent(`${al.artist} ${al.title}`)}&limit=12`;
+    const searchUrl = viaEdgeProxy(`https://api.deezer.com/search/album?q=${encodeURIComponent(`${al.artist} ${al.title}`)}&limit=12`);
     const r = await fetch(searchUrl);
     if (!r.ok) throw new Error("Deezer");
     const j = await r.json();
@@ -1392,7 +1400,7 @@
 
   async function fetchBandsintownEvents(artistName) {
     const q = encodeURIComponent(artistName);
-    const url = `https://rest.bandsintown.com/artists/${q}/events?app_id=soundlog_web_client&date=upcoming`;
+    const url = viaEdgeProxy(`https://rest.bandsintown.com/artists/${q}/events?app_id=soundlog_web_client&date=upcoming`);
     const r = await fetch(url, { headers: { Accept: "application/json" } });
     if (!r.ok) throw new Error(String(r.status));
     const j = await r.json();
@@ -2380,7 +2388,7 @@
                         )} <span class="feed-note">${escapeHtml((c.at || "").slice(0, 10))}</span></li>`;
                       })
                       .join("")}</ul>`;
-              return `<article class="feed-post" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}">
+              return `<article class="feed-post" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(l.id)}">
             <header class="feed-post__head">
               <span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
               <div class="feed-post__who">
@@ -3132,6 +3140,51 @@
       }
     }
     updateHeaderNotifications();
+    injectCloudShoutoutsBlock();
+    injectCloudCommentsButtons();
+  }
+
+  // Bloc "Murmures de la communauté" injecté sur la home quand cloud connecté
+  function injectCloudShoutoutsBlock() {
+    if (!(route.view === "home" || (route.view === "social"))) return;
+    if (!window.SLCloud || !window.SLCloud.isSignedIn()) return;
+    if (document.getElementById("cloud-shoutouts-block")) return;
+    const wrap = document.createElement("section");
+    wrap.id = "cloud-shoutouts-block";
+    wrap.className = "panel feed-shoutouts";
+    wrap.innerHTML = `<div class="feed-shoutouts__header">
+        <h2 class="kicker" style="margin:0">Murmures du disquaire</h2>
+        <button type="button" class="btn btn-ghost btn-sm" id="cloud-shoutouts-add">Publier</button>
+      </div>
+      <div id="cloud-shoutouts-list" class="cloud-shoutouts"><p class="feed-note">Chargement…</p></div>`;
+    // insertion en tête du main contenu
+    const heroEnd = $main.querySelector(".feed-page, .social-hub, .page-title")?.parentElement || $main;
+    heroEnd.insertBefore(wrap, $main.firstChild);
+    document.getElementById("cloud-shoutouts-add").addEventListener("click", () => {
+      if (window.__sl && window.__sl.openShoutout) window.__sl.openShoutout();
+    });
+    if (window.__sl && window.__sl.cloudShoutouts && window.__sl.cloudShoutouts.length) {
+      window.__sl.renderCloudShoutoutsInto(document.getElementById("cloud-shoutouts-list"));
+    } else if (window.__sl && window.__sl.refreshShoutouts) {
+      window.__sl.refreshShoutouts();
+    }
+  }
+
+  // Sur le feed home, ajoute un bouton "Commentaires (live)" sur les feed cards quand cloud connecté
+  function injectCloudCommentsButtons() {
+    if (!window.SLCloud || !window.SLCloud.isSignedIn()) return;
+    document.querySelectorAll("[data-feed-listening-id]").forEach((card) => {
+      if (card.querySelector("[data-cloud-comments-on]")) return;
+      const id = card.getAttribute("data-feed-listening-id");
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "btn btn-ghost btn-sm";
+      btn.setAttribute("data-cloud-comments-on", id);
+      btn.textContent = "Commentaires en ligne";
+      const actions = card.querySelector(".feed-post__actions, .modal-actions") || card;
+      btn.className = "feed-post__action-btn";
+      actions.appendChild(btn);
+    });
   }
 
   function markNotificationRead(id) {
@@ -3222,8 +3275,18 @@
     const u = userById("me");
     document.getElementById("header-username").textContent = u.name;
     const av = document.getElementById("header-avatar");
-    av.textContent = u.name.charAt(0).toUpperCase();
-    av.style.background = "hsl(" + u.hue + ",55%,42%)";
+    const cloudMe = window.SLCloud && window.SLCloud.me;
+    if (cloudMe && cloudMe.avatar_url) {
+      av.style.backgroundImage = `url("${cloudMe.avatar_url}")`;
+      av.style.backgroundSize = "cover";
+      av.style.backgroundPosition = "center";
+      av.textContent = "";
+      av.style.background = `center / cover no-repeat url("${cloudMe.avatar_url}")`;
+    } else {
+      av.style.backgroundImage = "";
+      av.textContent = u.name.charAt(0).toUpperCase();
+      av.style.background = "hsl(" + u.hue + ",55%,42%)";
+    }
   }
 
   function bindMainEvents() {
@@ -4242,6 +4305,12 @@
       } else if (which === "profile") {
         const me = SLCloud.me;
         panel.innerHTML = `
+          <div class="profile-avatar-row">
+            ${me.avatar_url
+              ? `<img class="avatar-preview" src="${escapeHtml(me.avatar_url)}" alt="Avatar de ${escapeHtml(me.name)}" />`
+              : `<div class="avatar-preview avatar-preview--placeholder" style="background:hsl(${me.hue || 220},55%,50%)">${escapeHtml((me.name||"?").slice(0,1).toUpperCase())}</div>`}
+            <button type="button" class="btn btn-ghost btn-sm" id="profile-avatar-btn">Changer mon avatar</button>
+          </div>
           <label>Nom affiché <input type="text" id="auth-name" value="${escapeHtml(me.name)}" /></label>
           <label>Handle <input type="text" id="auth-handle" value="${escapeHtml(me.handle)}" /></label>
           <label>Bio <textarea id="auth-bio">${escapeHtml(me.bio || "")}</textarea></label>
@@ -4251,7 +4320,18 @@
           <p class="modal-actions">
             <button type="button" class="btn btn-primary" id="auth-save">Enregistrer</button>
             <button type="button" class="btn btn-ghost" id="auth-cancel">Fermer</button>
+          </p>
+          <hr />
+          <h3 class="kicker">Plus</h3>
+          <p class="modal-actions modal-actions--wrap">
+            <button type="button" class="btn btn-ghost" id="profile-open-stats">Mes statistiques</button>
+            <button type="button" class="btn btn-ghost" id="profile-open-spotify">Importer depuis Spotify</button>
+            <button type="button" class="btn btn-ghost" id="profile-post-shoutout">Publier un murmure</button>
           </p>`;
+        document.getElementById("profile-avatar-btn").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openAvatar)(); });
+        document.getElementById("profile-open-stats").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openStats)(); });
+        document.getElementById("profile-open-spotify").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openSpotify)(); });
+        document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
         document.getElementById("auth-save").addEventListener("click", async () => {
           const patch = {
@@ -4349,4 +4429,472 @@
     setTimeout(refreshCloudPeers, 1200);
     setInterval(refreshCloudPeers, 60000);
   }
+
+  // =======================================================================
+  // Realtime, commentaires, shoutouts, avatars, stats, Spotify import
+  // =======================================================================
+  const cloudShoutouts = [];
+  let realtimeChannel = null;
+
+  function setupRealtimeHooks() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    if (realtimeChannel) SLCloud.unsubscribe(realtimeChannel);
+    realtimeChannel = SLCloud.realtimeSubscribe({
+      onListening: (p) => {
+        if (p.eventType !== "INSERT") return;
+        // si c'est une écoute d'un·e ami·e, on toast & on rafraîchit le fil
+        const newRow = p.new || {};
+        if (newRow.user_id === SLCloud.me.id) return;
+        const peer = cloudPeers.get(newRow.user_id);
+        if (peer) toast(`${peer.name} vient de noter un album.`);
+        scheduleSoftRender();
+      },
+      onComment: (p) => {
+        if (p.eventType !== "INSERT") return;
+        const newRow = p.new || {};
+        // si commentaire sur une de mes écoutes
+        const mine = state.listenings.find((l) => l.id === newRow.listening_id);
+        if (mine && newRow.author_id !== SLCloud.me.id) {
+          const peer = cloudPeers.get(newRow.author_id);
+          toast(`${peer ? peer.name : "Quelqu'un"} a commenté ton écoute.`);
+          addNotification({
+            type: "comment",
+            title: "Nouveau commentaire",
+            body: (peer ? peer.name : "Un·e ami·e") + " : " + (newRow.text || "").slice(0, 80),
+            meta: { listeningId: newRow.listening_id },
+          });
+          updateHeaderNotifications();
+        }
+        if (currentCommentsListeningId === newRow.listening_id) refreshCommentsPanel();
+      },
+      onShoutout: (p) => {
+        if (p.eventType !== "INSERT") return;
+        refreshCloudShoutouts();
+      },
+      onFriendRequest: (p) => {
+        if (p.eventType !== "INSERT") return;
+        const newRow = p.new || {};
+        if (newRow.to_user_id === SLCloud.me.id) {
+          const peer = cloudPeers.get(newRow.from_user_id);
+          toast(`${peer ? peer.name : "Quelqu'un"} t'a envoyé une demande d'ami.`);
+          addNotification({
+            type: "friend",
+            title: "Demande d'ami",
+            body: (peer ? peer.name : "Un·e utilisateur·trice") + " veut se connecter.",
+          });
+          updateHeaderNotifications();
+        }
+      },
+    });
+  }
+
+  let softRenderTimer = null;
+  function scheduleSoftRender() {
+    clearTimeout(softRenderTimer);
+    softRenderTimer = setTimeout(() => { try { render(); } catch (_) {} }, 600);
+  }
+
+  async function refreshCloudShoutouts() {
+    if (!SLCloud || !SLCloud.ready) return;
+    try {
+      const list = await SLCloud.listShoutouts(25);
+      cloudShoutouts.length = 0;
+      cloudShoutouts.push(...list);
+      const node = document.getElementById("cloud-shoutouts-list");
+      if (node) renderCloudShoutoutsInto(node);
+    } catch (e) { console.warn("[shoutouts]", e); }
+  }
+
+  function renderCloudShoutoutsInto(node) {
+    if (!cloudShoutouts.length) {
+      node.innerHTML = `<p class="feed-note">Personne n'a encore murmuré aujourd'hui. Sois la première voix.</p>`;
+      return;
+    }
+    node.innerHTML = cloudShoutouts.slice(0, 8).map((s) => {
+      const author = s.profiles || {};
+      const initials = (author.name || "?").slice(0, 1).toUpperCase();
+      return `<article class="cloud-shoutout">
+        <span class="cloud-shoutout__avatar" style="background:hsl(${author.hue || 220},55%,50%)">${escapeHtml(initials)}</span>
+        <div class="cloud-shoutout__body">
+          <strong>${escapeHtml(author.name || "?")}</strong>
+          <span class="cloud-shoutout__time">${timeAgo(s.created_at)}</span>
+          <p>${escapeHtml(s.text)}</p>
+        </div>
+      </article>`;
+    }).join("");
+  }
+
+  function timeAgo(iso) {
+    const t = new Date(iso).getTime();
+    const d = Date.now() - t;
+    if (d < 60000) return "à l'instant";
+    if (d < 3600000) return Math.floor(d / 60000) + " min";
+    if (d < 86400000) return Math.floor(d / 3600000) + " h";
+    return Math.floor(d / 86400000) + " j";
+  }
+
+  // ---------- Commentaires cross-appareils ----------
+  let currentCommentsListeningId = null;
+  async function openCloudCommentsModal(listeningId) {
+    if (!SLCloud || !SLCloud.isSignedIn()) {
+      toast("Connecte-toi pour commenter en ligne.");
+      return;
+    }
+    currentCommentsListeningId = listeningId;
+    openModal(`<h2>Commentaires</h2>
+      <div id="cloud-comments-list" class="cloud-comments"><p class="feed-note">Chargement…</p></div>
+      <form id="cloud-comment-form" class="cloud-comment-form">
+        <label class="visually-hidden" for="cloud-comment-input">Ton commentaire</label>
+        <textarea id="cloud-comment-input" placeholder="Ajouter un commentaire (max 800 caractères)" maxlength="800" rows="3"></textarea>
+        <p class="modal-actions">
+          <button type="submit" class="btn btn-primary">Publier</button>
+          <button type="button" class="btn btn-ghost" id="cloud-comments-close">Fermer</button>
+        </p>
+      </form>`);
+    document.getElementById("cloud-comments-close").addEventListener("click", () => { currentCommentsListeningId = null; closeModal(); });
+    document.getElementById("cloud-comment-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const text = document.getElementById("cloud-comment-input").value.trim();
+      if (!text) return;
+      try {
+        await SLCloud.postComment(listeningId, text);
+        document.getElementById("cloud-comment-input").value = "";
+        await refreshCommentsPanel();
+      } catch (err) { toast("Erreur : " + (err.message || "inconnue")); }
+    });
+    await refreshCommentsPanel();
+  }
+  async function refreshCommentsPanel() {
+    const list = document.getElementById("cloud-comments-list");
+    if (!list || !currentCommentsListeningId) return;
+    const items = await SLCloud.listCommentsForListening(currentCommentsListeningId);
+    if (!items.length) {
+      list.innerHTML = `<p class="feed-note">Aucun commentaire pour l'instant.</p>`;
+      return;
+    }
+    list.innerHTML = items.map((c) => {
+      const a = c.profiles || {};
+      return `<article class="cloud-comment">
+        <span class="cloud-comment__avatar" style="background:hsl(${a.hue || 220},55%,50%)">${escapeHtml((a.name || "?").slice(0,1).toUpperCase())}</span>
+        <div class="cloud-comment__body">
+          <strong>${escapeHtml(a.name || "?")}</strong> <span class="cloud-comment__time">${timeAgo(c.created_at)}</span>
+          <p>${escapeHtml(c.text)}</p>
+        </div>
+      </article>`;
+    }).join("");
+  }
+
+  // Interception du bouton "Commenter" sur le feed quand cloud connecté
+  document.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-cloud-comments-on]");
+    if (!btn) return;
+    e.preventDefault();
+    e.stopPropagation();
+    openCloudCommentsModal(btn.getAttribute("data-cloud-comments-on"));
+  });
+
+  // ---------- Stats personnelles ----------
+  async function openCloudStatsModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    const uid = SLCloud.me.id;
+    openModal(`<h2>Mes statistiques</h2>
+      <div id="cloud-stats" class="cloud-stats"><p class="feed-note">Calcul…</p></div>
+      <p class="modal-actions"><button type="button" class="btn btn-ghost" id="cloud-stats-close">Fermer</button></p>`);
+    document.getElementById("cloud-stats-close").addEventListener("click", closeModal);
+    try {
+      const [stats, top, recos] = await Promise.all([
+        SLCloud.getUserStats(uid),
+        SLCloud.getTopArtists(uid, 12),
+        SLCloud.getRecommendations(uid, 12),
+      ]);
+      const node = document.getElementById("cloud-stats");
+      node.innerHTML = `
+        <section class="cloud-stats-grid">
+          <article><strong>${stats?.total_listenings || 0}</strong><span>écoutes</span></article>
+          <article><strong>${stats?.unique_albums || 0}</strong><span>albums uniques</span></article>
+          <article><strong>${stats?.avg_rating || "—"}</strong><span>note moyenne</span></article>
+          <article><strong>${stats?.total_lists || 0}</strong><span>listes</span></article>
+          <article><strong>${stats?.total_concerts || 0}</strong><span>concerts vus</span></article>
+          <article><strong>${stats?.total_wishlist || 0}</strong><span>à écouter</span></article>
+          <article><strong>${stats?.total_imported_tracks || 0}</strong><span>titres importés</span></article>
+          <article><strong>${stats?.imported_unique_artists || 0}</strong><span>artistes ext.</span></article>
+        </section>
+        <h3>Top artistes</h3>
+        ${top.length ? `<ol class="cloud-top-artists">${top.map((a) => `<li><span>${escapeHtml(a.artist_name)}</span><em>${a.track_count}</em></li>`).join("")}</ol>` : `<p class="feed-note">Importe une playlist ou note des albums pour générer ton top artistes.</p>`}
+        <h3>Recommandé pour toi</h3>
+        ${recos.length ? `<ul class="cloud-recos">${recos.map((r) => `<li><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.artist)} <em>(score ${Number(r.score).toFixed(1)})</em></li>`).join("")}</ul>` : `<p class="feed-note">Pas assez de données collectives pour reco — invite des ami·es !</p>`}`;
+    } catch (e) {
+      document.getElementById("cloud-stats").innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p>`;
+    }
+  }
+
+  // ---------- Avatar upload ----------
+  function openAvatarUploadModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    const me = SLCloud.me;
+    const current = me.avatar_url
+      ? `<img class="avatar-preview" src="${escapeHtml(me.avatar_url)}" alt="" />`
+      : `<div class="avatar-preview avatar-preview--placeholder" style="background:hsl(${me.hue || 220},55%,50%)">${escapeHtml((me.name || "?").slice(0,1).toUpperCase())}</div>`;
+    openModal(`<h2>Avatar</h2>
+      ${current}
+      <label class="cloud-upload">
+        <span>Choisir une image (PNG/JPG, max 2 Mo)</span>
+        <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" />
+      </label>
+      <p class="auth-error" id="avatar-err" hidden></p>
+      <p class="modal-actions">
+        <button type="button" class="btn btn-primary" id="avatar-save">Téléverser</button>
+        <button type="button" class="btn btn-ghost" id="avatar-cancel">Fermer</button>
+      </p>`);
+    document.getElementById("avatar-cancel").addEventListener("click", closeModal);
+    document.getElementById("avatar-save").addEventListener("click", async () => {
+      const f = document.getElementById("avatar-file").files[0];
+      if (!f) return;
+      if (f.size > 2 * 1024 * 1024) {
+        const err = document.getElementById("avatar-err");
+        err.textContent = "Image trop lourde (max 2 Mo).";
+        err.hidden = false;
+        return;
+      }
+      try {
+        await SLCloud.uploadAvatar(f);
+        toast("Avatar mis à jour.");
+        closeModal();
+        render();
+      } catch (e) {
+        const err = document.getElementById("avatar-err");
+        err.textContent = e.message || "Échec du téléversement.";
+        err.hidden = false;
+      }
+    });
+  }
+
+  // ---------- Shoutouts (murmures) ----------
+  function openShoutoutModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    openModal(`<h2>Publier un murmure</h2>
+      <p class="feed-note">Une phrase, une humeur, une pépite — visible de toute la communauté.</p>
+      <label class="visually-hidden" for="shoutout-text">Texte</label>
+      <textarea id="shoutout-text" maxlength="280" placeholder="Ce que ton oreille pense ce matin..." rows="4"></textarea>
+      <p class="auth-error" id="shoutout-err" hidden></p>
+      <p class="modal-actions">
+        <button type="button" class="btn btn-primary" id="shoutout-post">Publier</button>
+        <button type="button" class="btn btn-ghost" id="shoutout-cancel">Annuler</button>
+      </p>`);
+    document.getElementById("shoutout-cancel").addEventListener("click", closeModal);
+    document.getElementById("shoutout-post").addEventListener("click", async () => {
+      const txt = document.getElementById("shoutout-text").value.trim();
+      if (!txt) return;
+      try {
+        await SLCloud.postShoutout(txt);
+        toast("Murmure publié.");
+        closeModal();
+        refreshCloudShoutouts();
+      } catch (e) {
+        const err = document.getElementById("shoutout-err");
+        err.textContent = e.message || "Erreur";
+        err.hidden = false;
+      }
+    });
+  }
+  window.__sl = window.__sl || {}; window.__sl.openShoutout = openShoutoutModal;
+
+  // ---------- Import Spotify ----------
+  async function openSpotifyImportModal() {
+    if (!SLCloud) return;
+    if (!SLCloud.spotify.isConfigured()) {
+      openModal(`<h2>Spotify non configuré</h2>
+        <p class="feed-note">Pour activer l'import de tes playlists Spotify, ajoute ton <code>spotifyClientId</code> dans <code>config.js</code> (voir PLAYLISTS.md).</p>
+        <p class="modal-actions"><button type="button" class="btn btn-ghost" id="sp-close">Fermer</button></p>`);
+      document.getElementById("sp-close").addEventListener("click", closeModal);
+      return;
+    }
+    if (!SLCloud.isSignedIn()) {
+      toast("Connecte-toi d'abord à Soundlog.");
+      return;
+    }
+    if (!SLCloud.spotify.hasToken()) {
+      openModal(`<h2>Connecter Spotify</h2>
+        <p>Tu vas être redirigé·e vers Spotify pour autoriser Soundlog à lire tes playlists. Aucune donnée n'est partagée avec d'autres utilisateurs.</p>
+        <p class="modal-actions">
+          <button type="button" class="btn btn-primary" id="sp-auth">Autoriser Spotify</button>
+          <button type="button" class="btn btn-ghost" id="sp-close">Annuler</button>
+        </p>`);
+      document.getElementById("sp-close").addEventListener("click", closeModal);
+      document.getElementById("sp-auth").addEventListener("click", () => SLCloud.spotify.authorize());
+      return;
+    }
+    openModal(`<h2>Importer depuis Spotify</h2>
+      <p class="feed-note">Sélectionne les playlists à fusionner dans ton profil. Les artistes/albums alimenteront Sonar pour personnaliser tes recommandations.</p>
+      <div id="sp-playlists"><p class="feed-note">Chargement…</p></div>
+      <p class="modal-actions">
+        <button type="button" class="btn btn-primary" id="sp-import">Importer la sélection</button>
+        <button type="button" class="btn btn-ghost" id="sp-liked">Importer mes titres aimés</button>
+        <button type="button" class="btn btn-ghost" id="sp-disconnect">Déconnecter Spotify</button>
+        <button type="button" class="btn btn-ghost" id="sp-close">Fermer</button>
+      </p>
+      <p id="sp-status" class="feed-note"></p>`);
+    document.getElementById("sp-close").addEventListener("click", closeModal);
+    document.getElementById("sp-disconnect").addEventListener("click", () => { SLCloud.spotify.clearToken(); closeModal(); openSpotifyImportModal(); });
+    let playlists = [];
+    try {
+      playlists = await SLCloud.spotify.listMyPlaylists();
+    } catch (e) {
+      document.getElementById("sp-playlists").innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur Spotify")}</p>`;
+      return;
+    }
+    document.getElementById("sp-playlists").innerHTML = playlists.length
+      ? `<ul class="sp-playlists">${playlists.map((p) => `
+        <li>
+          <label>
+            <input type="checkbox" value="${escapeHtml(p.id)}" />
+            <span>${escapeHtml(p.name)}</span>
+            <em>${p.tracks?.total || 0} titres</em>
+          </label>
+        </li>`).join("")}</ul>`
+      : `<p class="feed-note">Aucune playlist trouvée sur ce compte Spotify.</p>`;
+    const setStatus = (s) => { document.getElementById("sp-status").textContent = s; };
+    async function importPlaylist(p) {
+      setStatus(`Import de « ${p.name} »…`);
+      const tracks = await SLCloud.spotify.listTracksOfPlaylist(p.id);
+      const playlistRow = {
+        id: "spotify:" + p.id,
+        source: "spotify",
+        remoteId: p.id,
+        name: p.name,
+        description: p.description || "",
+        artworkUrl: (p.images && p.images[0] && p.images[0].url) || null,
+        raw: { tracks: tracks.length },
+      };
+      await SLCloud.upsertImportedPlaylist(playlistRow);
+      const rows = tracks.map((t) => ({
+        playlistId: playlistRow.id,
+        source: "spotify",
+        trackName: t.name,
+        artistName: (t.artists || []).map((a) => a.name).join(", "),
+        albumName: t.album?.name || "",
+        albumYear: t.album?.release_date ? Number((t.album.release_date || "").slice(0, 4)) : null,
+        albumArtworkUrl: (t.album?.images && t.album.images[0] && t.album.images[0].url) || null,
+        remoteTrackId: t.id,
+        remoteAlbumId: t.album?.id,
+      }));
+      await SLCloud.insertImportedTracks(rows);
+      // Ajoute aussi les albums uniques dans le catalogue Soundlog (mode importé)
+      const uniqueAlbums = new Map();
+      rows.forEach((r) => {
+        const k = `${(r.albumName || "").toLowerCase()}|${(r.artistName || "").toLowerCase()}`;
+        if (!uniqueAlbums.has(k) && r.albumName) uniqueAlbums.set(k, r);
+      });
+      state.importedAlbums = state.importedAlbums || [];
+      uniqueAlbums.forEach((r) => {
+        const id = "spotify-" + (r.remoteAlbumId || cryptoRandomId());
+        if (!state.importedAlbums.find((a) => a.id === id)) {
+          state.importedAlbums.push({
+            id,
+            title: r.albumName,
+            artist: r.artistName,
+            year: r.albumYear,
+            genre: "",
+            artworkUrl: r.albumArtworkUrl,
+            from: "#444",
+            to: "#222",
+          });
+        }
+      });
+      persist();
+    }
+    document.getElementById("sp-import").addEventListener("click", async () => {
+      const checked = Array.from(document.querySelectorAll("#sp-playlists input:checked")).map((c) => c.value);
+      if (!checked.length) { setStatus("Aucune playlist sélectionnée."); return; }
+      try {
+        for (const id of checked) {
+          const p = playlists.find((x) => x.id === id);
+          if (p) await importPlaylist(p);
+        }
+        setStatus("Import terminé !");
+        toast("Playlists importées.");
+        render();
+      } catch (e) { setStatus("Erreur : " + (e.message || "inconnue")); }
+    });
+    document.getElementById("sp-liked").addEventListener("click", async () => {
+      try {
+        setStatus("Import des titres aimés…");
+        const tracks = await SLCloud.spotify.listLikedTracks();
+        const fakePlaylist = { id: "liked", name: "Spotify — Mes titres aimés", description: "Import auto" };
+        await SLCloud.upsertImportedPlaylist({
+          id: "spotify:liked",
+          source: "spotify",
+          remoteId: "liked",
+          name: fakePlaylist.name,
+          description: fakePlaylist.description,
+          raw: { tracks: tracks.length },
+        });
+        const rows = tracks.map((t) => ({
+          playlistId: "spotify:liked",
+          source: "spotify",
+          trackName: t.name,
+          artistName: (t.artists || []).map((a) => a.name).join(", "),
+          albumName: t.album?.name || "",
+          albumYear: t.album?.release_date ? Number((t.album.release_date || "").slice(0, 4)) : null,
+          albumArtworkUrl: (t.album?.images && t.album.images[0] && t.album.images[0].url) || null,
+          remoteTrackId: t.id,
+          remoteAlbumId: t.album?.id,
+        }));
+        await SLCloud.insertImportedTracks(rows);
+        setStatus(`Importé : ${rows.length} titres aimés.`);
+        toast("Titres aimés importés.");
+        render();
+      } catch (e) { setStatus("Erreur : " + (e.message || "inconnue")); }
+    });
+  }
+
+  function cryptoRandomId() {
+    const a = new Uint8Array(8); crypto.getRandomValues(a);
+    return Array.from(a).map((b) => b.toString(16).padStart(2, "0")).join("");
+  }
+
+  // ---------- Hooks au login / route Spotify ----------
+  window.addEventListener("sl-spotify-connected", () => {
+    toast("Spotify connecté.");
+    openSpotifyImportModal();
+  });
+
+  // Au login, lancer realtime + premier pull shoutouts
+  if (SLCloud && SLCloud.on) {
+    SLCloud.on(async (evt) => {
+      if (evt === "auth" && SLCloud.isSignedIn()) {
+        setupRealtimeHooks();
+        refreshCloudShoutouts();
+      } else if (evt === "auth" && !SLCloud.isSignedIn()) {
+        if (realtimeChannel) { SLCloud.unsubscribe(realtimeChannel); realtimeChannel = null; }
+      } else if (evt === "ready" && SLCloud.isSignedIn()) {
+        setupRealtimeHooks();
+        refreshCloudShoutouts();
+      }
+    });
+  }
+  setInterval(refreshCloudShoutouts, 90000);
+
+  // ---------- Hash routes pour les nouvelles vues ----------
+  function maybeHandleCloudHash() {
+    const h = (location.hash || "").replace(/^#/, "");
+    if (h === "spotify-import" && SLCloud && SLCloud.isSignedIn()) {
+      location.hash = "";
+      openSpotifyImportModal();
+    } else if (h === "stats" && SLCloud && SLCloud.isSignedIn()) {
+      location.hash = "";
+      openCloudStatsModal();
+    }
+  }
+  window.addEventListener("hashchange", maybeHandleCloudHash);
+  maybeHandleCloudHash();
+
+  // Expose pour la modale Compte
+  window.__sl = window.__sl || {};
+  window.__sl.openStats = openCloudStatsModal;
+  window.__sl.openAvatar = openAvatarUploadModal;
+  window.__sl.openSpotify = openSpotifyImportModal;
+  window.__sl.refreshShoutouts = refreshCloudShoutouts;
+  window.__sl.cloudShoutouts = cloudShoutouts;
+  window.__sl.renderCloudShoutoutsInto = renderCloudShoutoutsInto;
 })();

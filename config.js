@@ -8,4 +8,15 @@ window.SLConfig = {
   supabaseUrl: "https://srrpnyvytopgxqxwnomd.supabase.co",
   supabaseAnonKey: "sb_publishable_-nHoYLqaCtFbLOsXh8b1nA_7N_su1eu",
   appName: "Soundlog",
+
+  // --- Spotify (optionnel) : voir PLAYLISTS.md
+  // Crée une app sur https://developer.spotify.com/dashboard
+  // Redirect URI à enregistrer : <ton-domaine-vercel>/ + http://localhost:8765/
+  spotifyClientId: "",
+  // Laisse vide pour utiliser window.location.origin + pathname automatiquement
+  spotifyRedirectUri: "",
+
+  // --- Edge Function proxy (optionnel) : voir BACKEND.md §11
+  // ex. "https://srrpnyvytopgxqxwnomd.functions.supabase.co/preview-proxy"
+  edgeProxyUrl: "",
 };

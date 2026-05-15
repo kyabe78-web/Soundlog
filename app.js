@@ -5157,15 +5157,59 @@
         : "";
     const profileActions = `<div class="profile-actions-row">${followBtn}${friendBlock ? ` <span class="profile-actions-gap"></span> ${friendBlock}` : ""} ${shareProfileBtn}</div>`;
 
-    const recent = listenings
-      .sort((a, b) => (a.date < b.date ? 1 : -1))
-      .slice(0, 6)
+    const sortedListenings = listenings.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+    const recentListenings = sortedListenings.slice(0, 8);
+    let featuredListenHtml = "";
+    const stripListenings = [];
+    if (recentListenings.length) {
+      const al0 = albumById(recentListenings[0].albumId);
+      if (al0) {
+        const r0 = recentListenings[0];
+        featuredListenHtml = `<div class="profile-listen-featured">
+          <div class="album-card profile-listen-featured__media" data-album="${escapeHtml(al0.id)}"${albumCardStyle(al0)}>
+            ${coverHtml(al0, false, "lg")}
+          </div>
+          <div class="profile-listen-featured__meta">
+            <p class="profile-listen-featured__kicker">Dernière écoute</p>
+            <h4 class="profile-listen-featured__title">${escapeHtml(al0.title)}</h4>
+            <p class="profile-listen-featured__artist">${escapeHtml(al0.artist || "")}</p>
+            <p class="profile-listen-featured__stars"><span class="stars">${starString(r0.rating)}</span></p>
+          </div>
+        </div>`;
+        stripListenings.push(...recentListenings.slice(1));
+      } else {
+        stripListenings.push(...recentListenings);
+      }
+    }
+    const stripListenHtml = stripListenings
       .map((l) => {
         const al = albumById(l.albumId);
         if (!al) return "";
-        return `<div class="album-card" data-album="${al.id}"${albumCardStyle(al, "max-width:120px;")}>${coverHtml(al, true)}<div class="album-meta"><span class="stars">${starString(
+        return `<div class="album-card profile-listen-chip" data-album="${escapeHtml(al.id)}"${albumCardStyle(al)}>${coverHtml(al, true)}<div class="album-meta profile-listen-chip__meta"><span class="stars">${starString(
           l.rating
         )}</span></div></div>`;
+      })
+      .join("");
+    const recentSectionInner =
+      featuredListenHtml || stripListenHtml
+        ? `${featuredListenHtml}<div class="profile-listen-strip" role="list">${stripListenHtml}</div>`
+        : `<p class="empty profile-empty--soft">Rien pour l’instant.</p>`;
+
+    const myConcertsSorted = myConcerts.slice().sort((a, b) => (a.date < b.date ? 1 : -1));
+    const iwasCards = myConcertsSorted
+      .map((c) => {
+        const where = [c.venue, c.city].filter(Boolean).join(" · ");
+        const headline =
+          c.eventTitle && String(c.eventTitle).trim() ? escapeHtml(c.eventTitle) : escapeHtml(c.artist);
+        return `<article class="profile-iwas-card" style="--pc-h:${typeof u.hue === "number" && !Number.isNaN(u.hue) ? u.hue : 30}">
+        <div class="profile-iwas-card__stub" aria-hidden="true"></div>
+        <div class="profile-iwas-card__body">
+          <time class="profile-iwas-card__date" datetime="${escapeHtml(c.date)}">${escapeHtml((c.date || "").slice(0, 10))}</time>
+          <h4 class="profile-iwas-card__headline">${headline}</h4>
+          <p class="profile-iwas-card__artist">${escapeHtml(c.artist)}</p>
+          <p class="profile-iwas-card__venue">${escapeHtml(where || "—")}</p>
+        </div>
+      </article>`;
       })
       .join("");
 
@@ -5173,7 +5217,7 @@
       .filter((l) => l.userId === uid)
       .map(
         (lst) =>
-          `<div class="list-row" data-list="${lst.id}"><div><strong>${escapeHtml(lst.title)}</strong> <span class="feed-note">${
+          `<div class="list-row profile-list-row" data-list="${lst.id}"><div><strong>${escapeHtml(lst.title)}</strong> <span class="feed-note">${
             lst.albumIds.length
           } albums</span></div><span>›</span></div>`
       )
@@ -5182,66 +5226,80 @@
     const perfVideos = performanceVideosForUser(uid);
     let perfVideosBlock = "";
     if (perfVideos.length) {
-      perfVideosBlock = `<h3 class="profile-section-title">Lives &amp; captations YouTube</h3>
+      perfVideosBlock = `<section class="profile-block profile-block--videos" aria-labelledby="profile-sec-yt"><h3 class="profile-section-title" id="profile-sec-yt">Lives &amp; captations YouTube</h3>
       <p class="feed-note perf-video-lead">${isMe ? "Concerts, sessions live ou captations — depuis une URL YouTube (données locales sur cet appareil)." : "Vidéos mises en avant par ce profil."}</p>
       <div class="perf-video-grid">${perfVideos
         .slice()
         .sort((a, b) => (String(a.addedAt || "") < String(b.addedAt || "") ? 1 : -1))
         .map((v) => perfVideoCardHtml(v, isMe))
         .filter(Boolean)
-        .join("")}</div>`;
+        .join("")}</div></section>`;
     } else if (isMe) {
-      perfVideosBlock = `<h3 class="profile-section-title">Lives &amp; captations YouTube</h3>
+      perfVideosBlock = `<section class="profile-block profile-block--videos" aria-labelledby="profile-sec-yt"><h3 class="profile-section-title" id="profile-sec-yt">Lives &amp; captations YouTube</h3>
       <p class="feed-note perf-video-lead">Partage une captation ou un live : colle le lien YouTube (watch, youtu.be, /live/, embed). Lecture possible directement sur ton profil.</p>
-      <p class="empty perf-video-empty">Aucune vidéo pour l’instant.</p>`;
+      <p class="empty perf-video-empty">Aucune vidéo pour l’instant.</p></section>`;
     }
     if (isMe) {
       perfVideosBlock += `<p class="perf-video-add-wrap"><button type="button" class="btn btn-primary btn-sm" id="btn-add-perf-video">+ Ajouter une vidéo YouTube</button></p>`;
     }
 
-    return `<div class="profile-view view-themed">
-      <div class="profile-cover" style="--ph:${u.hue}"></div>
+    const photoUrl = String(u.avatar_url || "").trim();
+    const coverCls = "profile-cover profile-hero__cover" + (photoUrl ? " profile-cover--photo" : "");
+    const coverStyle = `--ph:${u.hue}` + (photoUrl ? `;--profile-photo:url(${JSON.stringify(photoUrl)})` : "");
+
+    return `<div class="profile-view profile-view--premium view-themed">
+      <section class="profile-hero" aria-label="Bannière profil">
+        <div class="${coverCls}" style="${coverStyle}">
+          <div class="profile-hero__shine" aria-hidden="true"></div>
+          <div class="profile-hero__grain" aria-hidden="true"></div>
+        </div>
+      </section>
       <div class="profile-sheet">
-      <div class="profile-head">
-        <div class="avatar profile-head__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
-        <div>
-          <h1 class="page-title profile-head__title">${escapeHtml(u.name)}</h1>
-          <p class="page-sub profile-head__handle" style="margin:0">@${escapeHtml(u.handle)}</p>
-          <p class="profile-head__bio">${escapeHtml(u.bio)}</p>
+      <header class="profile-head">
+        <div class="profile-head__main">
+          ${userAvatarHtml(u, "profile-head__avatar")}
+          <div class="profile-head__text">
+            <p class="profile-head__kicker">Membre Soundlog</p>
+            <h1 class="page-title profile-head__title">${escapeHtml(u.name)}</h1>
+            <p class="page-sub profile-head__handle">@${escapeHtml(u.handle)}</p>
+            <p class="profile-head__bio">${escapeHtml(u.bio)}</p>
+          </div>
+        </div>
+        <div class="profile-head__actions">
           ${profileActions}
           ${friendTools}
         </div>
-      </div>
-      <div class="stats stats-5 profile-stats">
-        <div class="stat"><b>${stats.albums}</b><span class="feed-note">albums notés</span></div>
-        <div class="stat"><b>${stats.reviews}</b><span class="feed-note">critiques</span></div>
-        <div class="stat"><b>${stats.lists}</b><span class="feed-note">listes</span></div>
-        <div class="stat"><b>${stats.concerts}</b><span class="feed-note">I was there !</span></div>
-        <div class="stat"><b>${stats.avg}</b><span class="feed-note">moyenne</span></div>
+      </header>
+      <div class="stats stats-5 profile-stats" role="list">
+        <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">◉</span><b>${stats.albums}</b><span class="feed-note">albums notés</span></div>
+        <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">✎</span><b>${stats.reviews}</b><span class="feed-note">critiques</span></div>
+        <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">≡</span><b>${stats.lists}</b><span class="feed-note">listes</span></div>
+        <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">♪</span><b>${stats.concerts}</b><span class="feed-note">I was there !</span></div>
+        <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">★</span><b>${stats.avg}</b><span class="feed-note">moyenne</span></div>
       </div>
       ${perfVideosBlock}
-      <h3 class="profile-section-title">Écoutes récentes</h3>
-      <div class="grid-albums profile-recent-grid">${recent || `<p class="empty">Rien pour l’instant.</p>`}</div>
-      <h3 class="profile-section-title">I was there !</h3>
+      <section class="profile-block profile-block--recent" aria-labelledby="profile-sec-recent">
+      <h3 class="profile-section-title" id="profile-sec-recent">Écoutes récentes</h3>
+      ${recentSectionInner}
+      </section>
+      <section class="profile-block profile-block--iwas" aria-labelledby="profile-sec-iwas">
+      <h3 class="profile-section-title" id="profile-sec-iwas">I was there !</h3>
       ${
         myConcerts.length
-          ? `<ul class="concert-profile-list">${myConcerts
-              .sort((a, b) => (a.date < b.date ? 1 : -1))
-              .map(
-                (c) =>
-                  `<li><strong>${escapeHtml(c.date)}</strong> — ${escapeHtml(c.artist)}${
-                    c.eventTitle && String(c.eventTitle).trim() ? " · " + escapeHtml(c.eventTitle) : ""
-                  } <span class="feed-note">(${[c.venue, c.city].filter(Boolean).join(" · ") || "lieu ?"})</span></li>`
-              )
-              .join("")}</ul>`
-          : `<p class="empty" style="padding:1rem">Aucun concert enregistré.</p>`
+          ? `<div class="profile-iwas-grid">${iwasCards}</div>`
+          : `<p class="empty profile-empty--soft profile-iwas-empty">Aucun concert enregistré.</p>`
       }
-      ${isMe ? `<p><button type="button" class="btn btn-primary btn-sm" data-nav-view="iwas">+ Ajouter un concert</button></p>` : ""}
-      <h3 class="profile-section-title">Playlists importées <small class="feed-note" style="font-weight:400">Spotify · Deezer · YouTube · Last.fm · CSV</small></h3>
+      ${isMe ? `<p style="margin-top:0.85rem"><button type="button" class="btn btn-primary btn-sm" data-nav-view="iwas">+ Ajouter un concert</button></p>` : ""}
+      </section>
+      <section class="profile-block" aria-labelledby="profile-sec-imports">
+      <h3 class="profile-section-title" id="profile-sec-imports">Playlists importées <small class="feed-note" style="font-weight:400">Spotify · Deezer · YouTube · Last.fm · CSV</small></h3>
       <div id="profile-imports-block" class="imports-block"><p class="empty" style="padding:0.5rem">Chargement…</p></div>
       ${isMe ? `<p style="margin-top:0.4rem"><button type="button" class="btn btn-ghost btn-sm" data-open-imports>+ Importer une nouvelle playlist</button></p>` : ""}
-      <h3 class="profile-section-title">Listes</h3>
+      </section>
+      <section class="profile-block" aria-labelledby="profile-sec-lists">
+      <h3 class="profile-section-title" id="profile-sec-lists">Listes</h3>
       ${lists || `<p class="empty">Aucune liste.</p>`}
+      </section>
       </div>
     </div>`;
   }
@@ -7740,7 +7798,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=12")
+        .register("/sw.js?v=13")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();

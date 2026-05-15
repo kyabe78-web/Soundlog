@@ -1,5 +1,5 @@
 /* Soundlog — service worker (offline shell, network-first for app code) */
-const CACHE = "soundlog-shell-v10";
+const CACHE = "soundlog-shell-v11";
 const SHELL = [
   "/",
   "/index.html",

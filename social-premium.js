@@ -530,7 +530,9 @@
     );
   }
 
-  function renderCircle() {
+  function renderCircle(opts) {
+    opts = opts || {};
+    const compactHero = !!opts.compactHero;
     d.ensureSocialArrays();
     const circleTab = d.state.socialCircleTab || "feed";
     const nFriends = d.state.friends.length;
@@ -545,15 +547,7 @@
     else if (circleTab === "gigs") panel = renderGigsPanel();
     else panel = renderFeedPanel();
 
-    return (
-      '<div class="view-page social-hub soc-page view-social-themed">' +
-      '<header class="soc-hero">' +
-      '<div class="soc-hero__copy">' +
-      '<p class="soc-hero__kicker">Cercle musical</p>' +
-      '<h1 class="soc-hero__title">Communauté</h1>' +
-      '<p class="soc-hero__lead">Fil d’écoutes, compatibilité, murmures et concerts — ' +
-      (signed ? "synchronisé avec ton compte." : "connecte-toi pour rejoindre la communauté en ligne.") +
-      "</p></div>" +
+    const statsBlock =
       '<div class="soc-hero__stats">' +
       '<div class="soc-stat"><b>' +
       nFriends +
@@ -566,10 +560,37 @@
       '</b><span>demandes</span></div>' +
       '<div class="soc-stat"><b>' +
       nListen +
-      '</b><span>écoutes cercle</span></div></div>' +
+      '</b><span>écoutes cercle</span></div></div>';
+
+    const actionsBlock =
       '<div class="soc-hero__actions">' +
       '<button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messages</button>' +
-      '<button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Fil accueil</button></div></header>' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Fil accueil</button></div>';
+
+    const hero = compactHero
+      ? '<header class="soc-hero soc-hero--compact" aria-label="Ton cercle">' +
+        '<p class="soc-hero__compact-lead">' +
+        (signed
+          ? "Fil synchronisé avec ton compte — réagis, invite et découvre."
+          : "Mode invité : tout est local sur cet appareil — connecte-toi pour le fil en ligne.") +
+        "</p>" +
+        statsBlock +
+        actionsBlock +
+        "</header>"
+      : '<header class="soc-hero">' +
+        '<div class="soc-hero__copy">' +
+        '<p class="soc-hero__kicker">Cercle musical</p>' +
+        '<h1 class="soc-hero__title">Communauté</h1>' +
+        '<p class="soc-hero__lead">Fil d’écoutes, compatibilité, murmures et concerts — ' +
+        (signed ? "synchronisé avec ton compte." : "connecte-toi pour rejoindre la communauté en ligne.") +
+        "</p></div>" +
+        statsBlock +
+        actionsBlock +
+        "</header>";
+
+    return (
+      '<div class="view-page social-hub soc-page view-social-themed">' +
+      hero +
       renderNotifStrip() +
       '<nav class="soc-tabs" aria-label="Sections cercle">' +
       tab("feed", "Fil", circleTab === "feed") +

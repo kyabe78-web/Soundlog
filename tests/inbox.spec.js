@@ -27,7 +27,7 @@ test.describe("Messagerie", () => {
   });
 
   test("bundle DM expose la recherche globale (pas l’ancien picker)", async ({ page }) => {
-    const res = await page.request.get("/app.js?v=10");
+    const res = await page.request.get("/app.js?v=11");
     const alt = res.ok() ? res : await page.request.get("/app.js");
     expect(alt.ok()).toBeTruthy();
     const body = await alt.text();

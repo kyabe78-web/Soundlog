@@ -2600,7 +2600,9 @@
   }
 
   function renderSocialHub() {
-    const tab = route.hubTab || state.socialTab || "community";
+    const raw = route.hubTab || state.socialTab || "community";
+    const tab = raw === "live" ? "live" : "community";
+    if (route.hubTab !== tab) route.hubTab = tab;
     const tabs = hubTabsHtml(
       [
         { id: "community", label: "Cercle" },
@@ -2870,10 +2872,17 @@
       route.searchQuery = null;
       $search.value = "";
     }
-    if (extra && extra.hubTab != null) route.hubTab = extra.hubTab;
-    else if (view === "explore") route.hubTab = route.hubTab || state.exploreTab || "albums";
-    else if (view === "carnet") route.hubTab = route.hubTab || state.carnetTab || "journal";
-    else if (view === "social") route.hubTab = route.hubTab || state.socialTab || "community";
+    if (extra && extra.hubTab != null) {
+      route.hubTab = extra.hubTab;
+    } else if (view === "explore") {
+      route.hubTab = state.exploreTab || "albums";
+    } else if (view === "carnet") {
+      route.hubTab = state.carnetTab || "journal";
+    } else if (view === "social") {
+      route.hubTab = state.socialTab || "community";
+    } else {
+      route.hubTab = null;
+    }
     window.location.hash = buildHash();
     render();
   }
@@ -2951,7 +2960,10 @@
     else if (h === "listes") route.view = "lists";
     else if (h === "i-was-there") route.view = "iwas";
     else if (h === "a-ecouter") route.view = "wishlist";
-    else if (h === "communaute") route.view = "social";
+    else if (h === "communaute") {
+      route.view = "social";
+      route.hubTab = "community";
+    }
     else if (h.startsWith("messagerie/")) {
       route.view = "inbox";
       route.dmThreadId = h.slice("messagerie/".length);
@@ -3469,7 +3481,8 @@
   }
 
   function renderSocial() {
-    if (window.SLSocial && window.SLSocial.renderCircle) return window.SLSocial.renderCircle();
+    if (window.SLSocial && window.SLSocial.renderCircle)
+      return window.SLSocial.renderCircle({ compactHero: true });
     return `<div class="view-page social-hub soc-page"><p class="empty">Module social indisponible — recharge la page.</p></div>`;
   }
 
@@ -7648,7 +7661,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=10")
+        .register("/sw.js?v=11")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();

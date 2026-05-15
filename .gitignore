@@ -8,5 +8,9 @@ node_modules/
 .cursor/
 *.local
 
-# Snippets / brouillons locaux (non chargés en prod)
-scripts/
+# Secrets locaux (utiliser config.example.js + variables Vercel en prod)
+config.js
+
+# Snippets / brouillons locaux (non chargés en prod) — sauf generate-config
+scripts/*
+!scripts/generate-config.js

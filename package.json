@@ -2,9 +2,10 @@
   "name": "soundlog",
   "version": "1.0.0",
   "private": true,
-  "description": "Carnet d’écoutes musicales — clone Letterboxd pour la musique (statique, sans backend).",
+  "description": "Carnet d’écoutes musicales — local + sync Supabase optionnelle.",
   "scripts": {
     "start": "npx --yes serve . -l 3000",
-    "preview": "npx --yes serve . -l 4173"
+    "preview": "npx --yes serve . -l 4173",
+    "build": "node scripts/generate-config.js"
   }
 }

@@ -179,12 +179,13 @@
 
   function renderSuggestAside() {
     const ids = d.feedCircleIds();
+    if (!d.showDemoCarnet || !d.showDemoCarnet()) return "";
     const candidates = d.USERS.filter((u) => u.id !== "me" && !ids.has(u.id)).slice(0, 3);
     if (!candidates.length) return "";
     return (
       '<div class="soc-aside-card">' +
       '<h3>Suggestions</h3>' +
-      '<p class="feed-note">Profils à découvrir dans le carnet démo.</p>' +
+      '<p class="feed-note">Profils du carnet de démonstration.</p>' +
       '<ul class="soc-suggest-list">' +
       candidates
         .map(
@@ -340,9 +341,16 @@
             .join("") +
           "</div></div>";
 
+    const localShoutBtn =
+      !signed || (d.showDemoCarnet && d.showDemoCarnet())
+        ? '<button type="button" class="btn btn-ghost btn-sm" id="social-add-shout">Publier (local)</button>'
+        : "";
     const cloudShoutBtn = signed
-      ? '<button type="button" class="btn btn-ghost btn-sm" id="soc-shout-cloud">Murmure cloud</button>'
+      ? '<button type="button" class="btn btn-primary btn-sm" id="soc-shout-cloud">Publier</button>'
       : "";
+    const composeHint = signed
+      ? '<p class="soc-compose__hint feed-note">Visible par la communauté connectée.</p>'
+      : '<p class="soc-compose__hint feed-note">Stocké sur cet appareil uniquement.</p>';
 
     return (
       '<div class="soc-layout soc-layout--feed">' +
@@ -356,12 +364,16 @@
       "</nav>" +
       renderActivityRail() +
       '<section class="soc-compose panel">' +
+      '<header class="soc-compose__head"><h3 class="soc-compose__title">Murmures</h3>' +
+      (signed ? '<span class="home-murmurs__badge">Communauté</span>' : '<span class="home-murmurs__badge">Local</span>') +
+      "</header>" +
+      composeHint +
       '<div class="soc-compose__row">' +
-      '<input type="text" id="social-shout-text" maxlength="280" placeholder="Un murmure sur une sortie, une envie…" />' +
-      '<button type="button" class="btn btn-primary" id="social-add-shout">Publier</button>' +
+      '<input type="text" id="social-shout-text" maxlength="280" placeholder="Un mot sur une sortie, une envie…" />' +
       cloudShoutBtn +
+      localShoutBtn +
       "</div>" +
-      '<div id="soc-cloud-shoutouts" class="home-murmurs__list"></div>' +
+      (signed ? '<div id="soc-cloud-shoutouts" class="home-murmurs__list"></div>' : "") +
       "</section>" +
       '<div class="soc-feed-stream">' +
       stream +
@@ -461,7 +473,8 @@
 
   function renderDiscoverPanel() {
     const demoUserIds = new Set(d.USERS.map((u) => u.id));
-    const discoverHtml = d.USERS.filter((u) => u.id !== "me")
+    const discoverHtml = d.showDemoCarnet && d.showDemoCarnet()
+      ? d.USERS.filter((u) => u.id !== "me")
       .map((u) => {
         const fol = (d.state.follows || []).includes(u.id);
         const fr = d.isFriend(u.id);
@@ -497,7 +510,8 @@
           '">Profil</button></div></article>'
         );
       })
-      .join("");
+      .join("")
+      : "";
 
     const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
     const cloudPeers = (window.__slCloudPeers
@@ -551,8 +565,13 @@
       })
       .join("");
 
+    const demoHint =
+      discoverHtml && d.showDemoCarnet && d.showDemoCarnet()
+        ? '<p class="feed-note soc-discover-demo-label">Carnet de démonstration</p>'
+        : "";
     return (
-      '<div class="soc-invite-banner"><div><strong>Élargis ton cercle</strong><p class="feed-note">Suis des profils du carnet démo ou des comptes Soundlog connectés.</p></div><button type="button" class="btn btn-ghost btn-sm" id="btn-open-invite-modal">Inviter</button></div>' +
+      '<div class="soc-invite-banner"><div><strong>Élargis ton cercle</strong><p class="feed-note">Suis des profils Soundlog ou invite des ami·es.</p></div><button type="button" class="btn btn-ghost btn-sm" id="btn-open-invite-modal">Inviter</button></div>' +
+      demoHint +
       '<div class="soc-discover-list">' +
       cloudHtml +
       discoverHtml +

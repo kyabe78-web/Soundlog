@@ -46,6 +46,24 @@
     { id: "u3", name: "Adagio", handle: "adagio", bio: "Classique moderne et musiques de film.", hue: 200 },
   ];
 
+  const DEMO_USER_IDS = new Set(USERS.filter((u) => u.id !== "me").map((u) => u.id));
+
+  function isDemoUserId(userId) {
+    return DEMO_USER_IDS.has(userId);
+  }
+
+  /** Carnet fictif (Marie, Léo, Adagio) — masqué par défaut quand tu es connecté·e au cloud. */
+  function showDemoCarnet() {
+    if (!cloudSignedIn()) return true;
+    return !!(state.settings && state.settings.showDemoCarnet);
+  }
+
+  function includeUserInCircle(userId) {
+    if (userId === "me") return true;
+    if (isDemoUserId(userId) && !showDemoCarnet()) return false;
+    return true;
+  }
+
   function defaultAdaptive() {
     return { v: 1, nav: {}, genreInterest: {}, listenLogs: 0 };
   }
@@ -135,7 +153,13 @@
       ],
       wishlist: ["a15", "a31", "a28"],
       importedAlbums: [],
-      settings: { youtubeApiKey: "", alertCity: "Paris", desktopAlerts: false, musicCountry: "FR" },
+      settings: {
+        youtubeApiKey: "",
+        alertCity: "Paris",
+        desktopAlerts: false,
+        musicCountry: "FR",
+        showDemoCarnet: true,
+      },
       profile: {
         displayName: "Toi",
         handle: "moi",
@@ -398,6 +422,24 @@
   function syncAccountChrome() {
     updateHeaderUser();
     updateSidebarAccount();
+    updateSiteFooter();
+  }
+
+  function updateSiteFooter() {
+    const el = document.getElementById("site-footer-text");
+    if (!el) return;
+    if (!SLCloud || !SLCloud.available) {
+      el.textContent =
+        "Mode invité — carnet et écoutes sur cet appareil. Extraits 30 s via Apple Music et Deezer.";
+      return;
+    }
+    if (cloudSignedIn()) {
+      el.textContent =
+        "Compte synchronisé — carnet, social et messages sur tes appareils. Extraits 30 s · liens Spotify et YouTube.";
+    } else {
+      el.textContent =
+        "Connecte-toi pour synchroniser ton carnet et rejoindre la communauté. Extraits 30 s · données locales en attendant.";
+    }
   }
 
   let libraryQuery = "";
@@ -2575,7 +2617,14 @@
   }
 
   function feedCircleIds() {
-    return new Set(["me", ...(state.follows || []), ...(state.friends || [])]);
+    const ids = new Set(["me"]);
+    (state.follows || []).forEach((id) => {
+      if (includeUserInCircle(id)) ids.add(id);
+    });
+    (state.friends || []).forEach((id) => {
+      if (includeUserInCircle(id)) ids.add(id);
+    });
+    return ids;
   }
 
   function formatRelativeFeedTime(iso) {
@@ -2992,311 +3041,7 @@
 
   function renderSocial() {
     if (window.SLSocial && window.SLSocial.renderCircle) return window.SLSocial.renderCircle();
-    ensureSocialArrays();
-    const zone = String((state.settings && state.settings.alertCity) || "").trim();
-    const desk = !!(state.settings && state.settings.desktopAlerts);
-    const favChips =
-      state.favoriteArtists.length === 0
-        ? `<p class="empty">Aucun artiste suivi pour les concerts. Ouvre une fiche album et active « Suivre pour les concerts ».</p>`
-        : `<div class="artist-chip-row">${state.favoriteArtists
-            .map(
-              (a) =>
-                `<span class="artist-chip">${escapeHtml(a)}<button type="button" class="chip-x" data-rm-fav="${encodeURIComponent(
-                  a
-                )}" title="Retirer" aria-label="Retirer">×</button></span>`
-            )
-            .join("")}</div>`;
-
-    const friendsHtml =
-      state.friends.length === 0
-        ? `<p class="empty">Pas encore d’ami·e — envoie une demande depuis un profil.</p>`
-        : `<div class="social-card-grid">${state.friends
-            .map((fid) => {
-              const u = userById(fid);
-              if (!u) return "";
-              return `<div class="social-card">
-            <div class="avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
-            <div class="social-card-text"><strong>${escapeHtml(u.name)}</strong><span class="feed-note">@${escapeHtml(u.handle)}</span></div>
-            <button type="button" class="btn btn-ghost btn-sm" data-profile="${u.id}">Profil</button>
-          </div>`;
-            })
-            .join("")}</div>`;
-
-    const incomingHtml =
-      state.incomingFriendRequests.length === 0
-        ? `<p class="feed-note">Aucune demande en attente.</p>`
-        : `<ul class="req-list">${state.incomingFriendRequests
-            .map((r) => {
-              const u = userById(r.fromUserId);
-              if (!u) return "";
-              return `<li class="req-row">
-            <span><strong>${escapeHtml(u.name)}</strong> veut être ami·e</span>
-            <span>
-              <button type="button" class="btn btn-primary btn-sm" data-accept-friend="${escapeHtml(r.id)}">Accepter</button>
-              <button type="button" class="btn btn-ghost btn-sm" data-decline-friend="${escapeHtml(r.id)}">Refuser</button>
-            </span>
-          </li>`;
-            })
-            .join("")}</ul>`;
-
-    const outgoingHtml =
-      state.outgoingFriendRequests.length === 0
-        ? `<p class="feed-note">Aucune demande envoyée.</p>`
-        : `<ul class="req-list">${state.outgoingFriendRequests
-            .map((r) => {
-              const u = userById(r.toUserId);
-              if (!u) return "";
-              return `<li class="req-row">
-            <span>En attente chez <strong>${escapeHtml(u.name)}</strong></span>
-            <button type="button" class="btn btn-ghost btn-sm" data-cancel-friend-out="${escapeHtml(r.toUserId)}">Annuler</button>
-          </li>`;
-            })
-            .join("")}</ul>`;
-
-    const discoverHtml = USERS.filter((u) => u.id !== "me")
-      .map((u) => {
-        const fol = (state.follows || []).includes(u.id);
-        const fr = isFriend(u.id);
-        return `<div class="social-card social-card--wide">
-        <div class="avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
-        <div class="social-card-text">
-          <strong>${escapeHtml(u.name)}</strong>
-          <span class="feed-note">@${escapeHtml(u.handle)} — ${escapeHtml(u.bio)}</span>
-        </div>
-        <div class="social-card-actions">
-          <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${u.id}">${fol ? "Abonné" : "Suivre"}</button>
-          ${
-            fr
-              ? `<span class="friend-badge-inline">Ami·e</span>`
-              : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${u.id}">Demande d’ami</button>`
-          }
-          <button type="button" class="btn btn-ghost btn-sm" data-profile="${u.id}">Profil</button>
-        </div>
-      </div>`;
-      })
-      .join("");
-
-    const demoUserIds = new Set(USERS.map((u) => u.id));
-    const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
-    const cloudDiscoverPeers = (window.__slCloudPeers
-      ? [...window.__slCloudPeers.keys()].filter((id) => {
-          if (!isCloudUuid(id)) return false;
-          if (meCloud && id === meCloud) return false;
-          return !demoUserIds.has(id);
-        })
-      : []
-    ).slice(0, 24);
-    const cloudDiscoverHtml =
-      cloudDiscoverPeers.length === 0
-        ? ""
-        : `<h3 class="social-subh">Profils Soundlog</h3><div class="social-card-stack">${cloudDiscoverPeers
-            .map((cid) => {
-              const p = window.__slCloudPeers.get(cid);
-              if (!p) return "";
-              const fr = isFriend(cid);
-              const pending = outgoingRequestTo(cid);
-              const fol = (state.follows || []).includes(cid);
-              const hue = p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x");
-              return `<div class="social-card social-card--wide">
-        <div class="avatar" style="background:hsl(${hue},55%,42%)">${escapeHtml((p.name || "?").charAt(0))}</div>
-        <div class="social-card-text">
-          <strong>${escapeHtml(p.name || "?")}</strong>
-          <span class="feed-note">@${escapeHtml(p.handle || "")}</span>
-        </div>
-        <div class="social-card-actions">
-          <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${escapeHtml(cid)}">${fol ? "Abonné" : "Suivre"}</button>
-          ${
-            fr
-              ? `<span class="friend-badge-inline">Ami·e</span>`
-              : pending
-                ? `<span class="feed-note">En attente</span>`
-                : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${escapeHtml(cid)}">Demande d’ami</button>`
-          }
-          <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(cid)}">Profil</button>
-        </div>
-      </div>`;
-            })
-            .join("")}</div>`;
-
-    const shoutForm = `<div class="panel shout-panel">
-      <h3>Murmures du disquaire</h3>
-      <p class="feed-note">Petit pavé public (démo locale) — partagé avec les profils fictifs du carnet.</p>
-      <div class="shout-form-row">
-        <input type="text" id="social-shout-text" maxlength="280" placeholder="Un mot sur une sortie, une envie…" />
-        <button type="button" class="btn btn-primary" id="social-add-shout">Publier</button>
-      </div>
-      <ul class="shout-list">${(state.shoutouts || [])
-        .slice()
-        .sort((a, b) => (a.at < b.at ? 1 : -1))
-        .slice(0, 12)
-        .map((s) => {
-          const u = userById(s.userId);
-          return `<li><span class="feed-note">${escapeHtml((s.at || "").slice(0, 10))}</span> — <button type="button" class="link" data-profile="${u.id}">${escapeHtml(
-            u.name
-          )}</button> : ${escapeHtml(s.text)}</li>`;
-        })
-        .join("")}</ul>
-    </div>`;
-
-    const manualRows = (state.manualTourDates || [])
-      .slice()
-      .sort((a, b) => (a.datetime < b.datetime ? -1 : 1))
-      .map((row) => {
-        const evKey = tourSeenKey(row.artist, row.datetime, [row.venue, row.city].filter(Boolean).join(" — "));
-        const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[evKey]);
-        return `<tr>
-        <td>${escapeHtml(row.artist)}</td>
-        <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
-        <td>${escapeHtml(row.venue || "")}</td>
-        <td>${escapeHtml(row.city || "")}</td>
-        <td>
-          <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
-            data-ev-key="${escapeHtml(evKey)}"
-            data-ev-artist="${escapeHtml(row.artist)}"
-            data-ev-dt="${escapeHtml(row.datetime || "")}"
-            data-ev-venue="${escapeHtml(row.venue || "")}"
-            data-ev-city="${escapeHtml(row.city || "")}"
-            data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
-          <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(evKey)}"></div>
-        </td>
-        <td><button type="button" class="btn btn-ghost btn-sm" data-rm-manual-tour="${escapeHtml(row.id)}">Retirer</button></td>
-      </tr>`;
-      })
-      .join("");
-
-    const previewRows =
-      (state.upcomingTourPreview || []).length === 0
-        ? `<tr><td colspan="6" class="empty">Rien pour l’instant — lance « Vérifier les dates maintenant ».</td></tr>`
-        : (state.upcomingTourPreview || [])
-            .map((row) => {
-              const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[row.key]);
-              return `<tr>
-            <td>${escapeHtml(row.artist)}</td>
-            <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
-            <td>${escapeHtml(row.venue || "")}</td>
-            <td>${escapeHtml(row.city || "")}</td>
-            <td><span class="feed-note">${row.source === "bit" ? "API" : "Manuel"}</span></td>
-            <td>
-              <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
-                data-ev-key="${escapeHtml(row.key)}"
-                data-ev-artist="${escapeHtml(row.artist)}"
-                data-ev-dt="${escapeHtml(row.datetime || "")}"
-                data-ev-venue="${escapeHtml(row.venue || "")}"
-                data-ev-city="${escapeHtml(row.city || "")}"
-                data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
-              <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(row.key)}"></div>
-            </td>
-          </tr>`;
-            })
-            .join("");
-
-    const sentInv = (state.sentInvites || []).slice().reverse().slice(0, 12);
-    const sentInvitesHtml =
-      sentInv.length === 0
-        ? `<p class="feed-note">Aucun lien généré sur cet appareil pour l’instant.</p>`
-        : `<ul class="invite-sent-list">${sentInv
-            .map(
-              (x) =>
-                `<li><span class="feed-note">${escapeHtml((x.createdAt || "").slice(0, 16).replace("T", " "))}</span> — jeton <code>${escapeHtml(
-                  String(x.token || "")
-                )}</code></li>`
-            )
-            .join("")}</ul>`;
-
-    const invitePanel = `<section class="panel social-section invite-panel">
-      <h2>Inviter quelqu’un (local)</h2>
-      <p class="feed-note">Génère un lien à copier (message, mail…). La personne l’ouvre sur <strong>son</strong> navigateur : elle crée <strong>son</strong> carnet local. Aucun serveur Soundlog — pas de synchro automatique entre machines.</p>
-      <p><button type="button" class="btn btn-primary" id="btn-open-invite-modal">Créer un lien d’invitation</button></p>
-      <h3 style="margin-top:1rem;font-size:1rem">Liens créés sur cet appareil</h3>
-      ${sentInvitesHtml}
-    </section>`;
-
-    const nPendIn = (state.incomingFriendRequests || []).length;
-    const signedCloud = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
-    const socialDash = `<section class="panel social-dash" aria-label="Aperçu de ton réseau">
-      <div class="social-dash__grid">
-        <article class="social-dash__tile"><strong>${state.friends.length}</strong><span>ami·es</span></article>
-        <article class="social-dash__tile"><strong>${(state.follows || []).length}</strong><span>suivi·es</span></article>
-        <article class="social-dash__tile"><strong>${nPendIn}</strong><span>demandes reçues</span></article>
-        <article class="social-dash__tile social-dash__tile--cta">
-          <button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messages</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Fil</button>
-        </article>
-      </div>
-      <p class="feed-note social-dash__hint">${
-        signedCloud
-          ? "Graphe social synchronisé avec ton compte."
-          : "Passe en mode connecté pour DM, fil Découvrir et demandes d’ami en ligne."
-      }</p>
-    </section>`;
-
-    return `<div class="view-page social-hub view-social-themed">
-      <header class="social-hero">
-        <div>
-          <p class="social-kicker">Cercle &amp; alertes</p>
-          <h1 class="page-title">Communauté</h1>
-          <p class="page-sub">Ami·es, <strong>messages privés</strong>, test de <strong>compatibilité musicale</strong>, murmures et <strong>alertes concerts</strong>. Dis si tu es intéressé·e par une date : tes ami·es connecté·es le verront.</p>
-          <p class="social-hero-tools"><button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messagerie (ami·es)</button></p>
-        </div>
-      </header>
-      ${socialDash}
-
-      ${invitePanel}
-
-      <section class="panel social-section">
-        <h2>Concerts à proximité</h2>
-        <p class="feed-note">On compare les prochaines dates (manuelles ou API) avec ta ville de référence.</p>
-        <div class="social-tools">
-          <label class="social-inline"><span>Ville / région</span><input type="text" id="social-city" value="${escapeHtml(zone)}" placeholder="ex. Paris" /></label>
-          <label class="social-inline social-check"><input type="checkbox" id="social-desk" ${desk ? "checked" : ""} /> <span>Alertes bureau (navigateur)</span></label>
-          <button type="button" class="btn btn-ghost btn-sm" id="social-notif-perm">Demander la permission</button>
-          <button type="button" class="btn btn-primary" id="social-sync-tours">Vérifier les dates maintenant</button>
-        </div>
-        ${favChips}
-        <h3 style="margin-top:1.25rem">Ajouter une date manuellement</h3>
-        <p class="feed-note">Si l’API est bloquée, enregistre ici une annonce (festivals, salles, presse).</p>
-        <div class="manual-tour-grid">
-          <input type="text" id="social-man-artist" placeholder="Artiste" />
-          <input type="datetime-local" id="social-man-date" />
-          <input type="text" id="social-man-venue" placeholder="Salle" />
-          <input type="text" id="social-man-city" placeholder="Ville" />
-        </div>
-        <p><button type="button" class="btn btn-primary" id="social-man-add">Ajouter cette date</button></p>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Envies</th><th></th></tr></thead>
-            <tbody>${manualRows || `<tr><td colspan="6" class="empty">Aucune date manuelle.</td></tr>`}</tbody>
-          </table>
-        </div>
-        <h3 style="margin-top:1.5rem">Prochains concerts repérés</h3>
-        <p class="feed-note">Liste mise à jour quand tu cliques « Vérifier les dates maintenant » (même clé de lieu/date pour tout le monde : tes ami·es Soundlog voient qui est partant·e).</p>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Source</th><th>Envies</th></tr></thead>
-            <tbody>${previewRows}</tbody>
-          </table>
-        </div>
-      </section>
-
-      <div class="social-two">
-        <section class="panel social-section">
-          <h2>Ami·es</h2>
-          ${friendsHtml}
-          <h3 style="margin-top:1.25rem">Demandes reçues</h3>
-          ${incomingHtml}
-          <h3 style="margin-top:1.25rem">Demandes envoyées</h3>
-          ${outgoingHtml}
-        </section>
-        <section class="panel social-section">
-          <h2>Repérer des profils</h2>
-          ${cloudDiscoverHtml}
-          <h3 class="social-subh">Carnet de démo (local)</h3>
-          <div class="social-card-stack">${discoverHtml}</div>
-        </section>
-      </div>
-
-      ${shoutForm}
-    </div>`;
+    return `<div class="view-page social-hub soc-page"><p class="empty">Module social indisponible — recharge la page.</p></div>`;
   }
 
   const DM_PAYLOAD_PREFIX = "SLDM:";
@@ -3714,7 +3459,10 @@
   }
 
   function feedStoryStripHtml() {
-    const ids = ["me", ...new Set([...(state.follows || []), ...(state.friends || [])])];
+    const ids = [
+      "me",
+      ...new Set([...(state.follows || []), ...(state.friends || [])].filter((id) => includeUserInCircle(id))),
+    ];
     return `<div class="feed-stories" aria-label="Raccourcis profils">
       ${ids
         .map((id) => {
@@ -3742,13 +3490,17 @@
   }
 
   function renderLocalShoutCards() {
+    if (cloudSignedIn() && !showDemoCarnet()) return "";
     ensureSocialArrays();
     const rows = (state.shoutouts || [])
       .slice()
       .sort((a, b) => (a.at < b.at ? 1 : -1))
       .slice(0, 4);
     if (!rows.length) return "";
-    return `<section class="home-murmurs home-murmurs--local"><h2 class="home-murmurs__title">Murmures locaux</h2><div class="home-murmurs__list">${rows
+    const badge = cloudSignedIn()
+      ? `<span class="home-murmurs__badge">Démo locale</span>`
+      : `<span class="home-murmurs__badge">Sur cet appareil</span>`;
+    return `<section class="home-murmurs home-murmurs--local"><header class="home-murmurs__head"><h2 class="home-murmurs__title">Murmures</h2>${badge}</header><div class="home-murmurs__list">${rows
       .map((s) => {
         const u = userById(s.userId);
         if (!u) return "";
@@ -3759,12 +3511,12 @@
 
   function renderHomeMurmursBlock() {
     const signed = cloudSignedIn();
+    if (signed) {
+      return `<div class="home-murmurs-wrap"><section class="home-murmurs home-murmurs--cloud"><header class="home-murmurs__head"><h2 class="home-murmurs__title">Murmures</h2><span class="home-murmurs__badge">Communauté</span><button type="button" class="btn btn-ghost btn-sm" id="home-shoutouts-add">Publier</button></header><div id="home-cloud-shoutouts" class="home-murmurs__list"><p class="feed-note">Chargement…</p></div></section>${renderLocalShoutCards()}</div>`;
+    }
     const local = renderLocalShoutCards();
-    const cloud = signed
-      ? `<section class="home-murmurs home-murmurs--cloud"><header class="home-murmurs__head"><h2 class="home-murmurs__title">Murmures Soundlog</h2><button type="button" class="btn btn-ghost btn-sm" id="home-shoutouts-add">Publier</button></header><div id="home-cloud-shoutouts" class="home-murmurs__list"><p class="feed-note">Chargement…</p></div></section>`
-      : "";
-    if (!local && !cloud) return "";
-    return `<div class="home-murmurs-wrap">${local}${cloud}</div>`;
+    if (local) return `<div class="home-murmurs-wrap">${local}</div>`;
+    return `<div class="home-murmurs-wrap home-murmurs-wrap--hint"><p class="feed-note">Connecte-toi pour publier des murmures visibles par la communauté.</p></div>`;
   }
 
   function injectHomeFeedExtras() {
@@ -4890,7 +4642,6 @@
       }
     }
     updateHeaderNotifications();
-    injectCloudShoutoutsBlock();
     injectCloudCommentsButtons();
     injectProfileImports();
     injectDiscoverRecos();
@@ -5298,6 +5049,8 @@
       publicFeedPostHtml,
       markNotificationRead,
       persist,
+      showDemoCarnet,
+      isDemoUserId,
     });
   }
 
@@ -5325,33 +5078,6 @@
   }
   window.__sl = window.__sl || {};
   window.__sl.resetRecoCache = resetRecoCache;
-
-  // Bloc "Murmures de la communauté" injecté sur la home quand cloud connecté
-  function injectCloudShoutoutsBlock() {
-    if (route.view === "home" && document.getElementById("home-cloud-shoutouts")) return;
-    if (!(route.view === "home" || (route.view === "social"))) return;
-    if (!window.SLCloud || !window.SLCloud.isSignedIn()) return;
-    if (document.getElementById("cloud-shoutouts-block")) return;
-    const wrap = document.createElement("section");
-    wrap.id = "cloud-shoutouts-block";
-    wrap.className = "panel feed-shoutouts";
-    wrap.innerHTML = `<div class="feed-shoutouts__header">
-        <h2 class="kicker" style="margin:0">Murmures du disquaire</h2>
-        <button type="button" class="btn btn-ghost btn-sm" id="cloud-shoutouts-add">Publier</button>
-      </div>
-      <div id="cloud-shoutouts-list" class="cloud-shoutouts"><p class="feed-note">Chargement…</p></div>`;
-    // insertion en tête du main contenu
-    const heroEnd = $main.querySelector(".feed-page, .social-hub, .page-title")?.parentElement || $main;
-    heroEnd.insertBefore(wrap, $main.firstChild);
-    document.getElementById("cloud-shoutouts-add").addEventListener("click", () => {
-      if (window.__sl && window.__sl.openShoutout) window.__sl.openShoutout();
-    });
-    if (window.__sl && window.__sl.cloudShoutouts && window.__sl.cloudShoutouts.length) {
-      window.__sl.renderCloudShoutoutsInto(document.getElementById("cloud-shoutouts-list"));
-    } else if (window.__sl && window.__sl.refreshShoutouts) {
-      window.__sl.refreshShoutouts();
-    }
-  }
 
   // Sur le feed home, ajoute un bouton "Commentaires (live)" sur les feed cards quand cloud connecté
   function injectCloudCommentsButtons() {
@@ -7146,10 +6872,15 @@
       ...cloudOut,
       ...(state.outgoingFriendRequests || []).filter((r) => !outTo.has(r.toUserId)),
     ];
-    const demoFriendIds = (state.friends || []).filter((id) => !isCloudUuid(id));
+    const demoFriendIds = showDemoCarnet() ? (state.friends || []).filter((id) => !isCloudUuid(id)) : [];
     const cloudFriendProfiles = data.friends || [];
     const cloudFriendIds = cloudFriendProfiles.map((p) => p.id).filter(Boolean);
     state.friends = [...new Set([...demoFriendIds, ...cloudFriendIds])];
+    if (cloudId) {
+      state.settings = state.settings || {};
+      if (state.settings.showDemoCarnet === true) state.settings.showDemoCarnet = false;
+      state.follows = (state.follows || []).filter((id) => includeUserInCircle(id));
+    }
     registerCloudPeerProfiles(cloudFriendProfiles);
     const needProf = new Set();
     cloudIncoming.forEach((r) => needProf.add(r.fromUserId));
@@ -7375,6 +7106,8 @@
           <label>Bio <textarea id="auth-bio">${escapeHtml(me.bio || "")}</textarea></label>
           <label>Ville / région <input type="text" id="auth-city" value="${escapeHtml(me.city || "")}" /></label>
           <p class="feed-note">Email : <strong>${escapeHtml((SLCloud.session && SLCloud.session.user && SLCloud.session.user.email) || "—")}</strong></p>
+          <label class="social-check auth-demo-toggle"><input type="checkbox" id="auth-show-demo" ${showDemoCarnet() ? "checked" : ""} /> Afficher le carnet de démonstration (Marie, Léo, Adagio)</label>
+          <p class="feed-note">Désactivé par défaut après connexion pour ne mélanger que ton vrai cercle.</p>
           <p class="auth-error" id="auth-err" hidden></p>
           <p class="modal-actions">
             <button type="button" class="btn btn-primary" id="auth-save">Enregistrer</button>
@@ -7391,6 +7124,16 @@
         document.getElementById("profile-open-stats").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openStats)(); });
         document.getElementById("profile-open-imports").addEventListener("click", () => { closeModal(); openPlatformPickerModal(); });
         document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
+        const demoToggle = document.getElementById("auth-show-demo");
+        if (demoToggle) {
+          demoToggle.addEventListener("change", () => {
+            state.settings = state.settings || {};
+            state.settings.showDemoCarnet = !!demoToggle.checked;
+            persist();
+            render();
+            toast(demoToggle.checked ? "Carnet démo affiché." : "Carnet démo masqué.");
+          });
+        }
         wireHandleFieldPreview("auth-handle", "auth-handle-preview");
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
         document.getElementById("auth-save").addEventListener("click", async () => {

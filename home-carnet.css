@@ -80,6 +80,23 @@
   font-weight: 600;
 }
 
+.home-murmurs__badge {
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 0.2rem 0.5rem;
+  border-radius: 999px;
+  background: rgba(232, 168, 107, 0.15);
+  color: var(--brand, var(--accent));
+}
+
+.home-murmurs-wrap--hint {
+  padding: 0.75rem 1rem;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.03);
+}
+
 .home-murmurs__list {
   display: flex;
   flex-direction: column;

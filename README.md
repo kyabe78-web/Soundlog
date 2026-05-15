@@ -1,17 +1,39 @@
 # Soundlog
 
-Carnet d’écoutes et critiques musicales (inspiré Letterboxd), 100 % **front-end** : HTML, CSS et JavaScript. Aucun serveur Soundlog — les données restent dans le navigateur (`localStorage`).
+Carnet d’écoutes et réseau social musical (inspiré Letterboxd), en **SPA statique** : HTML, CSS et JavaScript modulaires.
 
-## Déploiement (Vercel)
+## Deux modes
 
-- Site **statique** : `index.html`, `styles.css`, `app.js` à la racine.
-- Navigation par **hash** (`#decouvrir`, `#album/…`, etc.) — compatible hébergement gratuit.
-- APIs externes optionnelles (navigateur) : Apple iTunes, Deezer, YouTube (clé utilisateur), Bandsintown.
+| Mode | Comportement |
+|------|----------------|
+| **Invité** | Données dans `localStorage` sur cet appareil + carnet de **démonstration** (profils fictifs). |
+| **Connecté** | Compte **Supabase** : carnet, social, DM et imports synchronisés entre appareils. |
 
-## Test en local avant mise en ligne
+Sans `config.js` valide (Supabase), seul le mode invité est actif.
+
+## Configuration
 
 ```bash
-cd /chemin/vers/soundlog
+cp config.example.js config.js
+# Remplis supabaseUrl, supabaseAnonKey, et les clés optionnelles (Spotify, YouTube…)
+```
+
+Voir [BACKEND.md](./BACKEND.md) pour le schéma SQL et [DEPLOY.md](./DEPLOY.md) pour Vercel.
+
+**Production (Vercel)** : définir les variables d’environnement puis builder :
+
+- `SL_SUPABASE_URL`, `SL_SUPABASE_ANON_KEY`
+- `SL_SPOTIFY_CLIENT_ID` (optionnel)
+- `SL_YOUTUBE_API_KEY` (optionnel)
+- `SL_LASTFM_API_KEY`, `SL_EDGE_PROXY_URL` (optionnel)
+
+Le script `npm run build` génère `config.js` depuis ces variables.
+
+## Test en local
+
+```bash
+npm install   # optionnel (serve)
+cp config.example.js config.js   # si pas encore fait
 npm run preview
 ```
 
@@ -21,19 +43,30 @@ Ouvre http://localhost:4173
 
 ```
 soundlog/
-├── index.html    # point d’entrée
-├── styles.css    # styles
-├── app.js        # application
-├── vercel.json   # config Vercel
-├── package.json  # scripts de prévisualisation locale
-└── README.md
+├── index.html
+├── app.js                 # routing, état, rendu principal
+├── cloud.js               # Supabase (auth, sync, social)
+├── social-premium.js      # hub Social (Cercle, Live)
+├── music-search.js        # recherche multi-sources
+├── log-listen.js          # modal « Logger une écoute »
+├── config.js              # secrets (non versionné — voir config.example.js)
+├── config.example.js
+├── scripts/generate-config.js
+├── SCHEMA.sql + MIGRATION_v*.sql
+├── styles.css + *-carnet.css
+└── vercel.json
 ```
 
-## Phase test — à savoir pour tes amis
+## Navigation
 
-- Chaque personne a **son propre carnet** sur son appareil (pas de compte centralisé).
-- Les **liens d’invitation** (`#rejoindre/…`) transportent des données dans l’URL, pas sur un serveur.
-- La recherche **Bibliothèques** dépend des APIs publiques (connexion Internet requise).
+- **Accueil** — fil Suivis / Tendances, murmures, activité du cercle
+- **Explorer** — genres + import bibliothèques (Apple / Deezer)
+- **Carnet** — journal, à écouter, listes
+- **Social** — cercle (fil, personnes, concerts), I was there !
+
+## Carnet de démonstration
+
+Les profils **Marie, Léo, Adagio** servent à découvrir l’app sans compte. Après connexion, ils sont **masqués par défaut** (réglage dans **Mon profil → compte** : « Afficher le carnet de démonstration »).
 
 ## Licence
 

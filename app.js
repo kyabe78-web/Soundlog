@@ -4877,10 +4877,12 @@
       return { users, artists, albums, tracks };
     })();
 
+    const remote = cache && cache.q === qq ? cache.remote || [] : [];
     const tab = route.searchTab || "all";
-    const total = local.users.length + local.artists.length + local.albums.length + local.tracks.length;
-    const cloudPending = !cache || cache.q !== qq;
-    const noResults = !total;
+    const total =
+      local.users.length + local.artists.length + local.albums.length + local.tracks.length + remote.length;
+    const fetchPending = !cache || cache.q !== qq || !cache.fetched;
+    const noResults = !total && !fetchPending;
 
     const tabBtn = (key, label, count) =>
       `<button type="button" class="search-tab ${tab === key ? "is-active" : ""}" data-search-tab="${key}">
@@ -4893,6 +4895,7 @@
       ${tabBtn("artists", "Artistes", local.artists.length)}
       ${tabBtn("albums", "Albums", local.albums.length)}
       ${tabBtn("tracks", "Titres", local.tracks.length)}
+      ${tabBtn("online", "En ligne", remote.length)}
     </nav>`;
 
     const sectionUsers = (rows) => rows.length ? `<section class="search-section">
@@ -4928,6 +4931,15 @@
       </div>`).join("")}</div>
     </section>` : "";
 
+    const sectionRemote = (rows) =>
+      rows.length
+        ? `<section class="search-section">
+      <h3 class="search-section__title">Catalogues en ligne <small>${rows.length}</small></h3>
+      <p class="feed-note" style="margin:0 0 0.75rem">Apple Music, Deezer, MusicBrainz — clique pour ouvrir la fiche album.</p>
+      <div class="search-remote-list">${rows.map((r) => renderRemoteMusicRow(r, q)).join("")}</div>
+    </section>`
+        : "";
+
     const sectionTracks = (rows) => rows.length ? `<section class="search-section">
       <h3 class="search-section__title">Titres <small>${rows.length}</small></h3>
       <ol class="search-tracks-list">${rows.slice(0, 80).map((t) => {
@@ -4946,26 +4958,31 @@
     </section>` : "";
 
     let body = "";
-    if (noResults && !cloudPending) {
+    if (noResults && !fetchPending) {
       body = `<div class="empty" style="padding:2rem">
         Aucun résultat pour « ${escapeHtml(q)} ».<br>
-        <small>Essaie <strong>Explorer → Importer</strong> pour Apple Music et Deezer.</small>
+        <small>Les catalogues en ligne et les profils Soundlog sont interrogés en parallèle.</small>
       </div>`;
+    } else if (fetchPending) {
+      body = `<p class="feed-note" style="padding:2rem">Recherche en cours (carnet, cloud, Apple · Deezer · MusicBrainz)…</p>`;
     } else if (tab === "all") {
-      body = sectionUsers(local.users.slice(0, 12))
-           + sectionArtists(local.artists.slice(0, 16))
-           + sectionAlbums(local.albums.slice(0, 24))
-           + sectionTracks(local.tracks.slice(0, 30));
+      body =
+        sectionUsers(local.users.slice(0, 12)) +
+        sectionRemote(remote.slice(0, 12)) +
+        sectionArtists(local.artists.slice(0, 16)) +
+        sectionAlbums(local.albums.slice(0, 24)) +
+        sectionTracks(local.tracks.slice(0, 30));
     } else if (tab === "users") body = sectionUsers(local.users);
     else if (tab === "artists") body = sectionArtists(local.artists);
     else if (tab === "albums") body = sectionAlbums(local.albums);
     else if (tab === "tracks") body = sectionTracks(local.tracks);
+    else if (tab === "online") body = sectionRemote(remote);
 
     return `<div class="search-page search-view view-themed">
       <div class="search-hero">
         <p class="kicker search-hero__kicker">Recherche</p>
         <h2 class="page-title search-hero__title">${total ? total + " résultat" + (total > 1 ? "s" : "") : "Aucun résultat"}</h2>
-        <p class="page-sub search-hero__sub">Pour « <strong>${escapeHtml(q)}</strong> »${cloudPending ? ` <span class="search-cloud-pending">· cherche dans le cloud…</span>` : ""}</p>
+        <p class="page-sub search-hero__sub">Pour « <strong>${escapeHtml(q)}</strong> »${fetchPending ? ` <span class="search-cloud-pending">· recherche en cours…</span>` : ""}</p>
         ${tabs}
       </div>
       <div class="search-body" data-search-body>${body || `<p class="empty" style="padding:2rem">Pas de contenu pour cet onglet.</p>`}</div>
@@ -5777,6 +5794,12 @@
         $search.value = name;
         route.searchTab = "albums";
         render();
+      });
+    });
+    $main.querySelectorAll(".search-body [data-type='remote']").forEach((el) => {
+      el.addEventListener("click", () => {
+        $search.value = "";
+        activateRemoteSearchResult(el.getAttribute("data-uid"));
       });
     });
     $main.querySelectorAll("[data-list]").forEach((el) => {
@@ -6663,9 +6686,123 @@
   const RECENTS_KEY = "soundlog.searchRecents";
   const MAX_RECENTS = 6;
   let searchDebounceTimer = null;
-  let searchCloudReqId = 0;
+  let searchUnifiedReqId = 0;
   let searchActiveIndex = -1;
   let searchLastQuery = "";
+  const searchRemotePayloads = new Map();
+
+  async function ensureCloudClient() {
+    if (!window.SLCloud || !SLCloud.available) return false;
+    try {
+      if (!SLCloud.client) await SLCloud.init();
+    } catch (_) {
+      return false;
+    }
+    return !!SLCloud.client;
+  }
+
+  function musicResultToHit(r) {
+    const p = r.importPayload || {};
+    return {
+      title: p.title || r.title,
+      artist: p.artist || r.artist || "",
+      year: p.year || r.year || new Date().getFullYear(),
+      artworkUrl: p.artworkUrl || r.artworkUrl || "",
+      genre: (r.genres && r.genres[0]) || r.typeLabel || "Catalogue",
+      links: p.deezer || p.apple ? { deezer: p.deezer, apple: p.apple } : undefined,
+      appleCollectionId: p.appleCollectionId || null,
+      deezerAlbumId: p.deezerAlbumId || null,
+      musicbrainzReleaseId: p.musicbrainzId || p.musicbrainzReleaseId || null,
+    };
+  }
+
+  function activateRemoteSearchResult(uid) {
+    const r = searchRemotePayloads.get(uid);
+    if (!r) return;
+    if (r.localAlbumId) {
+      navigate("album", { albumId: r.localAlbumId });
+      return;
+    }
+    const id = upsertAlbumFromRemoteHit(musicResultToHit(r));
+    navigate("album", { albumId: id });
+  }
+
+  async function enrichSearchResults(local, q, reqId) {
+    const out = {
+      users: local.users.slice(),
+      artists: local.artists.slice(),
+      albums: local.albums.slice(),
+      tracks: local.tracks.slice(),
+      remote: [],
+    };
+    const qq = q.toLowerCase();
+
+    const remotePromise =
+      window.SLMusicSearch && q.length >= 2
+        ? window.SLMusicSearch.search(q, { localAlbums: allAlbums() }).catch(() => ({ results: [] }))
+        : Promise.resolve({ results: [] });
+
+    const cloudPromise = ensureCloudClient()
+      ? Promise.all([
+          SLCloud.searchCatalog(q, 20),
+          SLCloud.searchProfiles(q, 16),
+        ]).catch(() => [{ albums: [], profiles: [] }, []])
+      : Promise.resolve([{ albums: [], profiles: [] }, []]);
+
+    const [remoteData, cloudPack] = await Promise.all([remotePromise, cloudPromise]);
+    if (reqId !== searchUnifiedReqId) return out;
+
+    out.remote = (remoteData.results || [])
+      .filter((r) => r && (r.type === "album" || r.type === "single" || r.type === "ep"))
+      .slice(0, 14);
+
+    const catalog = cloudPack[0] || { albums: [], profiles: [] };
+    const legacyUsers = cloudPack[1] || [];
+    const profileMap = new Map();
+    legacyUsers.forEach((u) => {
+      if (u && u.id) profileMap.set(u.id, u);
+    });
+    (catalog.profiles || []).forEach((u) => {
+      if (u && u.id) profileMap.set(u.id, u);
+    });
+    const meCloudId = SLCloud.me && SLCloud.me.id;
+    const userIds = new Set(out.users.map((u) => u.id));
+    profileMap.forEach((cu) => {
+      if (cu.id === meCloudId && userIds.has("me")) return;
+      if (userIds.has(cu.id)) return;
+      userIds.add(cu.id);
+      out.users.push({
+        id: cu.id,
+        name: cu.name,
+        handle: cu.handle,
+        bio: cu.bio || "",
+        hue: cu.hue != null ? cu.hue : hueFromHandle(cu.handle || cu.name),
+        avatar_url: cu.avatar_url || "",
+        cloud: true,
+      });
+    });
+
+    const albumIds = new Set(out.albums.map((a) => a.id));
+    (catalog.albums || []).forEach((row) => {
+      if (!row || !row.id || albumIds.has(row.id)) return;
+      mergeCloudAlbumFromRow(row);
+      const al = albumById(row.id);
+      if (al) {
+        albumIds.add(al.id);
+        out.albums.push(al);
+      }
+    });
+
+    __slSearchCache = {
+      q: qq,
+      users: [...profileMap.values()],
+      albums: catalog.albums || [],
+      catalogProfiles: catalog.profiles || [],
+      remote: out.remote,
+      fetched: true,
+    };
+    return out;
+  }
 
   function loadRecents() {
     try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]"); } catch (_) { return []; }
@@ -6809,12 +6946,33 @@
     </button>`;
   }
 
+  function renderRemoteMusicRow(r, q) {
+    if (r && r.uid) searchRemotePayloads.set(r.uid, r);
+    const artUrl = r.artworkUrl || "";
+    const cover = artUrl
+      ? `<img src="${escapeHtmlS(artUrl)}" alt="" loading="lazy" decoding="async" />`
+      : `<span style="background:linear-gradient(145deg,#3a3a48,#1a1a22);width:100%;height:100%;display:block"></span>`;
+    const platform =
+      window.SLMusicSearch && SLMusicSearch.platformLabel
+        ? SLMusicSearch.platformLabel(r.sources)
+        : "En ligne";
+    const sub = [r.artist, r.year, r.typeLabel].filter(Boolean).join(" · ");
+    return `<button type="button" class="sp-row sp-row--remote" role="option" data-type="remote" data-uid="${escapeHtmlS(r.uid)}">
+      <span class="sp-row__art">${cover}</span>
+      <span class="sp-row__main">
+        <span class="sp-row__title">${highlight(r.title, q)}</span>
+        <span class="sp-row__sub">${highlight(sub, q)}</span>
+      </span>
+      <span class="sp-row__kind">${escapeHtmlS(platform)}</span>
+    </button>`;
+  }
+
   function renderRecents() {
     const recents = loadRecents();
     if (!recents.length) {
       return `<div class="sp-empty">
         <p class="sp-empty__title">Commence à taper pour trouver…</p>
-        <p class="sp-empty__sub">Profils, artistes, albums, ou titres dans tes playlists importées.</p>
+        <p class="sp-empty__sub">Profils Soundlog, ton catalogue, et albums Apple Music · Deezer · MusicBrainz.</p>
       </div>`;
     }
     return `<div class="sp-section sp-section--recents">
@@ -6833,11 +6991,13 @@
 
   function renderPopoverBody(results, q, opts) {
     opts = opts || {};
-    const total = results.users.length + results.artists.length + results.albums.length + results.tracks.length;
-    if (!total && !opts.loadingCloud) {
+    const remote = results.remote || [];
+    const total =
+      results.users.length + results.artists.length + results.albums.length + results.tracks.length + remote.length;
+    if (!total && !opts.loadingCloud && !opts.loadingRemote) {
       return `<div class="sp-empty">
         <p class="sp-empty__title">Aucun résultat pour « ${escapeHtmlS(q)} »</p>
-        <p class="sp-empty__sub">Essaie l'onglet <strong>Bibliothèques</strong> pour explorer Apple Music et Deezer.</p>
+        <p class="sp-empty__sub">Essaie un autre orthographe. Connecte-toi pour retrouver les profils de la communauté.</p>
       </div>`;
     }
     const section = (title, rows, kind) => {
@@ -6849,11 +7009,14 @@
       </div>`;
     };
     return [
-      section("Profils", results.users.map((u) => renderUserRow(u, q)), "users"),
-      section("Artistes", results.artists.map((a) => renderArtistRow(a, q)), "artists"),
+      opts.loadingCloud || opts.loadingRemote
+        ? `<p class="sp-loading">${opts.loadingRemote ? "Apple · Deezer · MusicBrainz…" : ""}${opts.loadingCloud && opts.loadingRemote ? " · " : ""}${opts.loadingCloud ? "Profils Soundlog…" : ""}</p>`
+        : "",
+      section("Profils Soundlog", results.users.map((u) => renderUserRow(u, q)), "users"),
+      section("Catalogues en ligne", remote.map((r) => renderRemoteMusicRow(r, q)), "online"),
+      section("Artistes (carnet)", results.artists.map((a) => renderArtistRow(a, q)), "artists"),
       section("Albums", results.albums.map((al) => renderAlbumRow(al, q)), "albums"),
-      section("Titres", results.tracks.map((t) => renderTrackRow(t, q)), "tracks"),
-      opts.loadingCloud ? `<p class="sp-loading">Recherche dans les profils du cloud…</p>` : "",
+      section("Titres importés", results.tracks.map((t) => renderTrackRow(t, q)), "tracks"),
       total > 0 ? `<button type="button" class="sp-see-all" data-search-go>Voir tous les résultats pour « ${escapeHtmlS(q)} » <span aria-hidden="true">↵</span></button>` : "",
     ].filter(Boolean).join("");
   }
@@ -6907,6 +7070,10 @@
       const album = row.getAttribute("data-album");
       $search.value = album || artist || "";
       render();
+    } else if (type === "remote") {
+      const uid = row.getAttribute("data-uid");
+      $search.value = "";
+      activateRemoteSearchResult(uid);
     } else if (type === "recent") {
       const r = row.getAttribute("data-q");
       $search.value = r;
@@ -6919,74 +7086,42 @@
     const q = $search.value.trim();
     searchLastQuery = q;
     if (!q) {
+      searchRemotePayloads.clear();
       $popover.innerHTML = renderRecents();
       openPopover();
       return;
     }
-    const local = searchLocalEntities(q.toLowerCase());
-    // 1er rendu instantané + indicateur "recherche cloud" si configuré
-    const willQueryCloud = !!(window.SLCloud && window.SLCloud.ready);
-    $popover.innerHTML = renderPopoverBody(local, q, { loadingCloud: willQueryCloud });
+    const qq = q.toLowerCase();
+    const reqId = ++searchUnifiedReqId;
+    searchRemotePayloads.clear();
+    const local = searchLocalEntities(qq);
+    const willCloud = !!(window.SLCloud && SLCloud.available);
+    const willRemote = !!(window.SLMusicSearch && q.length >= 2);
+    $popover.innerHTML = renderPopoverBody(
+      { ...local, remote: [] },
+      q,
+      { loadingCloud: willCloud, loadingRemote: willRemote }
+    );
     openPopover();
 
-    if (willQueryCloud) {
-      const reqId = ++searchCloudReqId;
-      try {
-        const cloudUsers = await window.SLCloud.searchProfiles(q, 20);
-        if (reqId !== searchCloudReqId || $search.value.trim() !== q) return;
-        // Cache global pour la page search
-        __slSearchCache = { q: q.toLowerCase(), users: cloudUsers };
-        // Merge (dédup par id) + filter les "me"
-        const meCloudId = window.SLCloud.me && window.SLCloud.me.id;
-        const localIds = new Set(local.users.map((u) => u.id));
-        const mergedUsers = local.users.slice();
-        cloudUsers.forEach((cu) => {
-          if (cu.id === meCloudId && localIds.has("me")) return;
-          if (!localIds.has(cu.id)) mergedUsers.push({ ...cu, cloud: true });
-        });
-        local.users = mergedUsers;
-        if (!$popover.hidden) $popover.innerHTML = renderPopoverBody(local, q, { loadingCloud: false });
-        // Si la page search est actuellement affichée pour cette query, on rerend pour intégrer les cloud users
-        if ($main.getAttribute("data-route") === "search" && searchLastQuery === q) {
-          render();
-        }
-      } catch (_) { /* silently ignore */ }
-    }
+    const enriched = await enrichSearchResults(local, q, reqId);
+    if (reqId !== searchUnifiedReqId || $search.value.trim() !== q) return;
+    if (!$popover.hidden) $popover.innerHTML = renderPopoverBody(enriched, q, {});
+    if ($main.getAttribute("data-route") === "search" && searchLastQuery === q) render();
   }
 
   // Permet au render() de la page search de déclencher une recherche cloud si pas en cache
   function ensureSearchCloudFor(q) {
-    if (!window.SLCloud || !window.SLCloud.ready) return;
     const qq = q.toLowerCase();
-    if (__slSearchCache && __slSearchCache.q === qq) return;
+    if (__slSearchCache && __slSearchCache.q === qq && __slSearchCache.fetched) return;
+    const local = searchLocalEntities(qq);
+    const reqId = ++searchUnifiedReqId;
     (async () => {
-      const reqId = ++searchCloudReqId;
-      try {
-        const [catalog, legacyUsers] = await Promise.all([
-          window.SLCloud.searchCatalog(q, 24),
-          window.SLCloud.searchProfiles(q, 20),
-        ]);
-        if (reqId !== searchCloudReqId) return;
-        const profileMap = new Map();
-        (legacyUsers || []).forEach((u) => {
-          if (u && u.id) profileMap.set(u.id, u);
-        });
-        (catalog.profiles || []).forEach((u) => {
-          if (u && u.id) profileMap.set(u.id, u);
-        });
-        (catalog.albums || []).forEach((row) => {
-          if (row && row.id) mergeCloudAlbumFromRow(row);
-        });
-        __slSearchCache = {
-          q: qq,
-          users: [...profileMap.values()],
-          albums: catalog.albums || [],
-          catalogProfiles: catalog.profiles || [],
-        };
-        if ($main.getAttribute("data-route") === "search" && $search.value.trim().toLowerCase() === qq) {
-          render();
-        }
-      } catch (_) {}
+      await enrichSearchResults(local, q, reqId);
+      if (reqId !== searchUnifiedReqId) return;
+      if ($main.getAttribute("data-route") === "search" && $search.value.trim().toLowerCase() === qq) {
+        render();
+      }
     })();
   }
 

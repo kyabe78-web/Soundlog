@@ -992,6 +992,93 @@ input[type="radio"] {
 .platform-card__name { font-weight: 600; font-size: 0.95rem; }
 .platform-card__desc { font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
 
+/* ---------- Playlists importées (profil) ---------- */
+.imports-block { margin: 0.4rem 0 0.8rem; }
+.imports-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 0.7rem;
+  margin: 0.4rem 0 0.6rem;
+}
+.import-card {
+  position: relative;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  cursor: pointer;
+  transition: transform var(--duration) var(--ease), border-color var(--duration) var(--ease), box-shadow var(--duration) var(--ease);
+}
+.import-card:hover { transform: translateY(-1px); border-color: var(--accent); box-shadow: var(--shadow-sm); }
+.import-card__art {
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  object-fit: cover;
+  border-radius: calc(var(--radius) - 4px);
+  display: block;
+}
+.import-card__art--ph {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.6rem;
+  letter-spacing: 0.02em;
+}
+.import-card__body { display: flex; flex-direction: column; gap: 0.25rem; }
+.import-card__source {
+  display: inline-block;
+  align-self: flex-start;
+  padding: 0.1rem 0.45rem;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 0.66rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.import-card__name { margin: 0; font-size: 0.92rem; font-weight: 600; line-height: 1.25; }
+.import-card__meta { margin: 0; font-size: 0.74rem; color: var(--text-muted); }
+.import-card__del {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 0.95rem;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--duration) var(--ease);
+}
+.import-card:hover .import-card__del { opacity: 1; }
+.import-card__del:hover { background: var(--danger, #c0392b); }
+
+.imported-tracks {
+  list-style: decimal inside;
+  padding: 0;
+  margin: 0.4rem 0 0.8rem;
+  max-height: 50vh;
+  overflow-y: auto;
+  font-size: 0.9rem;
+}
+.imported-tracks li { padding: 0.4rem 0.4rem; border-bottom: 1px solid var(--border-light, var(--border)); }
+.imported-tracks li:last-child { border-bottom: 0; }
+.imported-tracks__album { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; }
+.imported-tracks__album .link { font: inherit; color: var(--accent); }
+
+.discover-cloud-recos { margin-top: 1rem; }
+.discover-cloud-recos__list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.4rem; }
+.discover-cloud-recos__list li { padding: 0.5rem 0.6rem; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius); font-size: 0.88rem; }
+
 /* ---------- 8. Cards / panels génériques ---------- */
 .panel {
   background: var(--bg-card);

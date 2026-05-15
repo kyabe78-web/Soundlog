@@ -532,6 +532,12 @@
         .order("imported_at", { ascending: false });
       return data || [];
     },
+    async listImportedTracks(userId, playlistId) {
+      let q = this.client.from("imported_tracks").select("*").eq("user_id", userId).order("added_at", { ascending: true });
+      if (playlistId) q = q.eq("playlist_id", playlistId);
+      const { data } = await q;
+      return data || [];
+    },
     async deleteImportedPlaylist(id) {
       const { error } = await this.client.from("imported_playlists").delete().eq("id", id);
       if (error) console.warn(error);
@@ -688,7 +694,7 @@
     async pullEverything() {
       if (!this.me) return null;
       const uid = this.me.id;
-      const [listenings, lists, concerts, wishlist, following, friendsRes, fr] = await Promise.all([
+      const [listenings, lists, concerts, wishlist, following, friendsRes, fr, importedPlaylists, importedTracks] = await Promise.all([
         this.listListeningsByUser(uid),
         this.listListsByUser(uid),
         this.listConcertsByUser(uid),
@@ -696,6 +702,8 @@
         this.listFollowing(uid),
         this.listFriends(),
         this.listFriendRequests(),
+        this.listImportedPlaylists(uid),
+        this.listImportedTracks(uid),
       ]);
       return {
         profile: this.me,
@@ -706,6 +714,8 @@
         following,
         friends: friendsRes,
         friendRequests: fr,
+        importedPlaylists,
+        importedTracks,
       };
     },
   };

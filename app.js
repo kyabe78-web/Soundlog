@@ -1121,34 +1121,61 @@
 
   function adaptivePickAlbumSuggestion() {
     ensureAdaptive();
-    const scored = { ...(state.adaptive.genreInterest || {}) };
+    const genreScored = { ...(state.adaptive.genreInterest || {}) };
     for (const l of state.listenings) {
       if (l.userId !== "me") continue;
       const al = albumById(l.albumId);
       if (!al || !al.genre) continue;
-      scored[al.genre] = (scored[al.genre] || 0) + 0.5;
+      genreScored[al.genre] = (genreScored[al.genre] || 0) + 0.5;
     }
-    const ranked = Object.entries(scored).sort((a, b) => b[1] - a[1]);
+    // Boost par artiste depuis les playlists importées (Spotify/Deezer/YouTube/Last.fm/CSV)
+    const artistBoost = Object.create(null);
+    const imported = state.cloudImportedTracks || [];
+    imported.forEach((t) => {
+      const a = String(t.artist_name || "").toLowerCase().trim();
+      if (!a) return;
+      // Si l'artiste contient plusieurs noms (Spotify multi-artistes), on splitte
+      a.split(/[,&;\/]| feat\.| featuring | x | & /i).map((s) => s.trim()).filter(Boolean).forEach((tok) => {
+        artistBoost[tok] = (artistBoost[tok] || 0) + 1;
+      });
+    });
+    const ranked = Object.entries(genreScored).sort((a, b) => b[1] - a[1]);
     const g = ranked.length ? ranked[0][0] : null;
     let pool = allAlbums().filter((a) => !state.listenings.some((item) => item.userId === "me" && item.albumId === a.id));
-    if (g) {
-      const gpool = pool.filter((a) => a.genre === g);
-      if (gpool.length) pool = gpool;
+    // Score chaque album : genre + artistBoost
+    const scored = pool.map((a) => {
+      let s = 0;
+      if (g && a.genre === g) s += 3;
+      if (a.genre) s += (genreScored[a.genre] || 0);
+      const aa = String(a.artist || "").toLowerCase();
+      Object.keys(artistBoost).forEach((tok) => { if (tok && aa.includes(tok)) s += 5 * artistBoost[tok]; });
+      return { a, s };
+    });
+    scored.sort((x, y) => y.s - x.s);
+    if (!scored.length) return null;
+    if (scored[0].s > 0) {
+      // Garde un peu de variation : pick parmi top 5
+      const top = scored.slice(0, Math.min(5, scored.length));
+      const seed = String(state.profile.handle || "x") + ":" + (new Date().toISOString().slice(0, 10));
+      let h = 0;
+      for (let i = 0; i < seed.length; i++) h = (h * 33 + seed.charCodeAt(i)) | 0;
+      return top[Math.abs(h) % top.length].a;
     }
-    if (!pool.length) return null;
-    const seed = String(state.profile.handle || "x") + ":" + String(g || "all");
-    let h = 0;
-    for (let i = 0; i < seed.length; i++) h = (h * 33 + seed.charCodeAt(i)) | 0;
-    return pool[Math.abs(h) % pool.length];
+    // fallback : ancien comportement
+    return scored[0].a;
   }
 
   function sonarSuggestHtml() {
     const al = adaptivePickAlbumSuggestion();
     if (!al) return "";
+    const hasImports = (state.cloudImportedTracks || []).length > 0;
+    const lead = hasImports
+      ? "Basé sur tes fiches ouvertes, ton journal et tes playlists importées."
+      : "Basé sur tes fiches ouvertes et ton journal (local uniquement).";
     return `<aside class="feed-side-card feed-side-card--sonar">
       <div class="feed-side-card__kicker">Sonar · suggestion</div>
       <h3 class="feed-side-card__title">Album à creuser</h3>
-      <p class="feed-note sonar-suggest-lead">Basé sur tes fiches ouvertes et ton journal (local uniquement).</p>
+      <p class="feed-note sonar-suggest-lead">${escapeHtml(lead)}</p>
       <div class="album-card sonar-suggest-card" data-album="${al.id}" style="max-width:168px">
         ${coverHtml(al, true)}
         <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div>
@@ -3015,6 +3042,9 @@
           : `<p class="empty" style="padding:1rem">Aucun concert enregistré.</p>`
       }
       ${isMe ? `<p><button type="button" class="btn btn-primary btn-sm" data-nav-view="iwas">+ Ajouter un concert</button></p>` : ""}
+      <h3 class="profile-section-title">Playlists importées <small class="feed-note" style="font-weight:400">Spotify · Deezer · YouTube · Last.fm · CSV</small></h3>
+      <div id="profile-imports-block" class="imports-block"><p class="empty" style="padding:0.5rem">Chargement…</p></div>
+      ${isMe ? `<p style="margin-top:0.4rem"><button type="button" class="btn btn-ghost btn-sm" data-open-imports>+ Importer une nouvelle playlist</button></p>` : ""}
       <h3 class="profile-section-title">Listes</h3>
       ${lists || `<p class="empty">Aucune liste.</p>`}
       </div>
@@ -3142,7 +3172,183 @@
     updateHeaderNotifications();
     injectCloudShoutoutsBlock();
     injectCloudCommentsButtons();
+    injectProfileImports();
+    injectDiscoverRecos();
   }
+
+  // ---------- Affichage des playlists importées sur le profil ----------
+  function injectProfileImports() {
+    if (route.view !== "profile") return;
+    const block = document.getElementById("profile-imports-block");
+    if (!block) return;
+    const uid = route.userId || "me";
+    const isMe = uid === "me";
+    block.dataset.loading = "1";
+
+    document.querySelectorAll("[data-open-imports]").forEach((b) => {
+      b.addEventListener("click", () => { if (window.__sl && window.__sl.openPlatformPicker) window.__sl.openPlatformPicker(); });
+    });
+
+    (async () => {
+      let playlists = [];
+      let tracksAll = [];
+      if (isMe) {
+        playlists = (state.cloudImportedPlaylists || []).slice();
+        tracksAll = (state.cloudImportedTracks || []).slice();
+      } else if (window.SLCloud && window.SLCloud.ready && /^[0-9a-f-]{36}$/.test(uid)) {
+        try {
+          playlists = await window.SLCloud.listImportedPlaylists(uid);
+          tracksAll = await window.SLCloud.listImportedTracks(uid);
+        } catch (e) { console.warn(e); }
+      }
+      renderImportsBlock(block, playlists, tracksAll, isMe);
+    })();
+  }
+
+  function renderImportsBlock(node, playlists, tracksAll, isMe) {
+    if (!playlists.length) {
+      node.innerHTML = isMe
+        ? `<p class="feed-note" style="padding:0.6rem 0">Aucune playlist importée pour l'instant. Clique sur « Importer une nouvelle playlist » pour commencer.</p>`
+        : `<p class="empty" style="padding:0.5rem">Pas encore d'imports publics.</p>`;
+      return;
+    }
+    const grouped = {};
+    tracksAll.forEach((t) => {
+      if (!grouped[t.playlist_id]) grouped[t.playlist_id] = [];
+      grouped[t.playlist_id].push(t);
+    });
+    node.innerHTML = `<div class="imports-grid">${playlists.map((p) => {
+      const count = (grouped[p.id] || []).length;
+      const badge = sourceBadge(p.source);
+      const artHtml = p.artwork_url
+        ? `<img class="import-card__art" src="${escapeHtml(p.artwork_url)}" alt="" loading="lazy" />`
+        : `<div class="import-card__art import-card__art--ph" style="background:${badge.color}">${escapeHtml(badge.letter)}</div>`;
+      return `<article class="import-card" data-import-id="${escapeHtml(p.id)}">
+          ${artHtml}
+          <div class="import-card__body">
+            <span class="import-card__source" style="background:${badge.color}">${escapeHtml(badge.label)}</span>
+            <h4 class="import-card__name">${escapeHtml(p.name)}</h4>
+            <p class="import-card__meta">${count} pistes · ${escapeHtml(timeAgo(p.imported_at))}</p>
+          </div>
+          ${isMe ? `<button type="button" class="import-card__del" data-import-del="${escapeHtml(p.id)}" title="Supprimer">×</button>` : ""}
+        </article>`;
+    }).join("")}</div>`;
+
+    node.querySelectorAll("[data-import-id]").forEach((card) => {
+      card.addEventListener("click", (e) => {
+        if (e.target.closest("[data-import-del]")) return;
+        const id = card.getAttribute("data-import-id");
+        const p = playlists.find((x) => x.id === id);
+        openImportedPlaylistModal(p, grouped[id] || []);
+      });
+    });
+    node.querySelectorAll("[data-import-del]").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const id = btn.getAttribute("data-import-del");
+        if (!confirm("Supprimer cette playlist importée ?")) return;
+        try {
+          await window.SLCloud.deleteImportedPlaylist(id);
+          // refresh state
+          state.cloudImportedPlaylists = (state.cloudImportedPlaylists || []).filter((p) => p.id !== id);
+          state.cloudImportedTracks = (state.cloudImportedTracks || []).filter((t) => t.playlist_id !== id);
+          toast("Playlist retirée.");
+          render();
+        } catch (err) { toast("Erreur : " + (err.message || "inconnue")); }
+      });
+    });
+  }
+
+  function sourceBadge(source) {
+    const map = {
+      spotify: { label: "Spotify", color: "#1db954", letter: "S" },
+      deezer:  { label: "Deezer",  color: "#a238ff", letter: "D" },
+      youtube: { label: "YouTube", color: "#ff0033", letter: "Y" },
+      lastfm:  { label: "Last.fm", color: "#d51007", letter: "L" },
+      manual:  { label: "Import",  color: "#666",    letter: "M" },
+      apple:   { label: "Apple",   color: "#fa243c", letter: "A" },
+    };
+    return map[source] || { label: source || "?", color: "#888", letter: "?" };
+  }
+
+  function openImportedPlaylistModal(playlist, tracks) {
+    if (!playlist) return;
+    const badge = sourceBadge(playlist.source);
+    const list = tracks.length
+      ? `<ol class="imported-tracks">${tracks.map((t) => {
+          const matchAlbumId = findLocalAlbum(t.artist_name, t.album_name);
+          const albumLink = matchAlbumId
+            ? `<button type="button" class="link" data-album-open="${escapeHtml(matchAlbumId)}">${escapeHtml(t.album_name || "—")}</button>`
+            : escapeHtml(t.album_name || "—");
+          return `<li>
+              <strong>${escapeHtml(t.track_name)}</strong>
+              <span class="feed-note"> — ${escapeHtml(t.artist_name)}</span>
+              <small class="imported-tracks__album">${albumLink}</small>
+            </li>`;
+        }).join("")}</ol>`
+      : `<p class="empty">Aucune piste indexée.</p>`;
+    openModal(`<h2><span class="import-card__source" style="background:${badge.color};margin-right:0.5rem">${escapeHtml(badge.label)}</span>${escapeHtml(playlist.name)}</h2>
+      <p class="feed-note">${tracks.length} pistes · importé ${escapeHtml(timeAgo(playlist.imported_at))}</p>
+      ${playlist.description ? `<p>${escapeHtml(playlist.description)}</p>` : ""}
+      ${list}
+      <p class="modal-actions"><button type="button" class="btn btn-ghost" id="imp-close">Fermer</button></p>`);
+    document.getElementById("imp-close").addEventListener("click", closeModal);
+    document.querySelectorAll("[data-album-open]").forEach((b) => {
+      b.addEventListener("click", () => { closeModal(); navigate("album", { albumId: b.getAttribute("data-album-open") }); });
+    });
+  }
+
+  // Matching simple : album+artiste contenus dans le catalogue Soundlog (state.importedAlbums ou CATALOG)
+  function findLocalAlbum(artist, album) {
+    if (!artist || !album) return null;
+    const a = artist.toLowerCase();
+    const t = album.toLowerCase();
+    const candidates = [...(state.importedAlbums || []), ...((window.CATALOG_REF && window.CATALOG_REF) || [])];
+    const direct = candidates.find((al) => al.title && al.artist && al.title.toLowerCase() === t && al.artist.toLowerCase().includes(a));
+    if (direct) return direct.id;
+    // partial match
+    const partial = candidates.find((al) => al.title && al.artist && al.title.toLowerCase().includes(t) && al.artist.toLowerCase().includes(a));
+    return partial ? partial.id : null;
+  }
+
+  // ---------- Découvrir : section « Inspiré par tes imports » ----------
+  let discoverRecosCache = null;
+  let discoverRecosFetching = false;
+  function injectDiscoverRecos() {
+    if (route.view !== "discover") return;
+    if (!window.SLCloud || !window.SLCloud.isSignedIn()) return;
+    if (document.getElementById("discover-cloud-recos")) return;
+    const target = document.querySelector("[data-route='discover'], .discover-view, #app-main");
+    if (!target) return;
+    const wrap = document.createElement("section");
+    wrap.id = "discover-cloud-recos";
+    wrap.className = "panel discover-cloud-recos";
+    wrap.innerHTML = `<h2 class="kicker" style="margin:0 0 0.5rem">Inspiré par tes imports</h2>
+      <p class="feed-note" style="margin:0 0 0.6rem">Albums vus dans la communauté qui matchent tes artistes Spotify, Deezer, YouTube, Last.fm.</p>
+      <div id="discover-cloud-recos-list"><p class="feed-note">Calcul…</p></div>`;
+    target.appendChild(wrap);
+
+    (async () => {
+      try {
+        if (!discoverRecosCache && !discoverRecosFetching) {
+          discoverRecosFetching = true;
+          discoverRecosCache = await window.SLCloud.getRecommendations(window.SLCloud.me.id, 12);
+          discoverRecosFetching = false;
+        }
+        const listNode = document.getElementById("discover-cloud-recos-list");
+        if (!listNode) return;
+        const recos = discoverRecosCache || [];
+        listNode.innerHTML = recos.length
+          ? `<ul class="discover-cloud-recos__list">${recos.map((r) => `
+              <li><strong>${escapeHtml(r.title)}</strong> <span class="feed-note">— ${escapeHtml(r.artist)} (score ${Number(r.score).toFixed(1)})</span></li>`).join("")}</ul>`
+          : `<p class="empty">Pas assez de données pour reco. Importe une playlist + invite des ami·es.</p>`;
+      } catch (e) { console.warn("[recos]", e); }
+    })();
+  }
+  // Reset cache après import
+  function resetRecoCache() { discoverRecosCache = null; }
+  window.__sl = window.__sl || {};
+  window.__sl.resetRecoCache = resetRecoCache;
 
   // Bloc "Murmures de la communauté" injecté sur la home quand cloud connecté
   function injectCloudShoutoutsBlock() {
@@ -4039,6 +4245,67 @@
   const cloudPeers = new Map();
   window.__slCloudPeers = cloudPeers;
 
+  // Mirror cloud imports into state so the profile re-renders sans aller-retour réseau
+  if (SLCloud && typeof SLCloud.upsertImportedPlaylist === "function") {
+    const _origUpsertImp = SLCloud.upsertImportedPlaylist.bind(SLCloud);
+    SLCloud.upsertImportedPlaylist = async (data) => {
+      const res = await _origUpsertImp(data);
+      if (SLCloud.me) {
+        state.cloudImportedPlaylists = state.cloudImportedPlaylists || [];
+        const idx = state.cloudImportedPlaylists.findIndex((p) => p.id === data.id);
+        const row = {
+          id: data.id,
+          user_id: SLCloud.me.id,
+          source: data.source,
+          remote_id: data.remoteId || null,
+          name: data.name,
+          description: data.description || "",
+          artwork_url: data.artworkUrl || null,
+          imported_at: new Date().toISOString(),
+        };
+        if (idx >= 0) state.cloudImportedPlaylists[idx] = { ...state.cloudImportedPlaylists[idx], ...row };
+        else state.cloudImportedPlaylists.unshift(row);
+        if (window.__sl && window.__sl.resetRecoCache) window.__sl.resetRecoCache();
+      }
+      return res;
+    };
+  }
+  if (SLCloud && typeof SLCloud.insertImportedTracks === "function") {
+    const _origInsImp = SLCloud.insertImportedTracks.bind(SLCloud);
+    SLCloud.insertImportedTracks = async (rows) => {
+      const res = await _origInsImp(rows);
+      if (SLCloud.me && Array.isArray(rows)) {
+        state.cloudImportedTracks = state.cloudImportedTracks || [];
+        rows.forEach((r) => {
+          state.cloudImportedTracks.push({
+            user_id: SLCloud.me.id,
+            playlist_id: r.playlistId,
+            source: r.source,
+            track_name: r.trackName,
+            artist_name: r.artistName,
+            album_name: r.albumName,
+            album_year: r.albumYear || null,
+            album_artwork_url: r.albumArtworkUrl || null,
+            remote_track_id: r.remoteTrackId || null,
+            remote_album_id: r.remoteAlbumId || null,
+            added_at: new Date().toISOString(),
+          });
+        });
+      }
+      return res;
+    };
+  }
+  if (SLCloud && typeof SLCloud.deleteImportedPlaylist === "function") {
+    const _origDel = SLCloud.deleteImportedPlaylist.bind(SLCloud);
+    SLCloud.deleteImportedPlaylist = async (id) => {
+      const res = await _origDel(id);
+      state.cloudImportedPlaylists = (state.cloudImportedPlaylists || []).filter((p) => p.id !== id);
+      state.cloudImportedTracks = (state.cloudImportedTracks || []).filter((t) => t.playlist_id !== id);
+      if (window.__sl && window.__sl.resetRecoCache) window.__sl.resetRecoCache();
+      return res;
+    };
+  }
+
   function syncMeFromCloud() {
     if (!SLCloud || !SLCloud.me) return;
     state.profile = {
@@ -4170,6 +4437,8 @@
     }));
     state.wishlist = data.wishlist || [];
     state.follows = data.following || [];
+    state.cloudImportedPlaylists = data.importedPlaylists || [];
+    state.cloudImportedTracks = data.importedTracks || [];
     // Pull metadata for unknown albums
     for (const aid of knownIds) {
       if (!albumById(aid)) {

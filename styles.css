@@ -1870,17 +1870,62 @@ input[type="radio"] {
 .imported-tracks__album { display: block; font-size: 0.75rem; color: var(--text-muted); margin-top: 0.15rem; }
 .imported-tracks__album .link { font: inherit; color: var(--accent); }
 
-.discover-cloud-recos { margin-top: 1.25rem; }
-.discover-cloud-recos__list { list-style: none; padding: 0; margin: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0.55rem; }
-.discover-cloud-recos__list li {
-  padding: 0.7rem 0.85rem;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
+.discover-cloud-recos { margin-bottom: 1.25rem; }
+
+.reco-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 0.65rem;
+}
+.reco-grid--compact { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); gap: 0.5rem; }
+.reco-card {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  text-align: left;
+  padding: 0;
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 0.88rem;
-  transition: border-color var(--duration-quick) var(--ease);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03), transparent), var(--bg-elevated);
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color var(--duration-quick) var(--ease), transform var(--duration-quick) var(--ease);
 }
-.discover-cloud-recos__list li:hover { border-color: var(--accent); }
+.reco-card:hover { border-color: var(--accent); transform: translateY(-2px); }
+.reco-card__cover {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  display: block;
+}
+.reco-card__cover--ph { aspect-ratio: 1; min-height: 120px; }
+.reco-card__meta { padding: 0.55rem 0.65rem 0.7rem; display: flex; flex-direction: column; gap: 0.2rem; }
+.reco-card__title { font-size: 0.88rem; line-height: 1.25; }
+.reco-card__artist { font-size: 0.76rem; color: var(--text-muted); }
+.reco-card__genre { font-size: 0.68rem; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.06em; }
+.reco-card__score { font-size: 0.68rem; color: var(--accent); }
+
+.album-mb-panel { margin-top: 0; }
+.album-mb-tracklist {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+  max-height: 320px;
+  overflow: auto;
+  border: 1px solid var(--border-light, var(--border));
+  border-radius: var(--radius);
+}
+.album-mb-tracklist li {
+  display: grid;
+  grid-template-columns: 2rem 1fr auto;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-bottom: 1px solid var(--border-light, var(--border));
+  font-size: 0.86rem;
+}
+.album-mb-tracklist li:last-child { border-bottom: 0; }
+.album-mb-tracklist__n { color: var(--text-faint); font-variant-numeric: tabular-nums; }
+.album-mb-tracklist__d { color: var(--text-muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
 
 /* ---------- 8. Cards / panels génériques ---------- */
 .panel {

@@ -1091,9 +1091,172 @@
       links: { ...(hit.links || {}) },
       appleCollectionId: hit.appleCollectionId || parseAppleCollectionId(hit.links && hit.links.apple) || null,
       deezerAlbumId: hit.deezerAlbumId || parseDeezerAlbumId(hit.links && hit.links.deezer) || null,
+      musicbrainzReleaseId: hit.musicbrainzReleaseId || hit.musicbrainzId || null,
     });
     persist();
     return id;
+  }
+
+  function mergeCloudAlbumFromRow(row) {
+    if (!row || !row.id) return null;
+    const existing = albumById(row.id);
+    if (existing) return existing;
+    state.importedAlbums = state.importedAlbums || [];
+    const g = gradientFromKey(String(row.id));
+    state.importedAlbums.push({
+      id: row.id,
+      title: row.title || "?",
+      artist: row.artist || "?",
+      year: row.year || new Date().getFullYear(),
+      genre: row.genre || "",
+      artworkUrl: row.artwork_url || "",
+      musicbrainzReleaseId: row.musicbrainz_release_id || null,
+      appleCollectionId: row.apple_collection_id || null,
+      deezerAlbumId: row.deezer_album_id || null,
+      from: g.from,
+      to: g.to,
+    });
+    persist();
+    return albumById(row.id);
+  }
+
+  function recoCoverHtml(r) {
+    const url = r.artwork_url || r.artworkUrl || "";
+    if (url) {
+      return `<img class="reco-card__cover" src="${escapeHtml(url)}" alt="" loading="lazy" decoding="async" />`;
+    }
+    const g = gradientFromKey((r.artist || "") + (r.title || ""));
+    return `<span class="reco-card__cover reco-card__cover--ph" style="background:linear-gradient(135deg,${g.from},${g.to})" aria-hidden="true"></span>`;
+  }
+
+  function renderRecoCardsHtml(recos, opts) {
+    opts = opts || {};
+    if (!recos || !recos.length) {
+      return opts.emptyHtml || `<p class="empty">Pas assez de données pour des recommandations — importe une playlist et invite des ami·es.</p>`;
+    }
+    return `<div class="reco-grid${opts.compact ? " reco-grid--compact" : ""}">${recos
+      .map((r) => {
+        const score = r.score != null ? Number(r.score).toFixed(1) : "";
+        const year = r.year ? ` · ${r.year}` : "";
+        const genre = r.genre ? `<span class="reco-card__genre">${escapeHtml(r.genre)}</span>` : "";
+        return `<button type="button" class="reco-card" data-reco-open="${escapeHtml(r.album_id)}" data-reco-title="${escapeHtml(
+          r.title || ""
+        )}" data-reco-artist="${escapeHtml(r.artist || "")}" data-reco-year="${escapeHtml(String(r.year || ""))}" data-reco-genre="${escapeHtml(
+          r.genre || ""
+        )}" data-reco-artwork="${escapeHtml(r.artwork_url || "")}" data-reco-mb="${escapeHtml(
+          r.musicbrainz_release_id || ""
+        )}">
+          ${recoCoverHtml(r)}
+          <span class="reco-card__meta">
+            <strong class="reco-card__title">${escapeHtml(r.title || "?")}</strong>
+            <span class="reco-card__artist">${escapeHtml(r.artist || "?")}${year}</span>
+            ${genre}
+            ${score ? `<span class="reco-card__score">Score ${score}</span>` : ""}
+          </span>
+        </button>`;
+      })
+      .join("")}</div>`;
+  }
+
+  async function openCloudReco(btn) {
+    const albumId = btn.getAttribute("data-reco-open");
+    if (!albumId) return;
+    if (albumById(albumId)) {
+      navigate("album", { albumId });
+      return;
+    }
+    if (window.SLCloud && SLCloud.getAlbumById) {
+      try {
+        const row = await SLCloud.getAlbumById(albumId);
+        if (row && mergeCloudAlbumFromRow(row)) {
+          navigate("album", { albumId });
+          return;
+        }
+      } catch (_) {}
+    }
+    const id = upsertAlbumFromRemoteHit({
+      title: btn.getAttribute("data-reco-title") || "?",
+      artist: btn.getAttribute("data-reco-artist") || "?",
+      year: btn.getAttribute("data-reco-year") || "",
+      genre: btn.getAttribute("data-reco-genre") || "Communauté",
+      artworkUrl: btn.getAttribute("data-reco-artwork") || "",
+      musicbrainzReleaseId: btn.getAttribute("data-reco-mb") || null,
+    });
+    navigate("album", { albumId: id });
+  }
+
+  function bindRecoCardEvents(root) {
+    (root || document).querySelectorAll("[data-reco-open]").forEach((btn) => {
+      btn.addEventListener("click", () => void openCloudReco(btn));
+    });
+  }
+
+  const albumMbCache = new Map();
+
+  async function hydrateAlbumMusicBrainz(al) {
+    const panel = document.getElementById("album-mb-panel");
+    if (!panel || !al) return;
+    const body = panel.querySelector(".album-mb-panel__body");
+    if (!body) return;
+    const ms = window.SLMusicSearch;
+    if (!ms || !ms.fetchReleaseDetail) {
+      body.innerHTML = `<p class="feed-note">Module MusicBrainz indisponible.</p>`;
+      return;
+    }
+    let mbId = al.musicbrainzReleaseId || al.musicbrainzId || null;
+    let detail = mbId ? albumMbCache.get(mbId) : null;
+    try {
+      if (!detail) {
+        if (mbId) detail = await ms.fetchReleaseDetail(mbId);
+        else if (ms.lookupReleaseByArtistTitle) detail = await ms.lookupReleaseByArtistTitle(al.artist, al.title);
+        if (detail && detail.releaseId) {
+          mbId = detail.releaseId;
+          albumMbCache.set(mbId, detail);
+          if (!al.musicbrainzReleaseId) {
+            al.musicbrainzReleaseId = mbId;
+            if (String(al.id).startsWith("ext-")) persist();
+            if (window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn()) {
+              void SLCloud.upsertAlbum({
+                id: al.id,
+                title: al.title,
+                artist: al.artist,
+                year: al.year,
+                genre: al.genre,
+                artworkUrl: al.artworkUrl || detail.artworkUrl,
+                musicbrainzReleaseId: mbId,
+              });
+            }
+          }
+        }
+      }
+      if (!detail) {
+        body.innerHTML = `<p class="feed-note">Aucune release MusicBrainz trouvée pour cet album.</p>`;
+        return;
+      }
+      const tracks = detail.tracks || [];
+      const trackHtml = tracks.length
+        ? `<ol class="album-mb-tracklist">${tracks
+            .map((t) => {
+              const dur = t.lengthMs && ms.formatDuration ? ms.formatDuration(t.lengthMs) : "";
+              return `<li><span class="album-mb-tracklist__n">${t.position || ""}</span><span class="album-mb-tracklist__t">${escapeHtml(
+                t.title
+              )}</span>${dur ? `<span class="album-mb-tracklist__d">${dur}</span>` : ""}</li>`;
+            })
+            .join("")}</ol>`
+        : `<p class="feed-note">Tracklist non disponible pour cette édition.</p>`;
+      const tags =
+        detail.genres && detail.genres.length
+          ? `<p class="feed-note">Tags : ${detail.genres.map((g) => escapeHtml(g)).join(" · ")}</p>`
+          : "";
+      body.innerHTML = `
+        <p class="feed-note">${escapeHtml(detail.type || "Album")}${detail.year ? ` · ${escapeHtml(detail.year)}` : ""} — identifiant <code>${escapeHtml(detail.releaseId)}</code></p>
+        ${tags}
+        ${trackHtml}
+        <p style="margin-top:0.75rem"><a class="btn btn-ghost btn-sm" href="${escapeHtml(detail.mbUrl)}" target="_blank" rel="noopener noreferrer">Voir sur MusicBrainz</a></p>`;
+    } catch (e) {
+      body.innerHTML = `<p class="feed-note">MusicBrainz temporairement indisponible.</p>`;
+      console.warn("[album-mb]", e);
+    }
   }
 
   function importCatalogHit(hit) {
@@ -4290,7 +4453,14 @@
             <h1 class="page-title" style="margin-bottom:0.25rem">${escapeHtml(al.title)}</h1>
             <p class="page-sub" style="margin:0">${escapeHtml(al.artist)} · ${al.year} · ${escapeHtml(al.genre)}</p>
             <p>Note moyenne Soundlog : <strong class="stars">${avg != null ? starString(avg) + " (" + avg + "/5)" : "—"}</strong></p>
+            <p style="margin:0.65rem 0 0">
+              <button type="button" class="btn btn-ghost btn-sm" id="btn-share-album">Partager la fiche</button>
+            </p>
           </div>
+        </div>
+        <div class="panel album-mb-panel" id="album-mb-panel" data-album-mb="${escapeHtml(al.id)}">
+          <h3>Tracklist MusicBrainz</h3>
+          <div class="album-mb-panel__body"><p class="feed-note">Chargement de la tracklist officielle…</p></div>
         </div>
         ${streamPanel}
         <div class="panel">
@@ -4789,8 +4959,13 @@
     injectHomeFeedExtras();
     injectInboxHydration();
     if (route.view === "album") {
-      requestAnimationFrame(() => applyAlbumBackdropTint());
+      requestAnimationFrame(() => {
+        applyAlbumBackdropTint();
+        const al = albumById(route.albumId);
+        if (al) void hydrateAlbumMusicBrainz(al);
+      });
     }
+    bindRecoCardEvents($main);
   }
 
   // ---------- Affichage des playlists importées sur le profil ----------
@@ -4937,18 +5112,20 @@
   let discoverRecosCache = null;
   let discoverRecosFetching = false;
   function injectDiscoverRecos() {
-    if (route.view !== "discover") return;
+    const exploreAlbums =
+      route.view === "explore" && (route.hubTab || state.exploreTab || "albums") === "albums";
+    if (!exploreAlbums && route.view !== "discover") return;
     if (!window.SLCloud || !window.SLCloud.isSignedIn()) return;
     if (document.getElementById("discover-cloud-recos")) return;
-    const target = document.querySelector("[data-route='discover'], .discover-view, #app-main");
+    const target = document.querySelector(".discover-view");
     if (!target) return;
     const wrap = document.createElement("section");
     wrap.id = "discover-cloud-recos";
     wrap.className = "panel discover-cloud-recos";
-    wrap.innerHTML = `<h2 class="kicker" style="margin:0 0 0.5rem">Inspiré par tes imports</h2>
-      <p class="feed-note" style="margin:0 0 0.6rem">Albums vus dans la communauté qui matchent tes artistes Spotify, Deezer, YouTube, Last.fm.</p>
+    wrap.innerHTML = `<h2 class="kicker" style="margin:0 0 0.5rem">Inspiré par la communauté</h2>
+      <p class="feed-note" style="margin:0 0 0.75rem">Albums notés par d'autres auditeur·ices proches de tes goûts (imports + écoutes).</p>
       <div id="discover-cloud-recos-list"><p class="feed-note">Calcul…</p></div>`;
-    target.appendChild(wrap);
+    target.insertBefore(wrap, target.firstChild);
 
     (async () => {
       try {
@@ -4960,11 +5137,11 @@
         const listNode = document.getElementById("discover-cloud-recos-list");
         if (!listNode) return;
         const recos = discoverRecosCache || [];
-        listNode.innerHTML = recos.length
-          ? `<ul class="discover-cloud-recos__list">${recos.map((r) => `
-              <li><strong>${escapeHtml(r.title)}</strong> <span class="feed-note">— ${escapeHtml(r.artist)} (score ${Number(r.score).toFixed(1)})</span></li>`).join("")}</ul>`
-          : `<p class="empty">Pas assez de données pour reco. Importe une playlist + invite des ami·es.</p>`;
-      } catch (e) { console.warn("[recos]", e); }
+        listNode.innerHTML = renderRecoCardsHtml(recos);
+        bindRecoCardEvents(listNode);
+      } catch (e) {
+        console.warn("[recos]", e);
+      }
     })();
   }
 
@@ -5258,6 +5435,20 @@
     }
     const baseTitle = "Soundlog — carnet d'écoutes";
     const baseDesc = "Note, critique et partage tes albums. Letterboxd pour la musique.";
+    if (route.view === "album" && route.albumId) {
+      const al = albumById(route.albumId);
+      if (al) {
+        ogTitle.setAttribute("content", al.title + " — " + al.artist + " · Soundlog");
+        ogDesc.setAttribute(
+          "content",
+          ("Fiche album sur Soundlog : " + al.artist + " · " + (al.year || "") + " · " + (al.genre || "musique")).slice(0, 200)
+        );
+        if (al.artworkUrl) ogImage.setAttribute("content", al.artworkUrl);
+        else ogImage.removeAttribute("content");
+        document.title = al.title + " — Soundlog";
+        return;
+      }
+    }
     if (route.view === "profile" && route.userId) {
       const u = userById(route.userId);
       if (u) {
@@ -5462,6 +5653,22 @@
     }
     const logThis = document.getElementById("btn-log-this");
     if (logThis) logThis.addEventListener("click", () => openListenModal(null, route.albumId));
+    const shareAlbum = document.getElementById("btn-share-album");
+    if (shareAlbum) {
+      shareAlbum.addEventListener("click", async () => {
+        const url = window.location.origin + window.location.pathname + "#album/" + encodeURIComponent(route.albumId);
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(url);
+            toast("Lien de la fiche copié.");
+          } else {
+            window.prompt("Copie ce lien :", url);
+          }
+        } catch (_) {
+          window.prompt("Copie ce lien :", url);
+        }
+      });
+    }
 
     document.querySelectorAll("[data-edit-listen]").forEach((b) => {
       b.addEventListener("click", (e) => {
@@ -7760,10 +7967,11 @@
         <h3>Top artistes</h3>
         ${top.length ? `<ol class="cloud-top-artists">${top.map((a) => `<li><span>${escapeHtml(a.artist_name)}</span><em>${a.track_count}</em></li>`).join("")}</ol>` : `<p class="feed-note">Importe une playlist ou note des albums pour générer ton top artistes.</p>`}
         <h3>Recommandé pour toi</h3>
-        ${recos.length ? `<ul class="cloud-recos">${recos.map((r) => `<li><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.artist)} <em>(score ${Number(r.score).toFixed(1)})</em></li>`).join("")}</ul>` : `<p class="feed-note">Pas assez de données collectives pour reco — invite des ami·es !</p>`}`;
+        <div id="cloud-stats-recos">${renderRecoCardsHtml(recos, { compact: true })}</div>`;
       } catch (e) {
-        node.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p><p class="feed-note">Si tu viens de déployer la base, exécute <strong>MIGRATION_v4.sql</strong> dans Supabase.</p>`;
+        node.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p><p class="feed-note">Si tu viens de déployer la base, exécute <strong>MIGRATION_v4.sql</strong> ou <strong>MIGRATION_v6.sql</strong> dans Supabase.</p>`;
       }
+      bindRecoCardEvents(node);
     }
     await fillCloudStatsPanel(uid);
   }

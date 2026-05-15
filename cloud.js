@@ -256,6 +256,11 @@
         artwork_url: album.artworkUrl || null,
         apple_collection_id: album.appleCollectionId ? String(album.appleCollectionId) : null,
         deezer_album_id: album.deezerAlbumId ? String(album.deezerAlbumId) : null,
+        musicbrainz_release_id: album.musicbrainzReleaseId
+          ? String(album.musicbrainzReleaseId)
+          : album.musicbrainzId
+            ? String(album.musicbrainzId)
+            : null,
         added_by: (this.me && this.me.id) || null,
       };
       const { error } = await this.client.from("albums").upsert(row, { onConflict: "id" });

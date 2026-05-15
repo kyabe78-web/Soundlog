@@ -170,7 +170,16 @@ Pour exporter en CSV : Table Editor → table → menu `…` → **Export as CSV
 
 ---
 
-## 11. Migration v2 — features avancées (avatars, playlists, realtime, stats)
+## 11. Migration v6 — Phase C (MusicBrainz + recos enrichies)
+
+Après `MIGRATION_v5.sql`, exécute **une fois** `MIGRATION_v6.sql` dans le SQL Editor :
+
+- Colonne `musicbrainz_release_id` sur `albums`
+- RPC `recommendations_for` enrichie : `year`, `genre`, `artwork_url`, `musicbrainz_release_id` (cartes cliquables côté app)
+
+Côté app : fiches album avec tracklist MusicBrainz, grille de recommandations dans **Découvrir** et **Mes statistiques**, partage `#album/<id>`.
+
+## 12. Migration v2 — features avancées (avatars, playlists, realtime, stats)
 
 Après le `SCHEMA.sql` initial, joue **une fois** le fichier `MIGRATION_v2.sql` dans le SQL Editor. Il ajoute :
 

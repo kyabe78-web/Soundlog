@@ -55,6 +55,7 @@
       links,
       appleCollectionId: p.appleCollectionId || null,
       deezerAlbumId: p.deezerAlbumId || null,
+      musicbrainzReleaseId: p.musicbrainzId || p.musicbrainzReleaseId || null,
       genre,
     };
   }

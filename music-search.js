@@ -224,6 +224,60 @@
     });
   }
 
+  async function fetchReleaseDetail(releaseId) {
+    const id = String(releaseId || "").trim();
+    if (!id) return null;
+    const cacheKey = "mbrel:" + id;
+    const hit = cache.get(cacheKey);
+    if (hit && Date.now() - hit.at < CACHE_TTL_MS * 4) return hit.data;
+
+    const url =
+      "https://musicbrainz.org/ws/2/release/" +
+      encodeURIComponent(id) +
+      "?fmt=json&inc=recordings+artist-credits+release-groups+tags";
+    const rel = await fetchJson(url, { headers: { "User-Agent": MB_UA } });
+    const artist = (rel["artist-credit"] || []).map((ac) => ac.name).filter(Boolean).join(", ");
+    const year = (rel.date || "").slice(0, 4);
+    const primary = (rel["release-group"] && rel["release-group"]["primary-type"]) || "";
+    const type = primary === "EP" ? "ep" : primary === "Single" ? "single" : "album";
+    const tracks = [];
+    for (const medium of rel.media || []) {
+      for (const tr of medium.tracks || []) {
+        const rec = tr.recording || {};
+        const trArtist = (rec["artist-credit"] || []).map((ac) => ac.name).filter(Boolean).join(", ");
+        tracks.push({
+          position: tr.position || tracks.length + 1,
+          title: rec.title || tr.title || "?",
+          artist: trArtist || artist,
+          lengthMs: rec.length || null,
+        });
+      }
+    }
+    tracks.sort((a, b) => (a.position || 0) - (b.position || 0));
+    const detail = {
+      releaseId: rel.id,
+      title: rel.title,
+      artist,
+      year,
+      type,
+      artworkUrl: rel.id ? "https://coverartarchive.org/release/" + rel.id + "/front-500" : "",
+      genres: (rel.tags || []).map((t) => t.name).slice(0, 5),
+      tracks,
+      mbUrl: "https://musicbrainz.org/release/" + rel.id,
+    };
+    cache.set(cacheKey, { at: Date.now(), data: detail });
+    return detail;
+  }
+
+  async function lookupReleaseByArtistTitle(artist, title) {
+    const q = 'release:"' + String(title || "").replace(/"/g, "") + '" AND artist:"' + String(artist || "").replace(/"/g, "") + '"';
+    const url = "https://musicbrainz.org/ws/2/release?fmt=json&limit=1&query=" + encodeURIComponent(q);
+    const j = await fetchJson(url, { headers: { "User-Agent": MB_UA } });
+    const rel = (j.releases || [])[0];
+    if (!rel || !rel.id) return null;
+    return fetchReleaseDetail(rel.id);
+  }
+
   async function fetchMusicBrainz(q) {
     const url =
       "https://musicbrainz.org/ws/2/release?fmt=json&limit=18&query=" +
@@ -501,6 +555,8 @@
   window.SLMusicSearch = {
     search,
     searchLocalCatalog,
+    fetchReleaseDetail,
+    lookupReleaseByArtistTitle,
     formatDuration,
     typeLabel,
     platformLabel,

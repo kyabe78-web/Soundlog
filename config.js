@@ -19,7 +19,7 @@ window.SLConfig = {
   // --- YouTube / YouTube Music (optionnel)
   // Crée une clé sur https://console.cloud.google.com (gratuit, 10000 req/jour)
   // Voir IMPORTS.md
-  youtubeApiKey: "",
+  youtubeApiKey: "AIzaSyDyrNdQH8wHsrL6FRZRczieTH8KnuPvE0U",
 
   // --- Last.fm (optionnel)
   // Crée une clé sur https://www.last.fm/api/account/create (instantané, gratuit)

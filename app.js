@@ -1574,6 +1574,60 @@
     return Math.abs(h) % 360;
   }
 
+  const HANDLE_RE = /^[a-z0-9_.\-]{2,32}$/;
+  const HANDLE_HINT =
+    "Ton identifiant unique sur Soundlog, affiché avec un @ devant (profil, recherche, ajout d’amis). Minuscules, chiffres, point, tiret ou souligné — entre 2 et 32 caractères.";
+  const HANDLE_HINT_SHORT =
+    "Ton @ sur Soundlog (sans espaces). Ex. mariev, leo_beats — 2 à 32 caractères.";
+
+  function normalizeHandleInput(raw) {
+    return String(raw || "")
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, "");
+  }
+
+  function validateHandleInput(raw) {
+    const handle = normalizeHandleInput(raw);
+    if (!handle) return { ok: false, handle: "", message: "Choisis un identifiant @ (ex. mariev)." };
+    if (!HANDLE_RE.test(handle)) {
+      return {
+        ok: false,
+        handle,
+        message:
+          "Identifiant invalide : uniquement des minuscules, chiffres, point (.), tiret (-) ou souligné (_), entre 2 et 32 caractères.",
+      };
+    }
+    return { ok: true, handle, message: "" };
+  }
+
+  function handleFieldHtml({ inputId, previewId, value = "", readonly = false, shortHint = false }) {
+    const hint = shortHint ? HANDLE_HINT_SHORT : HANDLE_HINT;
+    const ro = readonly ? " readonly" : "";
+    const val = escapeHtml(String(value || ""));
+    return `<div class="handle-field">
+      <label for="${escapeHtml(inputId)}">Identifiant @</label>
+      <p class="field-hint">${escapeHtml(hint)}</p>
+      <input type="text" id="${escapeHtml(inputId)}" autocomplete="username" spellcheck="false" autocapitalize="off" placeholder="mariev" value="${val}"${ro} />
+      <p class="handle-preview handle-preview--empty" id="${escapeHtml(previewId)}" aria-live="polite"></p>
+    </div>`;
+  }
+
+  function wireHandleFieldPreview(inputId, previewId) {
+    const input = document.getElementById(inputId);
+    const preview = document.getElementById(previewId);
+    if (!input || !preview) return;
+    const update = () => {
+      const handle = normalizeHandleInput(input.value);
+      preview.textContent = handle
+        ? `Aperçu sur ton profil : @${handle}`
+        : "Aperçu : @ton_identifiant";
+      preview.classList.toggle("handle-preview--empty", !handle);
+    };
+    input.addEventListener("input", update);
+    update();
+  }
+
   function userById(id) {
     if (id === "me") {
       const cloudMe = window.SLCloud && window.SLCloud.me;
@@ -2776,10 +2830,9 @@
       </header>
       <div class="panel join-panel">
         <h2>Créer ton profil local</h2>
-        <label for="join-name">Pseudo affiché</label>
+        <label for="join-name">Nom affiché</label>
         <input type="text" id="join-name" autocomplete="nickname" placeholder="Ton prénom ou surnom" />
-        <label for="join-handle">Handle</label>
-        <input type="text" id="join-handle" autocomplete="username" placeholder="sans espaces" />
+        ${handleFieldHtml({ inputId: "join-handle", previewId: "join-handle-preview", shortHint: true })}
         <label for="join-bio">Bio (optionnel)</label>
         <textarea id="join-bio" rows="2" placeholder="Une ligne sur ton rapport à la musique…"></textarea>
         <label class="join-check"><input type="checkbox" id="join-import" checked /> Importer les dernières notes de ton invité dans ton fil (uniquement les albums reconnus dans Soundlog)</label>
@@ -4719,6 +4772,7 @@
     if (jh) jh.addEventListener("click", () => navigate("home"));
     const js = document.getElementById("join-skip");
     if (js) js.addEventListener("click", () => navigate("home"));
+    wireHandleFieldPreview("join-handle", "join-handle-preview");
     const jsub = document.getElementById("join-submit");
     if (jsub) {
       jsub.addEventListener("click", () => {
@@ -4735,8 +4789,10 @@
         const importSnapshot = !!(impEl && impEl.checked);
         const modeEl = document.querySelector('input[name="join-mode"]:checked');
         const mode = modeEl ? modeEl.value : "fresh";
-        if (mode === "merge") applyInviteMergeIntoCurrent(payload, name, handle, bio, importSnapshot);
-        else applyInviteToFreshDevice(payload, name, handle, bio, importSnapshot);
+        const hv = validateHandleInput(handle);
+        if (!hv.ok) return toast(hv.message);
+        if (mode === "merge") applyInviteMergeIntoCurrent(payload, name, hv.handle, bio, importSnapshot);
+        else applyInviteToFreshDevice(payload, name, hv.handle, bio, importSnapshot);
       });
     }
 
@@ -4835,10 +4891,9 @@
     const zone = String((state.settings && state.settings.alertCity) || "");
     const desk = !!(state.settings && state.settings.desktopAlerts);
     openModal(`<h2>Profil</h2>
-      <label>Pseudo affiché</label>
+      <label>Nom affiché</label>
       <input type="text" id="pf-name" value="${escapeHtml(state.profile.displayName)}" />
-      <label>Handle</label>
-      <input type="text" id="pf-handle" value="${escapeHtml(state.profile.handle)}" />
+      ${handleFieldHtml({ inputId: "pf-handle", previewId: "pf-handle-preview", value: state.profile.handle, shortHint: true })}
       <label>Bio</label>
       <textarea id="pf-bio">${escapeHtml(state.profile.bio)}</textarea>
       <hr style="border:0;border-top:1px solid var(--line);margin:1rem 0" />
@@ -4851,10 +4906,13 @@
       <p class="feed-note" style="margin-top:0.5rem">Les dates sont croisées avec <strong>Communauté</strong> (API Bandsintown + saisie manuelle).</p>
       <button type="button" class="btn btn-primary" id="pf-save">Enregistrer</button>
       <button type="button" class="btn btn-ghost" id="pf-cancel" style="margin-left:0.5rem">Annuler</button>`);
+    wireHandleFieldPreview("pf-handle", "pf-handle-preview");
     document.getElementById("pf-cancel").addEventListener("click", closeModal);
     document.getElementById("pf-save").addEventListener("click", () => {
       state.profile.displayName = document.getElementById("pf-name").value.trim() || "Toi";
-      state.profile.handle = document.getElementById("pf-handle").value.trim().replace(/\s+/g, "") || "moi";
+      const hv = validateHandleInput(document.getElementById("pf-handle").value);
+      if (!hv.ok) return toast(hv.message);
+      state.profile.handle = hv.handle || "moi";
       state.profile.bio = document.getElementById("pf-bio").value.trim();
       state.settings = state.settings || {};
       state.settings.alertCity = document.getElementById("pf-city").value.trim();
@@ -6040,8 +6098,8 @@
         });
       } else if (which === "signup") {
         panel.innerHTML = `
-          <label>Handle (a-z, 0-9, _, -, .) <input type="text" id="auth-handle" autocomplete="username" /></label>
-          <label>Nom affiché <input type="text" id="auth-name" /></label>
+          <label>Nom affiché <input type="text" id="auth-name" autocomplete="name" placeholder="Marie, Léo…" /></label>
+          ${handleFieldHtml({ inputId: "auth-handle", previewId: "auth-handle-preview" })}
           <label>Email <input type="email" id="auth-email" autocomplete="email" /></label>
           <label>Mot de passe (8+ caractères) <input type="password" id="auth-pw" autocomplete="new-password" /></label>
           <p class="auth-error" id="auth-err" hidden></p>
@@ -6049,15 +6107,17 @@
             <button type="button" class="btn btn-primary" id="auth-do-signup">Créer le compte</button>
             <button type="button" class="btn btn-ghost" id="auth-cancel">Fermer</button>
           </p>`;
+        wireHandleFieldPreview("auth-handle", "auth-handle-preview");
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
         document.getElementById("auth-do-signup").addEventListener("click", async () => {
-          const handle = document.getElementById("auth-handle").value.trim().toLowerCase();
           const name = document.getElementById("auth-name").value.trim();
+          const hv = validateHandleInput(document.getElementById("auth-handle").value);
           const email = document.getElementById("auth-email").value.trim();
           const pw = document.getElementById("auth-pw").value;
-          if (!handle || !name || !email || !pw) return showAuthErr("Tous les champs sont requis.");
+          if (!name || !email || !pw) return showAuthErr("Tous les champs sont requis.");
+          if (!hv.ok) return showAuthErr(hv.message);
+          const handle = hv.handle;
           if (pw.length < 8) return showAuthErr("Le mot de passe doit faire 8 caractères ou plus.");
-          if (!/^[a-z0-9_.\-]{2,32}$/.test(handle)) return showAuthErr("Handle invalide.");
           setAuthFormBusy(true, "Création…");
           try {
             await ensureCloudReady();
@@ -6090,7 +6150,7 @@
             <button type="button" class="btn btn-ghost btn-sm" id="profile-avatar-btn">Changer mon avatar</button>
           </div>
           <label>Nom affiché <input type="text" id="auth-name" value="${escapeHtml(me.name)}" /></label>
-          <label>Handle <input type="text" id="auth-handle" value="${escapeHtml(me.handle)}" /></label>
+          ${handleFieldHtml({ inputId: "auth-handle", previewId: "auth-handle-preview", value: me.handle })}
           <label>Bio <textarea id="auth-bio">${escapeHtml(me.bio || "")}</textarea></label>
           <label>Ville / région <input type="text" id="auth-city" value="${escapeHtml(me.city || "")}" /></label>
           <p class="feed-note">Email : <strong>${escapeHtml((SLCloud.session && SLCloud.session.user && SLCloud.session.user.email) || "—")}</strong></p>
@@ -6110,11 +6170,14 @@
         document.getElementById("profile-open-stats").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openStats)(); });
         document.getElementById("profile-open-imports").addEventListener("click", () => { closeModal(); openPlatformPickerModal(); });
         document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
+        wireHandleFieldPreview("auth-handle", "auth-handle-preview");
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
         document.getElementById("auth-save").addEventListener("click", async () => {
+          const hv = validateHandleInput(document.getElementById("auth-handle").value);
+          if (!hv.ok) return showAuthErr(hv.message);
           const patch = {
             name: document.getElementById("auth-name").value.trim(),
-            handle: document.getElementById("auth-handle").value.trim().toLowerCase(),
+            handle: hv.handle,
             bio: document.getElementById("auth-bio").value.trim(),
             city: document.getElementById("auth-city").value.trim(),
           };

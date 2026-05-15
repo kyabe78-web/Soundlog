@@ -68,7 +68,7 @@
       await this.ensureReady();
       // 1. Vérifier que le handle est libre
       const taken = await this.handleTaken(handle);
-      if (taken) throw new Error("Ce handle est déjà pris.");
+      if (taken) throw new Error("Ce @identifiant est déjà utilisé. Essaie une variante (ex. mariev2).");
       // 2. Créer l'auth user
       const { data, error } = await this.client.auth.signUp({ email, password });
       if (error) throw error;

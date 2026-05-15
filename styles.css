@@ -1439,6 +1439,34 @@ input[type="radio"] {
   line-height: 1.45;
 }
 
+.handle-field {
+  margin: 0.85rem 0 0;
+}
+.handle-field > label {
+  margin-top: 0;
+}
+.field-hint {
+  margin: 0.35rem 0 0.5rem;
+  font-size: 0.84rem;
+  font-weight: 400;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--text-muted);
+  line-height: 1.45;
+}
+.handle-preview {
+  margin: 0.4rem 0 0;
+  font-family: var(--font-mono);
+  font-size: 0.88rem;
+  color: var(--accent);
+}
+.handle-preview--empty {
+  color: var(--text-faint);
+}
+.join-panel .handle-field {
+  margin-top: 0.65rem;
+}
+
 /* Modale Compte (auth) */
 .auth-tabs {
   display: flex;

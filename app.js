@@ -2600,16 +2600,45 @@
     }
   }
 
+  /** Panneau messagerie actif (tiroir prioritaire sur la page #messagerie dupliquée dans #main). */
+  function inboxRoot() {
+    const mount = document.getElementById("inbox-drawer-mount");
+    if (document.body.classList.contains("inbox-drawer-open") && mount && mount.querySelector("#inbox-compose")) {
+      return mount;
+    }
+    return $main;
+  }
+
   function bindInboxDrawerShell() {
     const closeBtn = document.getElementById("inbox-drawer-close");
     const backdrop = document.getElementById("inbox-drawer-backdrop");
     const openBtn = document.getElementById("topbar-messages");
+    const mount = document.getElementById("inbox-drawer-mount");
     if (closeBtn) closeBtn.addEventListener("click", closeInboxDrawer);
     if (backdrop) backdrop.addEventListener("click", closeInboxDrawer);
     if (openBtn) {
       openBtn.addEventListener("click", () => {
         if (document.body.classList.contains("inbox-drawer-open")) closeInboxDrawer();
         else openInboxDrawer(route.dmThreadId);
+      });
+    }
+    if (mount && !mount.dataset.dmDelegated) {
+      mount.dataset.dmDelegated = "1";
+      mount.addEventListener("click", (e) => {
+        const toggle = e.target.closest("#dm-toggle-share");
+        if (toggle) {
+          e.preventDefault();
+          const tray = mount.querySelector("#dm-share-tray");
+          if (tray) tray.classList.toggle("is-open");
+          return;
+        }
+        const chip = e.target.closest("[data-dm-share-kind]");
+        if (chip) {
+          e.preventDefault();
+          const panel = mount.querySelector("#inbox-thread-panel");
+          const tid = panel && panel.getAttribute("data-thread-id");
+          if (tid) openDmShareModal(tid, chip.getAttribute("data-dm-share-kind"));
+        }
       });
     }
     document.addEventListener("keydown", (e) => {
@@ -5125,7 +5154,7 @@
           html = renderSocialHub();
           break;
         case "inbox":
-          html = renderInbox();
+          html = document.body.classList.contains("inbox-drawer-open") ? renderHome() : renderInbox();
           break;
         case "join":
           html = renderJoin();
@@ -5490,8 +5519,9 @@
   }
 
   async function hydrateInboxList() {
-    const host = document.getElementById("inbox-list-panel");
-    const filterEl = document.getElementById("dm-thread-filter");
+    const root = inboxRoot();
+    const host = root.querySelector("#inbox-list-panel");
+    const filterEl = root.querySelector("#dm-thread-filter");
     if (!host) return;
     try {
       const threads = await SLCloud.listDmThreads();
@@ -5514,8 +5544,18 @@
         host.querySelectorAll("[data-open-thread]").forEach((b) => {
           b.addEventListener("click", () => {
             route.dmThreadId = b.getAttribute("data-open-thread");
-            window.location.hash = "#messagerie/" + route.dmThreadId;
-            render();
+            const tid = route.dmThreadId;
+            if (document.body.classList.contains("inbox-drawer-open")) {
+              const mount = document.getElementById("inbox-drawer-mount");
+              if (mount) {
+                mount.innerHTML = renderInbox();
+                void injectInboxHydration();
+              }
+              if (tid) window.location.hash = "#messagerie/" + tid;
+            } else {
+              window.location.hash = "#messagerie/" + (tid || "");
+              render();
+            }
           });
         });
       };
@@ -5527,12 +5567,13 @@
   }
 
   async function hydrateInboxThread(threadId) {
-    const box = document.getElementById("inbox-messages");
-    const form = document.getElementById("inbox-compose");
-    const ta = document.getElementById("inbox-msg-input");
-    const tray = document.getElementById("dm-share-tray");
-    const toggleShare = document.getElementById("dm-toggle-share");
-    const pinBtn = document.getElementById("dm-pin-thread");
+    const root = inboxRoot();
+    const box = root.querySelector("#inbox-messages");
+    const form = root.querySelector("#inbox-compose");
+    const ta = root.querySelector("#inbox-msg-input");
+    const tray = root.querySelector("#dm-share-tray");
+    const toggleShare = root.querySelector("#dm-toggle-share");
+    const pinBtn = root.querySelector("#dm-pin-thread");
     if (!box || !form || !ta) return;
 
     let other = null;
@@ -5542,9 +5583,9 @@
       other = cur && cur.other;
     } catch (_) {}
 
-    const peerName = document.getElementById("dm-peer-name");
-    const peerStatus = document.getElementById("dm-peer-status");
-    const peerAvatar = document.getElementById("dm-peer-avatar");
+    const peerName = root.querySelector("#dm-peer-name");
+    const peerStatus = root.querySelector("#dm-peer-status");
+    const peerAvatar = root.querySelector("#dm-peer-avatar");
     if (other && peerName) peerName.textContent = other.name || other.handle || "…";
     if (other && peerStatus) peerStatus.textContent = "@" + (other.handle || "");
     if (other && peerAvatar) peerAvatar.outerHTML = userAvatarHtml(other, "dm-chat__peer-avatar");
@@ -5560,10 +5601,20 @@
     }
 
     if (tray) tray.classList.remove("is-open");
-    if (toggleShare && tray) toggleShare.onclick = () => tray.classList.toggle("is-open");
+    if (toggleShare && tray) {
+      toggleShare.onclick = (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+        tray.classList.toggle("is-open");
+      };
+    }
     if (tray) {
       tray.querySelectorAll("[data-dm-share-kind]").forEach((chip) => {
-        chip.onclick = () => openDmShareModal(threadId, chip.getAttribute("data-dm-share-kind"));
+        chip.onclick = (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          openDmShareModal(threadId, chip.getAttribute("data-dm-share-kind"));
+        };
       });
     }
 
@@ -5596,11 +5647,20 @@
       }
     };
 
-    document.querySelectorAll("[data-inbox-back]").forEach((b) => {
+    root.querySelectorAll("[data-inbox-back]").forEach((b) => {
       b.onclick = () => {
         route.dmThreadId = null;
-        window.location.hash = "#messagerie";
-        render();
+        if (document.body.classList.contains("inbox-drawer-open")) {
+          const mount = document.getElementById("inbox-drawer-mount");
+          if (mount) {
+            mount.innerHTML = renderInbox();
+            void injectInboxHydration();
+          }
+          window.location.hash = "#messagerie";
+        } else {
+          window.location.hash = "#messagerie";
+          render();
+        }
       };
     });
   }

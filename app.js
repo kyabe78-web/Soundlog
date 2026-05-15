@@ -4325,11 +4325,14 @@
           <h3 class="kicker">Plus</h3>
           <p class="modal-actions modal-actions--wrap">
             <button type="button" class="btn btn-ghost" id="profile-open-stats">Mes statistiques</button>
+            <button type="button" class="btn btn-ghost" id="profile-open-deezer">Importer depuis Deezer</button>
             <button type="button" class="btn btn-ghost" id="profile-open-spotify">Importer depuis Spotify</button>
             <button type="button" class="btn btn-ghost" id="profile-post-shoutout">Publier un murmure</button>
-          </p>`;
+          </p>
+          <p class="feed-note" style="font-size:.78rem"><strong>Deezer</strong> : sans authentification, fonctionne tout de suite. <strong>Spotify</strong> : nécessite un compte Premium côté propriétaire de l'app dev (politique Spotify 2024).</p>`;
         document.getElementById("profile-avatar-btn").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openAvatar)(); });
         document.getElementById("profile-open-stats").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openStats)(); });
+        document.getElementById("profile-open-deezer").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openDeezer)(); });
         document.getElementById("profile-open-spotify").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openSpotify)(); });
         document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
@@ -4852,6 +4855,92 @@
     const a = new Uint8Array(8); crypto.getRandomValues(a);
     return Array.from(a).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
+
+  // ---------- Import Deezer (URL publique, zéro auth) ----------
+  async function openDeezerImportModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) { toast("Connecte-toi d'abord."); return; }
+    openModal(`<h2>Importer une playlist Deezer</h2>
+      <p class="feed-note">Colle l'URL d'une playlist Deezer publique (ex. <code>https://www.deezer.com/fr/playlist/3155776842</code>) ou seulement son ID.</p>
+      <p class="feed-note">Astuce : depuis Deezer, ouvre une playlist (la tienne ou celle de quelqu'un d'autre tant qu'elle est publique), clique « Partager » → « Copier le lien ».</p>
+      <label class="visually-hidden" for="dz-url">URL Deezer</label>
+      <input type="url" id="dz-url" placeholder="https://www.deezer.com/playlist/..." />
+      <p class="modal-actions">
+        <button type="button" class="btn btn-primary" id="dz-import">Importer</button>
+        <button type="button" class="btn btn-ghost" id="dz-cancel">Annuler</button>
+      </p>
+      <p class="feed-note" id="dz-status"></p>`);
+    const setStatus = (s) => { const n = document.getElementById("dz-status"); if (n) n.textContent = s; };
+    document.getElementById("dz-cancel").addEventListener("click", closeModal);
+    document.getElementById("dz-import").addEventListener("click", async () => {
+      const raw = document.getElementById("dz-url").value.trim();
+      const m = raw.match(/playlist[\/=](\d+)/) || raw.match(/^(\d+)$/);
+      if (!m) { setStatus("URL ou ID invalide."); return; }
+      const playlistId = m[1];
+      try {
+        setStatus("Récupération de la playlist...");
+        const metaRes = await fetch(viaEdgeProxy(`https://api.deezer.com/playlist/${playlistId}`));
+        if (!metaRes.ok) throw new Error("Playlist introuvable (privée ?)");
+        const meta = await metaRes.json();
+        if (meta.error) throw new Error(meta.error.message || "Erreur Deezer");
+        // Collecte tous les tracks (pagination)
+        let tracks = (meta.tracks && meta.tracks.data) || [];
+        let next = meta.tracks && meta.tracks.next;
+        while (next) {
+          const r = await fetch(viaEdgeProxy(next));
+          const j = await r.json();
+          tracks.push(...(j.data || []));
+          next = j.next;
+        }
+        setStatus(`Trouvé ${tracks.length} titres. Sauvegarde...`);
+        const playlistRow = {
+          id: "deezer:" + playlistId,
+          source: "deezer",
+          remoteId: String(playlistId),
+          name: meta.title || "Playlist Deezer",
+          description: meta.description || "",
+          artworkUrl: meta.picture_xl || meta.picture_big || meta.picture || null,
+          raw: { tracks: tracks.length, creator: meta.creator && meta.creator.name },
+        };
+        await SLCloud.upsertImportedPlaylist(playlistRow);
+        const rows = tracks.map((t) => ({
+          playlistId: playlistRow.id,
+          source: "deezer",
+          trackName: t.title || "",
+          artistName: (t.artist && t.artist.name) || "",
+          albumName: (t.album && t.album.title) || "",
+          albumYear: null,
+          albumArtworkUrl: (t.album && (t.album.cover_xl || t.album.cover_big || t.album.cover_medium)) || null,
+          remoteTrackId: t.id ? String(t.id) : null,
+          remoteAlbumId: t.album && t.album.id ? String(t.album.id) : null,
+        }));
+        await SLCloud.insertImportedTracks(rows);
+        // Fusion albums uniques dans le catalogue local
+        const uniq = new Map();
+        rows.forEach((r) => {
+          if (!r.albumName) return;
+          const k = `${r.albumName.toLowerCase()}|${r.artistName.toLowerCase()}`;
+          if (!uniq.has(k)) uniq.set(k, r);
+        });
+        state.importedAlbums = state.importedAlbums || [];
+        uniq.forEach((r) => {
+          const id = "deezer-" + (r.remoteAlbumId || cryptoRandomId());
+          if (!state.importedAlbums.find((a) => a.id === id)) {
+            state.importedAlbums.push({
+              id, title: r.albumName, artist: r.artistName, year: null, genre: "",
+              artworkUrl: r.albumArtworkUrl, from: "#444", to: "#222",
+            });
+          }
+        });
+        persist();
+        setStatus(`Import terminé — ${rows.length} titres, ${uniq.size} albums uniques.`);
+        toast("Playlist importée !");
+        render();
+      } catch (e) {
+        setStatus("Erreur : " + (e.message || "inconnue"));
+      }
+    });
+  }
+  window.__sl.openDeezer = openDeezerImportModal;
 
   // ---------- Hooks au login / route Spotify ----------
   window.addEventListener("sl-spotify-connected", () => {

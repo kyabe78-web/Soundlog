@@ -12,7 +12,7 @@ window.SLConfig = {
   // --- Spotify (optionnel) : voir PLAYLISTS.md
   // Crée une app sur https://developer.spotify.com/dashboard
   // Redirect URI à enregistrer : <ton-domaine-vercel>/ + http://localhost:8765/
-  spotifyClientId: "",
+  spotifyClientId: "b3265ae98929481281f63aa077ef68ed",
   // Laisse vide pour utiliser window.location.origin + pathname automatiquement
   spotifyRedirectUri: "",
 

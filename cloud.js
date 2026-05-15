@@ -1121,28 +1121,50 @@
     async listDmThreads() {
       if (!this.me) return [];
       const uid = this.me.id;
-      const { data: threads } = await this.client
+      const { data: threads, error: thErr } = await this.client
         .from("dm_threads")
         .select("id,user_a,user_b,updated_at")
         .or(`user_a.eq.${uid},user_b.eq.${uid}`)
         .order("updated_at", { ascending: false });
+      if (thErr) throw thErr;
       if (!threads || !threads.length) return [];
       const otherIds = [...new Set(threads.map((t) => (t.user_a === uid ? t.user_b : t.user_a)))];
-      const { data: profs } = await this.client.from("profiles").select("*").in("id", otherIds);
+      const { data: profs, error: prErr } = await this.client.from("profiles").select("*").in("id", otherIds);
+      if (prErr) throw prErr;
       const profById = new Map((profs || []).map((p) => [p.id, p]));
-      const out = [];
-      for (const th of threads) {
-        const oid = th.user_a === uid ? th.user_b : th.user_a;
-        const { data: last } = await this.client
+      const threadIds = threads.map((t) => t.id);
+      const lastByThread = new Map();
+      if (threadIds.length) {
+        const { data: msgs, error: msgErr } = await this.client
           .from("dm_messages")
-          .select("body,created_at,sender_id")
-          .eq("thread_id", th.id)
+          .select("thread_id,body,created_at,sender_id")
+          .in("thread_id", threadIds)
           .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle();
-        out.push({ thread: th, other: profById.get(oid), lastMessage: last || null });
+          .limit(Math.min(threadIds.length * 3, 120));
+        if (msgErr) throw msgErr;
+        for (const m of msgs || []) {
+          if (!lastByThread.has(m.thread_id)) lastByThread.set(m.thread_id, m);
+        }
+        const missing = threadIds.filter((id) => !lastByThread.has(id));
+        if (missing.length) {
+          await Promise.all(
+            missing.map(async (tid) => {
+              const { data: last } = await this.client
+                .from("dm_messages")
+                .select("body,created_at,sender_id")
+                .eq("thread_id", tid)
+                .order("created_at", { ascending: false })
+                .limit(1)
+                .maybeSingle();
+              if (last) lastByThread.set(tid, last);
+            })
+          );
+        }
       }
-      return out;
+      return threads.map((th) => {
+        const oid = th.user_a === uid ? th.user_b : th.user_a;
+        return { thread: th, other: profById.get(oid), lastMessage: lastByThread.get(th.id) || null };
+      });
     },
 
     async listDmMessages(threadId, limit = 100) {

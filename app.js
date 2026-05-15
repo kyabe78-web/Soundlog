@@ -2603,7 +2603,7 @@
   /** Panneau messagerie actif (tiroir prioritaire sur la page #messagerie dupliquée dans #main). */
   function inboxRoot() {
     const mount = document.getElementById("inbox-drawer-mount");
-    if (document.body.classList.contains("inbox-drawer-open") && mount && mount.querySelector("#inbox-compose")) {
+    if (document.body.classList.contains("inbox-drawer-open") && mount && mount.querySelector(".dm-page")) {
       return mount;
     }
     return $main;
@@ -5894,8 +5894,13 @@
     const host = root.querySelector("#inbox-list-panel");
     const filterEl = root.querySelector("#dm-thread-filter");
     if (!host) return;
+    host.innerHTML = `<p class="feed-note">Chargement des conversations…</p>`;
     try {
       if (typeof ensureCloudReady === "function") await ensureCloudReady();
+      if (typeof SLCloud.refreshProfile === "function") await SLCloud.refreshProfile();
+      if (!SLCloud.me || !SLCloud.me.id) {
+        throw new Error("Session expirée — reconnecte-toi pour voir tes conversations.");
+      }
       const threads = await SLCloud.listDmThreads();
       const activeId = route.dmThreadId;
       const paintThreadList = (q) => {

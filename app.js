@@ -348,7 +348,7 @@
     }
   }
 
-  const route = { view: "home", hubTab: null, albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null, dmThreadId: null, inboxDrawer: false };
+  const route = { view: "home", hubTab: null, albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null, dmThreadId: null, inboxDrawer: false, searchQuery: null };
 
   /** Dernière « clé de route » déjà enregistrée par Sonar (évite les doublons entre deux rendus). */
   let adaptiveRouteKeySeen = "__init__";
@@ -1222,35 +1222,70 @@
     });
   }
 
-  function adaptiveBannerHtml() {
+  function sonarIsDismissed() {
+    try {
+      return sessionStorage.getItem("sl_sonar_chip") === "1";
+    } catch {
+      return false;
+    }
+  }
+
+  function dismissSonarChip() {
+    try {
+      sessionStorage.setItem("sl_sonar_chip", "1");
+    } catch (_) {}
+    toast("Astuce Sonar masquée sur cet appareil.");
+    render();
+  }
+
+  function sonarContextLine() {
     ensureAdaptive();
     const nav = state.adaptive.nav || {};
     const gi = state.adaptive.genreInterest || {};
     const topGenre = Object.entries(gi).sort((a, b) => b[1] - a[1])[0];
-    let line = "";
-    if (topGenre && topGenre[1] >= 2) {
-      line = `Tu explores souvent le genre <strong>${escapeHtml(topGenre[0])}</strong> : on le remonte dans les pastilles <strong>Découvrir</strong>.`;
-    } else if ((nav.diary || 0) > (nav.home || 0) && (nav.diary || 0) > 3) {
-      line = `Ton <strong>Journal</strong> est un passage clé — Sonar en tient compte pour les suggestions d’albums.`;
-    } else if ((nav.libraries || 0) > 5) {
-      line = `Les <strong>Bibliothèques</strong> reviennent souvent : la clé YouTube (réglages) peut affiner les liens vidéo.`;
-    } else if ((state.adaptive.listenLogs || 0) > 2) {
-      line = `Assez d’entrées au journal pour affiner les pistes : Sonar pondère tes genres à partir de tes notes et des disques que tu ouvres.`;
-    } else {
-      line = `<strong>Sonar</strong> observe tes trajets <em>sur cet appareil</em> (pas de cloud Soundlog) et ajuste l’exploration du catalogue au fil des visites.`;
+    const placement = route.view === "explore" || route.view === "discover" || route.view === "libraries" ? "explore" : route.view;
+    if (placement === "explore") {
+      if (topGenre && topGenre[1] >= 2) {
+        return `Les pastilles mettent en avant <strong>${escapeHtml(topGenre[0])}</strong> selon tes fiches consultées.`;
+      }
+      return `Les genres se réordonnent localement quand tu explores des albums.`;
     }
-    return `<aside class="adapt-banner" aria-label="Sonar — adaptation locale">
-      <div class="adapt-banner__glyph" aria-hidden="true">◎</div>
-      <div class="adapt-banner__body">
-        <p class="adapt-banner__kicker">Sonar · adaptation locale</p>
-        <p class="adapt-banner__text">${line}</p>
-        <p class="adapt-banner__meta">
-          <button type="button" class="link" id="btn-adapt-learn-more">Comment ça marche ?</button>
-          <span class="adapt-dot">·</span>
-          <button type="button" class="link" id="btn-adapt-reset">Réinitialiser l’apprentissage</button>
-        </p>
-      </div>
+    if (placement === "carnet" || route.view === "diary") {
+      if ((state.adaptive.listenLogs || 0) > 2) {
+        return `<strong>${state.adaptive.listenLogs}</strong> écritures au journal — Sonar affine les pistes à te proposer.`;
+      }
+      return `Logue des écoutes pour que Sonar personnalise tes suggestions.`;
+    }
+    if (placement === "home") {
+      if (topGenre && topGenre[1] >= 2) {
+        return `Piste du jour alignée sur <strong>${escapeHtml(topGenre[0])}</strong> et ton historique local.`;
+      }
+      return `Suggestion basée sur ton carnet — rien n’est envoyé vers un serveur Sonar.`;
+    }
+    if ((nav.carnet || 0) + (nav.diary || 0) > (nav.home || 0)) {
+      return `Tu passes souvent par le <strong>Carnet</strong> : les reco restent locales à cet appareil.`;
+    }
+    return `<strong>Sonar</strong> observe tes parcours sur cet appareil uniquement (compteurs + règles fixes).`;
+  }
+
+  function sonarChipHtml(placement) {
+    if (sonarIsDismissed()) return "";
+    return `<aside class="sonar-chip" data-sonar-placement="${escapeHtml(placement || route.view)}">
+      <span class="sonar-chip__dot" aria-hidden="true">◎</span>
+      <span class="sonar-chip__text">${sonarContextLine()}</span>
+      <button type="button" class="sonar-chip__info link" data-sonar-info>?</button>
+      <button type="button" class="sonar-chip__dismiss" aria-label="Masquer" data-sonar-dismiss>×</button>
     </aside>`;
+  }
+
+  function sonarSuggestReason(placement) {
+    ensureAdaptive();
+    const gi = state.adaptive.genreInterest || {};
+    const top = Object.entries(gi).sort((a, b) => b[1] - a[1])[0];
+    if (placement === "explore" && top) return `Genre favori : ${top[0]}`;
+    if (placement === "carnet" && (state.adaptive.listenLogs || 0) > 0) return `D’après ton journal`;
+    if ((state.cloudImportedTracks || []).length) return `Imports + journal`;
+    return `Historique local`;
   }
 
   function adaptivePickAlbumSuggestion() {
@@ -1299,22 +1334,34 @@
     return scored[0].a;
   }
 
-  function sonarSuggestHtml() {
+  function sonarSuggestHtml(placement) {
+    const place = placement || "home";
     const al = adaptivePickAlbumSuggestion();
     if (!al) return "";
     const hasImports = (state.cloudImportedTracks || []).length > 0;
-    const lead = hasImports
-      ? "Basé sur tes fiches ouvertes, ton journal et tes playlists importées."
-      : "Basé sur tes fiches ouvertes et ton journal (local uniquement).";
-    return `<aside class="feed-side-card feed-side-card--sonar">
-      <div class="feed-side-card__kicker">Sonar · suggestion</div>
-      <h3 class="feed-side-card__title">Album à creuser</h3>
+    const lead =
+      place === "carnet"
+        ? "Une piste à ajouter à ton carnet selon tes notes et critiques."
+        : place === "explore"
+          ? hasImports
+            ? "Album à explorer — issu de tes imports et de ton activité locale."
+            : "Album à explorer selon les genres que tu consultes."
+          : hasImports
+            ? "Basé sur ton journal et tes playlists importées."
+            : "Basé sur ton journal et les fiches que tu ouvres.";
+  return `<aside class="feed-side-card feed-side-card--sonar">
+      <div class="feed-side-card__kicker">Sonar</div>
+      <h3 class="feed-side-card__title">À creuser</h3>
+      <p class="sonar-suggest-reason">${escapeHtml(sonarSuggestReason(place))}</p>
       <p class="feed-note sonar-suggest-lead">${escapeHtml(lead)}</p>
       <div class="album-card sonar-suggest-card" data-album="${al.id}"${albumCardStyle(al, "max-width:168px;")}>
         ${coverHtml(al, true)}
         <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div>
       </div>
-      <p class="sonar-suggest-actions"><button type="button" class="btn btn-ghost btn-sm" data-album-open="${al.id}">Ouvrir la fiche</button></p>
+      <p class="sonar-suggest-actions">
+        <button type="button" class="btn btn-ghost btn-sm" data-album-open="${al.id}">Fiche</button>
+        <button type="button" class="btn btn-primary btn-sm" data-sonar-log="${al.id}">Logger</button>
+      </p>
     </aside>`;
   }
 
@@ -2131,7 +2178,7 @@
     );
     const title = tab === "import" ? "Bibliothèques" : "Découvrir";
     const body = tab === "import" ? renderLibraries() : renderDiscover();
-    return `<div class="hub-page view-themed" data-hub-page="explore"><header class="hub-page__head"><p class="hub-page__kicker">Explorer</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
+    return `<div class="hub-page view-themed" data-hub-page="explore"><header class="hub-page__head"><p class="hub-page__kicker">Explorer</p><h1 class="hub-page__title">${title}</h1>${tabs}${tab === "albums" ? sonarChipHtml("explore") : ""}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
   }
 
   function renderCarnetHub() {
@@ -2157,7 +2204,8 @@
       body = renderDiary();
       title = "Journal";
     }
-    return `<div class="hub-page view-themed" data-hub-page="carnet"><header class="hub-page__head"><p class="hub-page__kicker">Mon carnet</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
+    const sonarHint = tab === "journal" ? sonarChipHtml("carnet") : "";
+    return `<div class="hub-page view-themed" data-hub-page="carnet"><header class="hub-page__head"><p class="hub-page__kicker">Mon carnet</p><h1 class="hub-page__title">${title}</h1>${tabs}${sonarHint}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
   }
 
   function renderSocialHub() {
@@ -2261,7 +2309,7 @@
     if (msgBtn) msgBtn.classList.toggle("is-active", document.body.classList.contains("inbox-drawer-open"));
     const titleEl = document.getElementById("topbar-title");
     if (titleEl) {
-      if ($search.value.trim()) titleEl.textContent = "Recherche";
+      if (getSearchQuery()) titleEl.textContent = "Recherche";
       else if (route.view === "album") titleEl.textContent = "Album";
       else if (route.view === "profile") titleEl.textContent = "Profil";
       else if (route.view === "list") titleEl.textContent = "Liste";
@@ -2314,6 +2362,32 @@
     window.visualViewport?.addEventListener("resize", syncViewport);
   }
 
+
+  function getSearchQuery() {
+    return String(route.searchQuery || $search.value || "").trim();
+  }
+
+  function applySearchQuery(q, opts) {
+    opts = opts || {};
+    const t = String(q || "").trim();
+    route.searchQuery = t || null;
+    $search.value = t;
+    if (opts.pushHash !== false) {
+      if (t) window.location.hash = "#recherche/" + encodeURIComponent(t);
+      else window.location.hash = buildHash();
+    }
+    if (opts.render !== false) render();
+  }
+
+  function clearSearchQuery(opts) {
+    opts = opts || {};
+    route.searchQuery = null;
+    $search.value = "";
+    closePopover();
+    if (opts.pushHash !== false) window.location.hash = buildHash();
+    if (opts.render !== false) render();
+  }
+
   function navigate(view, extra) {
     const legacyNav = {
       discover: { view: "explore", hubTab: "albums" },
@@ -2335,7 +2409,11 @@
       pop.hidden = true;
       bell.setAttribute("aria-expanded", "false");
     }
-    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null, inboxDrawer: false }, extra || {});
+    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null, inboxDrawer: false, searchQuery: null }, extra || {});
+    if (!(extra && extra.keepSearch)) {
+      route.searchQuery = null;
+      $search.value = "";
+    }
     if (extra && extra.hubTab != null) route.hubTab = extra.hubTab;
     else if (view === "explore") route.hubTab = route.hubTab || state.exploreTab || "albums";
     else if (view === "carnet") route.hubTab = route.hubTab || state.carnetTab || "journal";
@@ -2345,6 +2423,7 @@
   }
 
   function buildHash() {
+    if (route.searchQuery) return "#recherche/" + encodeURIComponent(route.searchQuery);
     if (route.view === "album" && route.albumId) return `#album/${route.albumId}`;
     if (route.view === "profile" && route.userId) return `#profil/${route.userId}`;
     if (route.view === "list" && route.listId) return `#liste/${route.listId}`;
@@ -2384,6 +2463,7 @@
     route.discoverGenre = null;
     route.dmThreadId = null;
     route.joinInviteRaw = null;
+    route.searchQuery = null;
     const h = (window.location.hash || "#").slice(1);
     if (h.startsWith("album/")) {
       route.view = "album";
@@ -2408,11 +2488,16 @@
       route.view = "inbox";
       route.dmThreadId = h.slice("messagerie/".length);
     } else if (h === "messagerie") route.view = "inbox";
-    else if (h.startsWith("rejoindre/")) {
+    else if (h.startsWith("recherche/")) {
+      route.searchQuery = decodeURIComponent(h.slice("recherche/".length).replace(/\+/g, " "));
+    } else if (h.startsWith("rejoindre/")) {
       route.view = "join";
       route.joinInviteRaw = h.slice("rejoindre/".length);
-    } else route.view = "home";
+    } else {
+      route.view = "home";
+    }
     normalizeRouteToHubs();
+    if (route.searchQuery) $search.value = route.searchQuery;
   }
 
   function avgAlbumRating(albumId) {
@@ -3701,7 +3786,7 @@
     const tabFollowingActive = tab === "following" ? " is-active" : "";
     const tabDiscoverActive = tab === "discover" ? " is-active" : "";
 
-    const railSonar = sonarSuggestHtml();
+    const railSonar = sonarSuggestHtml("home");
     const railLive =
       concerts.length === 0
         ? ""
@@ -4617,7 +4702,7 @@
     if (noResults && !cloudPending) {
       body = `<div class="empty" style="padding:2rem">
         Aucun résultat pour « ${escapeHtml(q)} ».<br>
-        <small>Essaie l'onglet <strong>Bibliothèques</strong> pour explorer Apple Music et Deezer.</small>
+        <small>Essaie <strong>Explorer → Importer</strong> pour Apple Music et Deezer.</small>
       </div>`;
     } else if (tab === "all") {
       body = sectionUsers(local.users.slice(0, 12))
@@ -4629,7 +4714,7 @@
     else if (tab === "albums") body = sectionAlbums(local.albums);
     else if (tab === "tracks") body = sectionTracks(local.tracks);
 
-    return `<div class="search-view view-themed">
+    return `<div class="search-page search-view view-themed">
       <div class="search-hero">
         <p class="kicker search-hero__kicker">Recherche</p>
         <h2 class="page-title search-hero__title">${total ? total + " résultat" + (total > 1 ? "s" : "") : "Aucun résultat"}</h2>
@@ -4650,8 +4735,9 @@
     setNavActive();
     updateHeaderUser();
     let html = "";
-    if ($search.value.trim() && route.view !== "join") {
-      html = renderSearchResults($search.value);
+    const searchQ = getSearchQuery();
+    if (searchQ && route.view !== "join") {
+      html = renderSearchResults(searchQ);
     } else {
       switch (route.view) {
         case "explore":
@@ -4695,7 +4781,7 @@
       }
     }
     $main.innerHTML = html;
-    $main.setAttribute("data-route", $search.value.trim() ? "search" : route.view);
+    $main.setAttribute("data-route", getSearchQuery() ? "search" : route.view);
     $main.classList.remove("view-enter");
     void $main.offsetWidth;
     $main.classList.add("view-enter");
@@ -4715,8 +4801,9 @@
     }
 
     // Déclenche la recherche cloud quand on est sur la page search (si pas en cache)
-    if ($search.value.trim() && window.__sl && window.__sl.ensureSearchCloudFor) {
-      window.__sl.ensureSearchCloudFor($search.value.trim());
+    const sq = getSearchQuery();
+    if (sq && window.__sl && window.__sl.ensureSearchCloudFor) {
+      window.__sl.ensureSearchCloudFor(sq);
     }
     if (route.view === "libraries" || (route.view === "explore" && (route.hubTab || state.exploreTab) === "import")) {
       const lq = document.getElementById("lib-q");
@@ -5536,6 +5623,24 @@
       });
     });
 
+    document.querySelectorAll("[data-sonar-info]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        openAdaptiveInfoModal();
+      });
+    });
+    document.querySelectorAll("[data-sonar-dismiss]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.preventDefault();
+        dismissSonarChip();
+      });
+    });
+    document.querySelectorAll("[data-sonar-log]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        openListenModal(null, b.getAttribute("data-sonar-log"));
+      });
+    });
     const adaptMore = document.getElementById("btn-adapt-learn-more");
     if (adaptMore) adaptMore.addEventListener("click", () => openAdaptiveInfoModal());
     const adaptReset = document.getElementById("btn-adapt-reset");
@@ -6126,7 +6231,7 @@
   if (logFab) logFab.addEventListener("click", () => openListenModal(null, null));
   document.getElementById("logo-link").addEventListener("click", (e) => {
     e.preventDefault();
-    $search.value = "";
+    clearSearchQuery({ pushHash: false });
     navigate("home");
   });
   const userChip = document.getElementById("user-chip");
@@ -6350,6 +6455,7 @@
     $popover.hidden = true;
     $search.setAttribute("aria-expanded", "false");
     searchActiveIndex = -1;
+    document.body.classList.remove("search-focus");
   }
 
   function rebuildPopoverActiveItems() {
@@ -6463,6 +6569,7 @@
 
   // ---- Bindings ----
   $search.addEventListener("focus", () => {
+    document.body.classList.add("search-focus");
     if (!$search.value.trim()) {
       $popover.innerHTML = renderRecents();
       openPopover();
@@ -6481,9 +6588,8 @@
       if (!$popover.hidden) {
         closePopover();
         $search.blur();
-      } else if ($search.value) {
-        $search.value = "";
-        render();
+      } else if ($search.value || route.searchQuery) {
+        clearSearchQuery();
       }
       return;
     }
@@ -6506,7 +6612,7 @@
       } else if ($search.value.trim()) {
         pushRecent($search.value.trim());
         closePopover();
-        render();
+        applySearchQuery($search.value.trim());
       }
     }
   });
@@ -6525,14 +6631,14 @@
       pushRecent($search.value.trim());
       closePopover();
       route.searchTab = tab;
-      render();
+      applySearchQuery($search.value.trim(), { pushHash: true });
       return;
     }
     if (e.target.closest("[data-search-go]")) {
       pushRecent($search.value.trim());
       closePopover();
       route.searchTab = "all";
-      render();
+      applySearchQuery($search.value.trim());
     }
   });
 
@@ -6555,7 +6661,9 @@
   });
 
   window.addEventListener("hashchange", () => {
-    $search.value = "";
+    parseHash();
+    if (route.searchQuery) $search.value = route.searchQuery;
+    else if (!(window.location.hash || "").includes("recherche")) $search.value = "";
     closePopover();
     render();
   });

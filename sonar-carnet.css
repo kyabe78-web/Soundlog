@@ -1,0 +1,75 @@
+/* Sonar — suggestions contextuelles (compact) */
+
+.sonar-chip {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem 0.65rem;
+  padding: 0.55rem 0.75rem;
+  margin-bottom: 0.85rem;
+  border-radius: 14px;
+  background: rgba(232, 168, 107, 0.08);
+  border: 1px solid rgba(232, 168, 107, 0.22);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.sonar-chip__dot {
+  flex-shrink: 0;
+  font-size: 1rem;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.sonar-chip__text {
+  flex: 1;
+  min-width: 0;
+}
+
+.sonar-chip__text strong {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.sonar-chip__info,
+.sonar-chip__dismiss {
+  flex-shrink: 0;
+  padding: 0.1rem 0.35rem;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+  cursor: pointer;
+  line-height: 1;
+}
+
+.sonar-chip__dismiss {
+  font-size: 1.1rem;
+  opacity: 0.7;
+}
+
+.sonar-chip__dismiss:hover {
+  opacity: 1;
+  color: var(--text);
+}
+
+.feed-side-card--sonar .sonar-suggest-lead {
+  margin: 0 0 0.5rem;
+}
+
+.feed-side-card--sonar .sonar-suggest-reason {
+  margin: 0 0 0.65rem;
+  font-size: 0.78rem;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.hub-page__head .sonar-chip {
+  margin: 0.75rem 0 0;
+  grid-column: 1 / -1;
+}
+
+.diary-carnet__masthead .sonar-chip {
+  grid-column: 1 / -1;
+  margin: 0;
+}

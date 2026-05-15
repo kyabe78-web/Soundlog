@@ -542,21 +542,6 @@ h1, h2, h3, .page-title,
   letter-spacing: 0.12em;
 }
 
-/* ---------- Entrées de vue ---------- */
-.app-content.view-enter {
-  animation: carnetIn 0.65s var(--ease-organic) both;
-}
-@keyframes carnetIn {
-  from {
-    opacity: 0;
-    transform: translateY(14px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 /* ---------- Mode clair — page de carnet jour ---------- */
 html[data-theme="light"] {
   color-scheme: light;
@@ -622,8 +607,7 @@ html[data-theme="light"] .theme-toggle__icon {
 @media (prefers-reduced-motion: reduce) {
   .album-card:hover .cover,
   .album-card:hover .cover-img,
-  .feed-post:hover,
-  .app-content.view-enter {
+  .feed-post:hover {
     animation: none;
     transition: none;
     transform: none;

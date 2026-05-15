@@ -71,6 +71,16 @@
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
 }
 
+.hub-tab:focus-visible {
+  outline: 2px solid var(--accent, #e8a86b);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--accent-glow, rgba(232, 168, 107, 0.28));
+}
+
+.hub-tab:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
 .hub-page__body--nested {
   padding-top: 0.25rem;
 }
@@ -183,6 +193,12 @@ body.inbox-drawer-open {
   }
   .inbox-drawer-backdrop {
     transition: none;
+  }
+  .hub-page {
+    animation: none;
+  }
+  .hub-tab:active {
+    transform: none;
   }
 }
 

@@ -2758,10 +2758,12 @@
   };
 
   function setNavActive() {
+    const navV = navViewForRoute();
     document.querySelectorAll(".nav-link[data-view]").forEach((b) => {
-      const navV = navViewForRoute();
       const active = route.view !== "join" && b.dataset.view === navV;
       b.classList.toggle("active", active);
+      if (active) b.setAttribute("aria-current", "page");
+      else b.removeAttribute("aria-current");
     });
     const msgBtn = document.getElementById("topbar-messages");
     if (msgBtn) msgBtn.classList.toggle("is-active", document.body.classList.contains("inbox-drawer-open"));
@@ -7196,6 +7198,16 @@
     clearSearchQuery({ pushHash: false });
     navigate("home");
   });
+  const skipMainBtn = document.querySelector(".skip-link");
+  if (skipMainBtn) {
+    skipMainBtn.addEventListener("click", () => {
+      const m = document.getElementById("app-main");
+      if (!m) return;
+      const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      m.focus();
+      m.scrollIntoView({ block: "start", behavior: reduceMotion ? "auto" : "smooth" });
+    });
+  }
   const userChip = document.getElementById("user-chip");
   userChip.addEventListener("click", () => navigate("profile", { userId: "me" }));
   userChip.addEventListener("keydown", (e) => {
@@ -7661,7 +7673,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=11")
+        .register("/sw.js?v=12")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();

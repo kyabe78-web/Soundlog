@@ -37,9 +37,9 @@ create policy "Avatar delete propri\u00e9taire" on storage.objects
 
 -- ---------- 2. Playlists importées (Spotify/Deezer/Apple) ----------
 create table if not exists public.imported_playlists (
-  id text primary key, -- 'spotify:<id>' / 'deezer:<id>'
+  id text primary key, -- 'spotify:<id>' / 'deezer:<id>' / 'youtube:<id>' / 'lastfm:user:<id>' / 'manual:<id>'
   user_id uuid not null references public.profiles(id) on delete cascade,
-  source text not null check (source in ('spotify','deezer','apple')),
+  source text not null check (source in ('spotify','deezer','apple','youtube','lastfm','manual')),
   remote_id text not null,
   name text not null,
   description text default '',
@@ -85,6 +85,16 @@ create policy "imported_tracks self" on public.imported_tracks
 drop policy if exists "imported_tracks read public" on public.imported_tracks;
 create policy "imported_tracks read public" on public.imported_tracks
   for select using (true);
+
+-- Si la table existait déjà avec un CHECK plus strict, on l'élargit (idempotent)
+do $$
+begin
+  alter table public.imported_playlists drop constraint if exists imported_playlists_source_check;
+  alter table public.imported_playlists
+    add constraint imported_playlists_source_check
+    check (source in ('spotify','deezer','apple','youtube','lastfm','manual'));
+exception when others then null;
+end$$;
 
 -- ---------- 3. Profil : champ avatar_url déjà présent, on ajoute is_email_confirmed ----------
 alter table public.profiles

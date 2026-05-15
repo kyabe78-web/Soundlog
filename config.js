@@ -16,7 +16,16 @@ window.SLConfig = {
   // Laisse vide pour utiliser window.location.origin + pathname automatiquement
   spotifyRedirectUri: "",
 
-  // --- Edge Function proxy (optionnel) : voir BACKEND.md §11
+  // --- YouTube / YouTube Music (optionnel)
+  // Crée une clé sur https://console.cloud.google.com (gratuit, 10000 req/jour)
+  // Voir IMPORTS.md
+  youtubeApiKey: "",
+
+  // --- Last.fm (optionnel)
+  // Crée une clé sur https://www.last.fm/api/account/create (instantané, gratuit)
+  lastfmApiKey: "",
+
+  // --- Edge Function proxy (optionnel) : voir BACKEND.md §13
   // ex. "https://srrpnyvytopgxqxwnomd.functions.supabase.co/preview-proxy"
   edgeProxyUrl: "",
 };

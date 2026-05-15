@@ -944,6 +944,54 @@ input[type="radio"] {
 .sp-playlists label em { margin-left: auto; font-style: normal; color: var(--text-muted); font-size: 0.8rem; }
 .modal-actions--wrap { flex-wrap: wrap; }
 
+/* Sélecteur de plateformes d'import */
+.platform-grid {
+  list-style: none;
+  margin: 0.8rem 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 0.6rem;
+}
+.platform-card {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.35rem;
+  text-align: left;
+  padding: 0.85rem 0.9rem;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  cursor: pointer;
+  font: inherit;
+  color: var(--text);
+  transition: transform var(--duration) var(--ease), border-color var(--duration) var(--ease);
+}
+.platform-card:hover:not(:disabled) {
+  transform: translateY(-1px);
+  border-color: var(--accent);
+  box-shadow: var(--shadow-sm);
+}
+.platform-card--disabled, .platform-card:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+.platform-card__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  color: #fff;
+  font-weight: 700;
+  font-size: 1.1rem;
+}
+.platform-card__name { font-weight: 600; font-size: 0.95rem; }
+.platform-card__desc { font-size: 0.78rem; color: var(--text-muted); line-height: 1.4; }
+
 /* ---------- 8. Cards / panels génériques ---------- */
 .panel {
   background: var(--bg-card);

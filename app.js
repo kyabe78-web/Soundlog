@@ -4325,15 +4325,12 @@
           <h3 class="kicker">Plus</h3>
           <p class="modal-actions modal-actions--wrap">
             <button type="button" class="btn btn-ghost" id="profile-open-stats">Mes statistiques</button>
-            <button type="button" class="btn btn-ghost" id="profile-open-deezer">Importer depuis Deezer</button>
-            <button type="button" class="btn btn-ghost" id="profile-open-spotify">Importer depuis Spotify</button>
+            <button type="button" class="btn btn-primary" id="profile-open-imports">Importer mes playlists</button>
             <button type="button" class="btn btn-ghost" id="profile-post-shoutout">Publier un murmure</button>
-          </p>
-          <p class="feed-note" style="font-size:.78rem"><strong>Deezer</strong> : sans authentification, fonctionne tout de suite. <strong>Spotify</strong> : nécessite un compte Premium côté propriétaire de l'app dev (politique Spotify 2024).</p>`;
+          </p>`;
         document.getElementById("profile-avatar-btn").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openAvatar)(); });
         document.getElementById("profile-open-stats").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openStats)(); });
-        document.getElementById("profile-open-deezer").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openDeezer)(); });
-        document.getElementById("profile-open-spotify").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openSpotify)(); });
+        document.getElementById("profile-open-imports").addEventListener("click", () => { closeModal(); openPlatformPickerModal(); });
         document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
         document.getElementById("auth-save").addEventListener("click", async () => {
@@ -4941,6 +4938,318 @@
     });
   }
   window.__sl.openDeezer = openDeezerImportModal;
+
+  // ---------- Sélecteur de plateformes ----------
+  function openPlatformPickerModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) { toast("Connecte-toi d'abord."); return; }
+    const cfg = window.SLConfig || {};
+    const platforms = [
+      { id: "deezer", name: "Deezer", desc: "URL d'une playlist publique. Aucune inscription.", ok: true, color: "#a238ff" },
+      { id: "spotify", name: "Spotify", desc: cfg.spotifyClientId ? "OAuth — nécessite Premium côté owner de l'app dev." : "Configure spotifyClientId dans config.js.", ok: !!cfg.spotifyClientId, color: "#1db954" },
+      { id: "youtube", name: "YouTube / YouTube Music", desc: cfg.youtubeApiKey ? "URL d'une playlist publique." : "Configure youtubeApiKey dans config.js.", ok: !!cfg.youtubeApiKey, color: "#ff0033" },
+      { id: "lastfm", name: "Last.fm", desc: cfg.lastfmApiKey ? "Pseudo Last.fm + top tracks/albums." : "Configure lastfmApiKey dans config.js.", ok: !!cfg.lastfmApiKey, color: "#d51007" },
+      { id: "manual", name: "CSV / JSON (Soundiiz, Exportify…)", desc: "Colle un export universel.", ok: true, color: "#888" },
+      { id: "apple", name: "Apple Music", desc: "Bientôt — signature Apple Developer requise.", ok: false, color: "#fa243c" },
+      { id: "tidal", name: "Tidal", desc: "Bientôt — pas d'API publique.", ok: false, color: "#000" },
+    ];
+    openModal(`<h2>Importer mes playlists</h2>
+      <p class="feed-note">Choisis ta plateforme. Les pistes alimenteront tes recommandations et ton top artistes.</p>
+      <ul class="platform-grid">${platforms.map((p) => `
+        <li>
+          <button type="button" class="platform-card ${p.ok ? "" : "platform-card--disabled"}" data-platform="${p.id}" ${p.ok ? "" : "disabled"}>
+            <span class="platform-card__badge" style="background:${p.color}">${escapeHtml(p.name[0])}</span>
+            <span class="platform-card__name">${escapeHtml(p.name)}</span>
+            <span class="platform-card__desc">${escapeHtml(p.desc)}</span>
+          </button>
+        </li>`).join("")}</ul>
+      <p class="modal-actions"><button type="button" class="btn btn-ghost" id="pp-close">Fermer</button></p>`);
+    document.getElementById("pp-close").addEventListener("click", closeModal);
+    document.querySelectorAll("[data-platform]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const id = btn.getAttribute("data-platform");
+        closeModal();
+        if (id === "deezer") openDeezerImportModal();
+        else if (id === "spotify") openSpotifyImportModal();
+        else if (id === "youtube") openYoutubeImportModal();
+        else if (id === "lastfm") openLastfmImportModal();
+        else if (id === "manual") openManualImportModal();
+      });
+    });
+  }
+  window.__sl.openPlatformPicker = openPlatformPickerModal;
+
+  // ---------- YouTube / YouTube Music ----------
+  async function openYoutubeImportModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    const cfg = window.SLConfig || {};
+    if (!cfg.youtubeApiKey) {
+      openModal(`<h2>YouTube non configuré</h2>
+        <p class="feed-note">Ajoute <code>youtubeApiKey</code> dans <code>config.js</code> (clé Google Cloud, gratuite — voir IMPORTS.md).</p>
+        <p class="modal-actions"><button type="button" class="btn btn-ghost" id="yt-close">Fermer</button></p>`);
+      document.getElementById("yt-close").addEventListener("click", closeModal);
+      return;
+    }
+    openModal(`<h2>Importer une playlist YouTube / YouTube Music</h2>
+      <p class="feed-note">Colle l'URL d'une playlist publique (ex. <code>https://music.youtube.com/playlist?list=PL...</code> ou <code>https://www.youtube.com/playlist?list=PL...</code>).</p>
+      <label class="visually-hidden" for="yt-url">URL YouTube</label>
+      <input type="url" id="yt-url" placeholder="https://www.youtube.com/playlist?list=..." />
+      <p class="modal-actions">
+        <button type="button" class="btn btn-primary" id="yt-import">Importer</button>
+        <button type="button" class="btn btn-ghost" id="yt-cancel">Annuler</button>
+      </p>
+      <p class="feed-note" id="yt-status"></p>`);
+    const setS = (s) => { const n = document.getElementById("yt-status"); if (n) n.textContent = s; };
+    document.getElementById("yt-cancel").addEventListener("click", closeModal);
+    document.getElementById("yt-import").addEventListener("click", async () => {
+      const raw = document.getElementById("yt-url").value.trim();
+      const m = raw.match(/[?&]list=([A-Za-z0-9_-]+)/) || raw.match(/^([A-Za-z0-9_-]{10,})$/);
+      if (!m) { setS("URL ou ID invalide."); return; }
+      const listId = m[1];
+      try {
+        setS("Récupération de la playlist...");
+        let metaJ;
+        const metaR = await fetch(`https://www.googleapis.com/youtube/v3/playlists?part=snippet&id=${listId}&key=${encodeURIComponent(cfg.youtubeApiKey)}`);
+        metaJ = await metaR.json();
+        if (metaJ.error) throw new Error(metaJ.error.message);
+        const plMeta = (metaJ.items || [])[0];
+        const playlistName = plMeta?.snippet?.title || "Playlist YouTube";
+        const playlistArt = plMeta?.snippet?.thumbnails?.high?.url || plMeta?.snippet?.thumbnails?.default?.url || null;
+        const playlistRow = {
+          id: "youtube:" + listId,
+          source: "youtube",
+          remoteId: listId,
+          name: playlistName,
+          description: plMeta?.snippet?.description || "",
+          artworkUrl: playlistArt,
+          raw: { provider: "youtube" },
+        };
+        await SLCloud.upsertImportedPlaylist(playlistRow);
+        // Pagination items
+        const items = [];
+        let pageToken = "";
+        do {
+          const r = await fetch(`https://www.googleapis.com/youtube/v3/playlistItems?part=snippet&playlistId=${listId}&maxResults=50&key=${encodeURIComponent(cfg.youtubeApiKey)}${pageToken ? `&pageToken=${pageToken}` : ""}`);
+          const j = await r.json();
+          if (j.error) throw new Error(j.error.message);
+          items.push(...(j.items || []));
+          pageToken = j.nextPageToken || "";
+        } while (pageToken);
+        // Heuristique : si le channel est "Artiste - Topic", on prend "Artiste" + title du clip = piste
+        const rows = items.map((it) => {
+          const sn = it.snippet || {};
+          const title = sn.title || "";
+          let artist = (sn.videoOwnerChannelTitle || "").replace(/ - Topic$/i, "").trim();
+          let track = title;
+          // Si pas de "Topic", essaie de parser "Artist - Track"
+          if (!artist && title.includes(" - ")) {
+            const [a, t] = title.split(" - ", 2);
+            artist = a.trim(); track = t.trim();
+          }
+          return {
+            playlistId: playlistRow.id,
+            source: playlistRow.source,
+            trackName: track,
+            artistName: artist || "—",
+            albumName: track, // pas d'info d'album fiable
+            albumYear: null,
+            albumArtworkUrl: sn.thumbnails?.high?.url || sn.thumbnails?.default?.url || null,
+            remoteTrackId: sn.resourceId?.videoId || null,
+            remoteAlbumId: null,
+          };
+        });
+        await SLCloud.insertImportedTracks(rows);
+        setS(`Import terminé — ${rows.length} titres.`);
+        toast("Playlist YouTube importée.");
+        render();
+      } catch (e) { setS("Erreur : " + (e.message || "inconnue")); }
+    });
+  }
+  window.__sl.openYoutube = openYoutubeImportModal;
+
+  // ---------- Last.fm ----------
+  async function openLastfmImportModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    const cfg = window.SLConfig || {};
+    if (!cfg.lastfmApiKey) {
+      openModal(`<h2>Last.fm non configuré</h2>
+        <p class="feed-note">Ajoute <code>lastfmApiKey</code> dans <code>config.js</code> (clé instantanée et gratuite — voir IMPORTS.md).</p>
+        <p class="modal-actions"><button type="button" class="btn btn-ghost" id="lf-close">Fermer</button></p>`);
+      document.getElementById("lf-close").addEventListener("click", closeModal);
+      return;
+    }
+    openModal(`<h2>Importer depuis Last.fm</h2>
+      <p class="feed-note">Renseigne ton pseudo Last.fm. On récupère ton top 200 titres + top 100 albums sur toute ta période d'écoute.</p>
+      <label>Pseudo Last.fm <input type="text" id="lf-user" placeholder="ex. lewis-the-melodious" /></label>
+      <p class="modal-actions">
+        <button type="button" class="btn btn-primary" id="lf-import">Importer</button>
+        <button type="button" class="btn btn-ghost" id="lf-cancel">Annuler</button>
+      </p>
+      <p class="feed-note" id="lf-status"></p>`);
+    const setS = (s) => { const n = document.getElementById("lf-status"); if (n) n.textContent = s; };
+    document.getElementById("lf-cancel").addEventListener("click", closeModal);
+    document.getElementById("lf-import").addEventListener("click", async () => {
+      const user = document.getElementById("lf-user").value.trim();
+      if (!user) { setS("Pseudo requis."); return; }
+      try {
+        setS("Récupération du top tracks...");
+        const tt = await fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettoptracks&user=${encodeURIComponent(user)}&api_key=${encodeURIComponent(cfg.lastfmApiKey)}&format=json&limit=200`);
+        const ttJ = await tt.json();
+        if (ttJ.error) throw new Error(ttJ.message);
+        setS("Récupération du top albums...");
+        const ta = await fetch(`https://ws.audioscrobbler.com/2.0/?method=user.gettopalbums&user=${encodeURIComponent(user)}&api_key=${encodeURIComponent(cfg.lastfmApiKey)}&format=json&limit=100`);
+        const taJ = await ta.json();
+        if (taJ.error) throw new Error(taJ.message);
+        const tracks = ttJ.toptracks?.track || [];
+        const albums = taJ.topalbums?.album || [];
+        const playlistRow = {
+          id: "lastfm:user:" + user,
+          source: "lastfm",
+          remoteId: user,
+          name: `Last.fm — Top de ${user}`,
+          description: `Top ${tracks.length} titres + top ${albums.length} albums`,
+          artworkUrl: null,
+          raw: { provider: "lastfm", username: user },
+        };
+        await SLCloud.upsertImportedPlaylist(playlistRow);
+        const rows = tracks.map((t) => ({
+          playlistId: playlistRow.id,
+          source: playlistRow.source,
+          trackName: t.name || "",
+          artistName: (t.artist && t.artist.name) || "",
+          albumName: "",
+          albumYear: null,
+          albumArtworkUrl: (t.image && t.image.find && (t.image.find((i) => i.size === "extralarge") || t.image[0]) || {})["#text"] || null,
+          remoteTrackId: t.mbid || null,
+          remoteAlbumId: null,
+        }));
+        // Ajoute aussi les albums (en track virtuel = même album)
+        albums.forEach((a) => {
+          rows.push({
+            playlistId: playlistRow.id,
+            source: playlistRow.source,
+            trackName: "(album)",
+            artistName: (a.artist && a.artist.name) || "",
+            albumName: a.name || "",
+            albumYear: null,
+            albumArtworkUrl: (a.image && a.image.find && (a.image.find((i) => i.size === "extralarge") || a.image[0]) || {})["#text"] || null,
+            remoteTrackId: null,
+            remoteAlbumId: a.mbid || null,
+          });
+        });
+        await SLCloud.insertImportedTracks(rows);
+        // Fusion albums uniques
+        const uniq = new Map();
+        rows.forEach((r) => {
+          if (!r.albumName) return;
+          const k = `${r.albumName.toLowerCase()}|${r.artistName.toLowerCase()}`;
+          if (!uniq.has(k)) uniq.set(k, r);
+        });
+        state.importedAlbums = state.importedAlbums || [];
+        uniq.forEach((r) => {
+          const id = "lastfm-" + cryptoRandomId();
+          state.importedAlbums.push({
+            id, title: r.albumName, artist: r.artistName, year: null, genre: "",
+            artworkUrl: r.albumArtworkUrl, from: "#444", to: "#222",
+          });
+        });
+        persist();
+        setS(`Import terminé — ${rows.length} entrées.`);
+        toast("Last.fm importé !");
+        render();
+      } catch (e) { setS("Erreur : " + (e.message || "inconnue")); }
+    });
+  }
+  window.__sl.openLastfm = openLastfmImportModal;
+
+  // ---------- CSV / JSON manuel ----------
+  function openManualImportModal() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    openModal(`<h2>Import manuel — CSV ou JSON</h2>
+      <p class="feed-note">Colle un export depuis Soundiiz, Exportify, Tune My Music… Format accepté :</p>
+      <ul class="feed-note">
+        <li><strong>CSV</strong> avec colonnes <code>Track Name,Artist Name,Album Name</code> (en-tête obligatoire).</li>
+        <li><strong>JSON</strong> = tableau d'objets <code>{ track, artist, album, year? }</code>.</li>
+      </ul>
+      <textarea id="mi-data" rows="10" placeholder="Colle ici ton CSV ou JSON…" style="width:100%;min-height:180px;font:inherit;padding:.55rem;border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg-elevated);color:var(--text);"></textarea>
+      <label>Nom de la playlist (optionnel) <input type="text" id="mi-name" placeholder="Mon export" /></label>
+      <p class="modal-actions">
+        <button type="button" class="btn btn-primary" id="mi-import">Importer</button>
+        <button type="button" class="btn btn-ghost" id="mi-cancel">Annuler</button>
+      </p>
+      <p class="feed-note" id="mi-status"></p>`);
+    const setS = (s) => { const n = document.getElementById("mi-status"); if (n) n.textContent = s; };
+    document.getElementById("mi-cancel").addEventListener("click", closeModal);
+    document.getElementById("mi-import").addEventListener("click", async () => {
+      const raw = document.getElementById("mi-data").value.trim();
+      const name = document.getElementById("mi-name").value.trim() || "Import manuel";
+      if (!raw) { setS("Vide."); return; }
+      let parsed = [];
+      try {
+        if (raw.startsWith("[") || raw.startsWith("{")) {
+          const j = JSON.parse(raw);
+          parsed = Array.isArray(j) ? j : (j.tracks || j.items || []);
+          parsed = parsed.map((r) => ({
+            trackName: r.track || r.title || r.name || "",
+            artistName: r.artist || r.artistName || "",
+            albumName: r.album || r.albumName || "",
+            albumYear: r.year ? Number(r.year) : null,
+          }));
+        } else {
+          // CSV simple : on parse virgules avec gestion guillemets
+          const lines = raw.split(/\r?\n/).filter((l) => l.trim());
+          const header = parseCsvRow(lines[0]).map((c) => c.toLowerCase().trim());
+          const idxTrack = header.findIndex((h) => /track|titre|song/i.test(h));
+          const idxArtist = header.findIndex((h) => /artist|artiste/i.test(h));
+          const idxAlbum = header.findIndex((h) => /album/i.test(h));
+          const idxYear = header.findIndex((h) => /year|année|ann/i.test(h));
+          if (idxTrack < 0 || idxArtist < 0) throw new Error("Colonnes Track et Artist requises");
+          parsed = lines.slice(1).map((l) => {
+            const c = parseCsvRow(l);
+            return {
+              trackName: c[idxTrack] || "",
+              artistName: c[idxArtist] || "",
+              albumName: idxAlbum >= 0 ? c[idxAlbum] || "" : "",
+              albumYear: idxYear >= 0 && c[idxYear] ? Number(c[idxYear]) : null,
+            };
+          });
+        }
+      } catch (e) { setS("Parsing impossible : " + e.message); return; }
+      if (!parsed.length) { setS("Aucune ligne."); return; }
+      try {
+        const pid = "manual:" + Date.now();
+        await SLCloud.upsertImportedPlaylist({
+          id: pid, source: "manual", remoteId: String(Date.now()), name, description: "Import manuel",
+          artworkUrl: null, raw: { provider: "manual", count: parsed.length },
+        });
+        const rows = parsed.map((p) => ({
+          playlistId: pid,
+          source: "manual",
+          trackName: p.trackName,
+          artistName: p.artistName,
+          albumName: p.albumName,
+          albumYear: p.albumYear,
+          albumArtworkUrl: null,
+          remoteTrackId: null,
+          remoteAlbumId: null,
+        }));
+        await SLCloud.insertImportedTracks(rows);
+        setS(`Import terminé — ${rows.length} pistes.`);
+        toast("Import manuel réussi.");
+        render();
+      } catch (e) { setS("Erreur : " + (e.message || "inconnue")); }
+    });
+  }
+  function parseCsvRow(line) {
+    const out = []; let cur = ""; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"' ) { if (inQ && line[i+1] === '"') { cur += '"'; i++; } else inQ = !inQ; }
+      else if (c === "," && !inQ) { out.push(cur); cur = ""; }
+      else cur += c;
+    }
+    out.push(cur); return out.map((s) => s.trim());
+  }
+  window.__sl.openManual = openManualImportModal;
 
   // ---------- Hooks au login / route Spotify ----------
   window.addEventListener("sl-spotify-connected", () => {

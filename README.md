@@ -6,7 +6,7 @@ Carnet d’écoutes et réseau social musical (inspiré Letterboxd), en **SPA st
 
 | Mode | Comportement |
 |------|----------------|
-| **Invité** | Données dans `localStorage` sur cet appareil + carnet de **démonstration** (profils fictifs). |
+| **Invité** | Données dans `localStorage` sur cet appareil — ton carnet personnel uniquement. |
 | **Connecté** | Compte **Supabase** : carnet, social, DM et imports synchronisés entre appareils. |
 
 Sans `config.js` valide (Supabase), seul le mode invité est actif.
@@ -64,10 +64,6 @@ soundlog/
 - **Carnet** — journal, à écouter, listes
 - **Social** — cercle (fil, personnes, concerts), I was there !
 
-## Carnet de démonstration
-
-Les profils **Marie, Léo, Adagio** servent à découvrir l’app sans compte. Après connexion, ils sont **masqués par défaut** (réglage dans **Mon profil → compte** : « Afficher le carnet de démonstration »).
-
 ## Licence
 
-Projet personnel — phase de test.
+Projet personnel.

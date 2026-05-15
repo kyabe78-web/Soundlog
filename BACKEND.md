@@ -306,7 +306,7 @@ Coût indicatif : 10-15 € / an pour un `.com`, gratuit en sous-domaine.
 | Connexion échoue silencieusement | Confirm-email activé | Désactiver le `Confirm email` en dev, ou cliquer le lien reçu |
 | Sync ne semble pas se faire | Cache localStorage stale | Vide le cache navigateur OU fais `localStorage.clear()` dans la console |
 | Erreur CORS Supabase | Mauvaise URL ou clé invalide | Vérifie les valeurs dans Project Settings → API |
-| Toast "Erreur cloud" sur demande d'ami | RLS bloque | Le target n'est pas un profil cloud — c'est un user fictif (u1/u2/u3) |
+| Toast "Erreur cloud" sur demande d'ami | RLS bloque | Le target n'est pas un profil cloud valide — vérifie l'UUID du profil |
 
 ---
 

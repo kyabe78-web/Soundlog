@@ -41,27 +41,71 @@
 
   const USERS = [
     { id: "me", name: "Toi", handle: "moi", bio: "Amateur·rice de disques. Les notes restent sur ton appareil.", hue: 152 },
-    { id: "u1", name: "Marie V.", handle: "mariev", bio: "Jazz, soul et vinyles trouvés en brocante.", hue: 320 },
-    { id: "u2", name: "Léo Beats", handle: "leobeats", bio: "Hip-hop & expérimental. Playlists chaque dimanche.", hue: 28 },
-    { id: "u3", name: "Adagio", handle: "adagio", bio: "Classique moderne et musiques de film.", hue: 200 },
   ];
 
-  const DEMO_USER_IDS = new Set(USERS.filter((u) => u.id !== "me").map((u) => u.id));
+  /** Anciens profils fictifs (Marie, Léo, Adagio) — retirés, données purgées au chargement. */
+  const LEGACY_DEMO_USER_IDS = new Set(["u1", "u2", "u3"]);
+  const LEGACY_DEMO_NOTIFICATION_IDS = new Set(["n-circle", "n-live", "fr-seed"]);
 
-  function isDemoUserId(userId) {
-    return DEMO_USER_IDS.has(userId);
-  }
-
-  /** Carnet fictif (Marie, Léo, Adagio) — masqué par défaut quand tu es connecté·e au cloud. */
-  function showDemoCarnet() {
-    if (!cloudSignedIn()) return true;
-    return !!(state.settings && state.settings.showDemoCarnet);
+  function isLegacyDemoUserId(userId) {
+    return LEGACY_DEMO_USER_IDS.has(userId);
   }
 
   function includeUserInCircle(userId) {
-    if (userId === "me") return true;
-    if (isDemoUserId(userId) && !showDemoCarnet()) return false;
+    if (isLegacyDemoUserId(userId)) return false;
     return true;
+  }
+
+  /** Retire posts, notifs et relations des comptes fictifs (migration testeurs). */
+  function purgeLegacyDemoContent(s) {
+    if (!s || typeof s !== "object") return false;
+    const isDemo = (id) => id && LEGACY_DEMO_USER_IDS.has(id);
+    let changed = false;
+    const strip = (arr, pickUserId) => {
+      if (!Array.isArray(arr)) return arr;
+      const next = arr.filter((row) => !isDemo(pickUserId(row)));
+      if (next.length !== arr.length) changed = true;
+      return next;
+    };
+    s.listenings = strip(s.listenings, (l) => l.userId);
+    s.lists = strip(s.lists, (l) => l.userId);
+    s.concertLogs = strip(s.concertLogs, (c) => c.userId);
+    s.shoutouts = strip(s.shoutouts, (x) => x.userId);
+    s.feedComments = strip(s.feedComments, (c) => c.userId);
+    if (Array.isArray(s.follows)) {
+      const next = s.follows.filter((id) => !isDemo(id));
+      if (next.length !== s.follows.length) changed = true;
+      s.follows = next;
+    }
+    if (Array.isArray(s.friends)) {
+      const next = s.friends.filter((id) => !isDemo(id));
+      if (next.length !== s.friends.length) changed = true;
+      s.friends = next;
+    }
+    s.incomingFriendRequests = strip(s.incomingFriendRequests, (r) => r.fromUserId);
+    s.outgoingFriendRequests = strip(s.outgoingFriendRequests, (r) => r.toUserId);
+    if (Array.isArray(s.notifications)) {
+      const next = s.notifications.filter((n) => {
+        if (n && LEGACY_DEMO_NOTIFICATION_IDS.has(n.id)) return false;
+        if (n && n.meta && isDemo(n.meta.userId)) return false;
+        return true;
+      });
+      if (next.length !== s.notifications.length) changed = true;
+      s.notifications = next;
+    }
+    if (s.settings && "showDemoCarnet" in s.settings) {
+      delete s.settings.showDemoCarnet;
+      changed = true;
+    }
+    if (s.socialReactions && typeof s.socialReactions === "object") {
+      ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8"].forEach((lid) => {
+        if (s.socialReactions[lid]) {
+          delete s.socialReactions[lid];
+          changed = true;
+        }
+      });
+    }
+    return changed;
   }
 
   function defaultAdaptive() {
@@ -70,95 +114,26 @@
 
   function defaultState() {
     return {
-      listenings: [
-        { id: "l1", userId: "u1", albumId: "a11", date: "2026-05-10", rating: 5, review: "Parfait du début à la fin. Buckingham Nicks energy." },
-        { id: "l2", userId: "u2", albumId: "a13", date: "2026-05-09", rating: 5, review: "Un classique instantané du storytelling." },
-        { id: "l3", userId: "u3", albumId: "a8", date: "2026-05-08", rating: 4.5, review: "J'ai écouté ça en boucle toute la semaine." },
-        { id: "l4", userId: "u1", albumId: "a6", date: "2026-05-06", rating: 4.5, review: "" },
-        { id: "l5", userId: "me", albumId: "a4", date: "2026-05-12", rating: 4, review: "Les basses sur Let It Happen 😮" },
-        { id: "l6", userId: "u2", albumId: "a17", date: "2026-05-11", rating: 4.5, review: "Le flow sur Money Trees est indémodable." },
-        { id: "l7", userId: "u3", albumId: "a15", date: "2026-05-07", rating: 5, review: "Écriture fragile, production immense." },
-        { id: "l8", userId: "u1", albumId: "a22", date: "2026-05-05", rating: 4, review: "Parfait pour la nuit pluvieuse." },
-      ],
-      follows: ["u1", "u2", "u3"],
-      friends: ["u2"],
-      incomingFriendRequests: [{ id: "fr-seed", fromUserId: "u1", createdAt: "2026-05-10T12:00:00.000Z" }],
+      listenings: [],
+      follows: [],
+      friends: [],
+      incomingFriendRequests: [],
       outgoingFriendRequests: [],
-      favoriteArtists: ["Radiohead", "Phoebe Bridgers"],
-      notifications: [
-        {
-          id: "n-welcome",
-          type: "system",
-          title: "Communauté Soundlog",
-          body: "Ouvre l’onglet Communauté pour les amis, les murmures et les alertes concerts près de chez toi.",
-          read: false,
-          at: "2026-05-12T10:00:00.000Z",
-          meta: {},
-        },
-        {
-          id: "n-circle",
-          type: "social",
-          title: "Marie a noté un album",
-          body: "Fleetwood Mac — Rumours · 5★ dans ton cercle.",
-          read: false,
-          at: "2026-05-11T20:00:00.000Z",
-          meta: { userId: "u1" },
-        },
-        {
-          id: "n-live",
-          type: "social",
-          title: "Léo était là",
-          body: "Tampon concert · Kendrick Lamar · Accor Arena.",
-          read: false,
-          at: "2026-05-10T14:00:00.000Z",
-          meta: { userId: "u2" },
-        },
-      ],
+      favoriteArtists: [],
+      notifications: [],
       tourAlertSeen: [],
       feedComments: [],
-      shoutouts: [
-        {
-          id: "sh0",
-          userId: "u1",
-          text: "Ce week-end je creuse du trip-hop — des reco ?",
-          at: "2026-05-11T18:00:00.000Z",
-        },
-      ],
-      manualTourDates: [
-        {
-          id: "mtd-seed",
-          artist: "Radiohead",
-          datetime: "2026-10-18T20:00:00",
-          venue: "Accor Arena",
-          city: "Paris",
-          url: "",
-        },
-      ],
+      shoutouts: [],
+      manualTourDates: [],
       lastTourSyncAt: null,
-      lists: [
-        {
-          id: "list1",
-          userId: "u1",
-          title: "Pluie & mélancolie",
-          description: "Pour rester au chaud.",
-          albumIds: ["a6", "a30", "a22", "a3"],
-        },
-        {
-          id: "list2",
-          userId: "u2",
-          title: "90s essentials",
-          description: "",
-          albumIds: ["a16", "a29", "a27", "a17"],
-        },
-      ],
-      wishlist: ["a15", "a31", "a28"],
+      lists: [],
+      wishlist: [],
       importedAlbums: [],
       settings: {
         youtubeApiKey: "",
         alertCity: "Paris",
         desktopAlerts: false,
         musicCountry: "FR",
-        showDemoCarnet: true,
       },
       profile: {
         displayName: "Toi",
@@ -166,38 +141,7 @@
         bio: "Amateur·rice de disques. Les notes restent sur ton appareil.",
         performanceVideos: [],
       },
-      concertLogs: [
-        {
-          id: "c1",
-          userId: "u1",
-          artist: "Nick Cave & The Bad Seeds",
-          eventTitle: "European Tour",
-          date: "2025-11-02",
-          venue: "Le Zénith",
-          city: "Paris",
-          notes: "Son massif, setlist parfaite.",
-        },
-        {
-          id: "c2",
-          userId: "u2",
-          artist: "Kendrick Lamar",
-          eventTitle: "Big Steppers Tour",
-          date: "2024-08-14",
-          venue: "Accor Arena",
-          city: "Paris",
-          notes: "",
-        },
-        {
-          id: "c3",
-          userId: "u3",
-          artist: "The Smile",
-          eventTitle: "",
-          date: "2023-06-20",
-          venue: "Madison Square Garden",
-          city: "New York",
-          notes: "Première fois en live — énergie folle.",
-        },
-      ],
+      concertLogs: [],
       invitedPeers: [],
       sentInvites: [],
       adaptive: defaultAdaptive(),
@@ -222,7 +166,7 @@
       if (!raw) return defaultState();
       const parsed = JSON.parse(raw);
       const base = defaultState();
-      return {
+      const merged = {
         ...base,
         ...parsed,
         listenings: parsed.listenings || base.listenings,
@@ -276,12 +220,19 @@
         feedHomeTab: parsed.feedHomeTab === "discover" ? "discover" : base.feedHomeTab,
         feedHomeShown: Math.min(80, Math.max(10, parseInt(parsed.feedHomeShown, 10) || base.feedHomeShown)),
       };
+      purgeLegacyDemoContent(merged);
+      return merged;
     } catch {
       return defaultState();
     }
   }
 
   let state = loadState();
+  if (purgeLegacyDemoContent(state)) {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (_) {}
+  }
   let previewAudio = null;
   let previewAlbumId = null;
 
@@ -1763,21 +1714,8 @@
       }).catch((e) => { toast("Erreur cloud : " + (e.message || "inconnue")); });
       return;
     }
-    const demoIds = new Set(["u1", "u2", "u3"]);
-    if (demoIds.has(uid)) {
-      state.outgoingFriendRequests = (state.outgoingFriendRequests || []).filter((r) => r.toUserId !== uid);
-      addFriend(uid);
-      if (!(state.follows || []).includes(uid)) state.follows.push(uid);
-      const u = userById(uid);
-      addNotification({
-        type: "friend",
-        title: "Nouvelle connexion",
-        body: u ? `Tu es maintenant ami·e avec ${u.name} (démo locale instantanée).` : "Connexion ajoutée.",
-        meta: { userId: uid },
-      });
-      persist();
-      toast("Connexion ajoutée — en démo, les profils fictifs acceptent tout de suite.");
-      render();
+    if (isLegacyDemoUserId(uid)) {
+      toast("Ce profil n’existe plus. Cherche un·e utilisateur·trice dans Communauté.");
       return;
     }
     const id = "fr-out-" + Date.now().toString(36);
@@ -2060,13 +1998,7 @@
         avatar_url: cloudPeer.avatar_url || "",
       };
     }
-    const demo = USERS.find((u) => u.id === id);
-    if (demo) {
-      return {
-        ...demo,
-        avatar_url: demo.avatar_url || "",
-      };
-    }
+    if (isLegacyDemoUserId(id)) return null;
     return null;
   }
 
@@ -3117,7 +3049,7 @@
       <header class="passport-hero">
         <div class="passport-crest" aria-hidden="true">♫</div>
         <div class="passport-hero-text">
-          <p class="passport-kicker">Carnet officiel (fictif) du voyage musical</p>
+          <p class="passport-kicker">Carnet officiel du voyage musical</p>
           <h1 class="passport-title">Passeport musical</h1>
           <p class="passport-lead"><strong>I was there !</strong> — chaque concert laisse un tampon inspiré des plus grandes salles du monde (repères textuels, style philatélique).</p>
           <p><button type="button" class="btn btn-primary" id="btn-add-concert">+ Nouveau tampon</button></p>
@@ -3679,7 +3611,6 @@
   }
 
   function renderLocalShoutCards() {
-    if (cloudSignedIn() && !showDemoCarnet()) return "";
     ensureSocialArrays();
     const rows = (state.shoutouts || [])
       .slice()
@@ -3687,8 +3618,8 @@
       .slice(0, 4);
     if (!rows.length) return "";
     const badge = cloudSignedIn()
-      ? `<span class="home-murmurs__badge">Démo locale</span>`
-      : `<span class="home-murmurs__badge">Sur cet appareil</span>`;
+      ? `<span class="home-murmurs__badge">Sur cet appareil</span>`
+      : `<span class="home-murmurs__badge">Local</span>`;
     return `<section class="home-murmurs home-murmurs--local"><header class="home-murmurs__head"><h2 class="home-murmurs__title">Murmures</h2>${badge}</header><div class="home-murmurs__list">${rows
       .map((s) => {
         const u = userById(s.userId);
@@ -4067,8 +3998,8 @@
       ${intro}
       <h3 class="lists-section-title">Tes listes</h3>
       <div class="lists-shelf">${mine.length ? mine.map((l) => row(l, inCarnet)).join("") : `<p class="empty">Aucune liste pour l’instant.</p>`}</div>
-      <h3 class="lists-section-title">Communauté (démo)</h3>
-      <div class="lists-shelf">${others.map((l) => row(l, inCarnet)).join("")}</div>
+      ${others.length ? `<h3 class="lists-section-title">Communauté</h3>
+      <div class="lists-shelf">${others.map((l) => row(l, inCarnet)).join("")}</div>` : ""}
     </div>`;
   }
 
@@ -5255,8 +5186,6 @@
       publicFeedPostHtml,
       markNotificationRead,
       persist,
-      showDemoCarnet,
-      isDemoUserId,
       isListeningLiked,
       likeCountSuffix,
       toggleListeningLike,
@@ -6200,7 +6129,7 @@
 
   function openCommentModal(listeningId) {
     openModal(`<h2>Commentaire</h2>
-      <p class="feed-note">Réaction sur cette écoute — stockée uniquement dans ton navigateur (démo locale).</p>
+      <p class="feed-note">Commentaire stocké sur cet appareil. Connecte-toi pour commenter en ligne sur les écoutes synchronisées.</p>
       <textarea id="fc-body" rows="4" placeholder="Ton mot…"></textarea>
       <p style="margin-top:0.75rem">
         <button type="button" class="btn btn-primary" id="fc-save">Publier</button>
@@ -7167,13 +7096,11 @@
       ...cloudOut,
       ...(state.outgoingFriendRequests || []).filter((r) => !outTo.has(r.toUserId)),
     ];
-    const demoFriendIds = showDemoCarnet() ? (state.friends || []).filter((id) => !isCloudUuid(id)) : [];
     const cloudFriendProfiles = data.friends || [];
     const cloudFriendIds = cloudFriendProfiles.map((p) => p.id).filter(Boolean);
-    state.friends = [...new Set([...demoFriendIds, ...cloudFriendIds])];
+    const localFriends = (state.friends || []).filter((id) => !isCloudUuid(id) && !isLegacyDemoUserId(id));
+    state.friends = [...new Set([...localFriends, ...cloudFriendIds])];
     if (cloudId) {
-      state.settings = state.settings || {};
-      if (state.settings.showDemoCarnet === true) state.settings.showDemoCarnet = false;
       state.follows = (state.follows || []).filter((id) => includeUserInCircle(id));
     }
     registerCloudPeerProfiles(cloudFriendProfiles);
@@ -7347,7 +7274,7 @@
         });
       } else if (which === "signup") {
         panel.innerHTML = `
-          <label>Nom affiché <input type="text" id="auth-name" autocomplete="name" placeholder="Marie, Léo…" /></label>
+          <label>Nom affiché <input type="text" id="auth-name" autocomplete="name" placeholder="Ton prénom ou surnom" /></label>
           ${handleFieldHtml({ inputId: "auth-handle", previewId: "auth-handle-preview" })}
           <label>Email <input type="email" id="auth-email" autocomplete="email" /></label>
           <label>Mot de passe (8+ caractères) <input type="password" id="auth-pw" autocomplete="new-password" /></label>
@@ -7403,8 +7330,6 @@
           <label>Bio <textarea id="auth-bio">${escapeHtml(me.bio || "")}</textarea></label>
           <label>Ville / région <input type="text" id="auth-city" value="${escapeHtml(me.city || "")}" /></label>
           <p class="feed-note">Email : <strong>${escapeHtml((SLCloud.session && SLCloud.session.user && SLCloud.session.user.email) || "—")}</strong></p>
-          <label class="social-check auth-demo-toggle"><input type="checkbox" id="auth-show-demo" ${showDemoCarnet() ? "checked" : ""} /> Afficher le carnet de démonstration (Marie, Léo, Adagio)</label>
-          <p class="feed-note">Désactivé par défaut après connexion pour ne mélanger que ton vrai cercle.</p>
           <p class="auth-error" id="auth-err" hidden></p>
           <p class="modal-actions">
             <button type="button" class="btn btn-primary" id="auth-save">Enregistrer</button>
@@ -7421,16 +7346,6 @@
         document.getElementById("profile-open-stats").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openStats)(); });
         document.getElementById("profile-open-imports").addEventListener("click", () => { closeModal(); openPlatformPickerModal(); });
         document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
-        const demoToggle = document.getElementById("auth-show-demo");
-        if (demoToggle) {
-          demoToggle.addEventListener("change", () => {
-            state.settings = state.settings || {};
-            state.settings.showDemoCarnet = !!demoToggle.checked;
-            persist();
-            render();
-            toast(demoToggle.checked ? "Carnet démo affiché." : "Carnet démo masqué.");
-          });
-        }
         wireHandleFieldPreview("auth-handle", "auth-handle-preview");
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
         document.getElementById("auth-save").addEventListener("click", async () => {

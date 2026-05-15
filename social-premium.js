@@ -184,125 +184,7 @@
   }
 
   function renderSuggestAside() {
-    const ids = d.feedCircleIds();
-    if (!d.showDemoCarnet || !d.showDemoCarnet()) return "";
-    const candidates = d.USERS.filter((u) => u.id !== "me" && !ids.has(u.id)).slice(0, 3);
-    if (!candidates.length) return "";
-    return (
-      '<div class="soc-aside-card">' +
-      '<h3>Suggestions</h3>' +
-      '<p class="feed-note">Profils du carnet de démonstration.</p>' +
-      '<ul class="soc-suggest-list">' +
-      candidates
-        .map(
-          (u) =>
-            '<li class="soc-suggest-item">' +
-            '<button type="button" class="soc-suggest-item__link" data-profile="' +
-            d.escapeHtml(u.id) +
-            '">' +
-            '<span class="soc-suggest-item__av" style="background:hsl(' +
-            u.hue +
-            ',55%,42%)">' +
-            d.escapeHtml(u.name.charAt(0)) +
-            "</span>" +
-            "<span><strong>" +
-            d.escapeHtml(u.name) +
-            '</strong><span class="feed-note">@' +
-            d.escapeHtml(u.handle) +
-            '</span><span class="soc-person__compat" data-compat-hint="' +
-            d.escapeHtml(u.id) +
-            '">Compat…</span></span></button>' +
-            '<button type="button" class="btn btn-primary btn-sm" data-follow="' +
-            d.escapeHtml(u.id) +
-            '">Suivre</button></li>'
-        )
-        .join("") +
-      "</ul></div>"
-    );
-  }
-
-  function feedCardFromListening(l) {
-    const al = d.albumById(l.albumId);
-    const u = d.userById(l.userId);
-    if (!al || !u) return "";
-    const comments = d.feedCommentsFor(l.id);
-    const commentsHtml =
-      comments.length === 0
-        ? ""
-        : '<ul class="soc-comments">' +
-          comments
-            .map((c) => {
-              const cu = d.userById(c.userId);
-              return "<li><span>" + d.escapeHtml(cu.name) + "</span> — " + d.escapeHtml(c.text) + "</li>";
-            })
-            .join("") +
-          "</ul>";
-    const whenRel = d.formatRelativeFeedTime(l.date);
-    const liked = isReactionOn(l.id);
-    return (
-      '<article class="feed-post soc-feed-card" data-album="' +
-      d.escapeHtml(al.id) +
-      '" data-preview-album="' +
-      d.escapeHtml(al.id) +
-      '" data-feed-listening-id="' +
-      d.escapeHtml(l.id) +
-      '">' +
-      '<header class="feed-post__head">' +
-      '<span class="feed-post__avatar" style="background:hsl(' +
-      u.hue +
-      ',55%,42%)">' +
-      d.escapeHtml(u.name.charAt(0)) +
-      "</span>" +
-      '<div class="feed-post__who">' +
-      '<button type="button" class="feed-post__user" data-profile="' +
-      d.escapeHtml(u.id) +
-      '">' +
-      d.escapeHtml(u.name) +
-      '</button><span class="feed-post__verb">a noté</span></div>' +
-      '<time class="feed-post__time">' +
-      d.escapeHtml(whenRel) +
-      "</time></header>" +
-      '<div class="soc-feed-card__body">' +
-      '<div class="soc-feed-card__cover">' +
-      d.coverHtml(al, true, "lg") +
-      "</div>" +
-      '<div class="soc-feed-card__copy">' +
-      '<button type="button" class="feed-post__album-title" data-album-open="' +
-      d.escapeHtml(al.id) +
-      '">' +
-      d.escapeHtml(al.title) +
-      "</button>" +
-      '<span class="feed-post__album-meta">' +
-      d.escapeHtml(al.artist) +
-      " · " +
-      d.escapeHtml(String(al.year)) +
-      "</span>" +
-      '<span class="soc-feed-card__rating">' +
-      d.starString(l.rating) +
-      "</span>" +
-      (l.review
-        ? '<p class="feed-post__caption">' + d.escapeHtml(l.review) + "</p>"
-        : '<p class="feed-note feed-post__muted">Pas de critique.</p>') +
-      d.feedPreviewSectionHtml(al) +
-      commentsHtml +
-      '<footer class="feed-post__actions soc-feed-card__actions">' +
-      '<button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="' +
-      d.escapeHtml(al.id) +
-      '"><span class="feed-ic feed-ic--play"></span> Extrait</button>' +
-      '<button type="button" class="feed-post__action-btn soc-react-btn' +
-      (liked ? " is-on" : "") +
-      '" data-soc-react="' +
-      d.escapeHtml(l.id) +
-      '">' +
-      d.escapeHtml(likeLabel(l.id)) +
-      "</button>" +
-      '<button type="button" class="feed-post__action-btn" data-comment-on="' +
-      d.escapeHtml(l.id) +
-      '"><span class="feed-ic feed-ic--bubble"></span> Commenter</button>' +
-      '<button type="button" class="feed-post__action-btn" data-album-open="' +
-      d.escapeHtml(al.id) +
-      '">Fiche</button></footer></div></div></article>'
-    );
+    return "";
   }
 
   function renderFeedPanel() {
@@ -312,7 +194,7 @@
     const signed = d.cloudSignedIn && d.cloudSignedIn();
     const localStream =
       items.length === 0
-        ? '<div class="soc-empty soc-empty--inline"><p class="soc-empty__title">Ton cercle se réveille</p><p>Suis des profils ou explore le carnet démo.</p><p><button type="button" class="btn btn-primary" data-social-circle-tab="discover">Découvrir</button></p></div>'
+        ? '<div class="soc-empty soc-empty--inline"><p class="soc-empty__title">Ton cercle se réveille</p><p>Suis des profils ou invite des ami·es pour remplir le fil.</p><p><button type="button" class="btn btn-primary" data-social-circle-tab="discover">Découvrir</button></p></div>'
         : items
             .slice(0, 24)
             .map((l) => feedCardFromListening(l))
@@ -349,10 +231,9 @@
             .join("") +
           "</div></div>";
 
-    const localShoutBtn =
-      !signed || (d.showDemoCarnet && d.showDemoCarnet())
-        ? '<button type="button" class="btn btn-ghost btn-sm" id="social-add-shout">Publier (local)</button>'
-        : "";
+    const localShoutBtn = !signed
+      ? '<button type="button" class="btn btn-ghost btn-sm" id="social-add-shout">Publier (local)</button>'
+      : "";
     const cloudShoutBtn = signed
       ? '<button type="button" class="btn btn-primary btn-sm" id="soc-shout-cloud">Publier</button>'
       : "";
@@ -480,53 +361,13 @@
   }
 
   function renderDiscoverPanel() {
-    const demoUserIds = new Set(d.USERS.map((u) => u.id));
-    const discoverHtml = d.showDemoCarnet && d.showDemoCarnet()
-      ? d.USERS.filter((u) => u.id !== "me")
-      .map((u) => {
-        const fol = (d.state.follows || []).includes(u.id);
-        const fr = d.isFriend(u.id);
-        return (
-          '<article class="soc-discover-card">' +
-          '<span class="soc-discover-card__avatar" style="background:hsl(' +
-          u.hue +
-          ',55%,42%)">' +
-          d.escapeHtml(u.name.charAt(0)) +
-          "</span>" +
-          '<div><strong>' +
-          d.escapeHtml(u.name) +
-          '</strong><span class="feed-note"> @' +
-          d.escapeHtml(u.handle) +
-          '</span><p class="soc-discover-card__bio">' +
-          d.escapeHtml(u.bio) +
-          "</p></div>" +
-          '<div class="soc-discover-card__actions">' +
-          '<button type="button" class="btn ' +
-          (fol ? "btn-ghost" : "btn-primary") +
-          ' btn-sm" data-follow="' +
-          d.escapeHtml(u.id) +
-          '">' +
-          (fol ? "Abonné" : "Suivre") +
-          "</button>" +
-          (fr
-            ? '<span class="friend-badge-inline">Ami·e</span>'
-            : '<button type="button" class="btn btn-primary btn-sm" data-friend-req="' +
-              d.escapeHtml(u.id) +
-              '">Ajouter</button>') +
-          '<button type="button" class="btn btn-ghost btn-sm" data-profile="' +
-          d.escapeHtml(u.id) +
-          '">Profil</button></div></article>'
-        );
-      })
-      .join("")
-      : "";
-
+    const signed = d.cloudSignedIn && d.cloudSignedIn();
     const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
     const cloudPeers = (window.__slCloudPeers
       ? [...window.__slCloudPeers.keys()].filter((id) => {
           if (!d.isCloudUuid(id)) return false;
           if (meCloud && id === meCloud) return false;
-          return !demoUserIds.has(id);
+          return true;
         })
       : []
     ).slice(0, 24);
@@ -573,19 +414,21 @@
       })
       .join("");
 
-    const demoHint =
-      discoverHtml && d.showDemoCarnet && d.showDemoCarnet()
-        ? '<p class="feed-note soc-discover-demo-label">Carnet de démonstration</p>'
-        : "";
+    const emptyDiscover =
+      !cloudHtml && !signed
+        ? '<p class="feed-note soc-discover-empty">Connecte-toi pour découvrir les comptes de la communauté.</p>'
+        : !cloudHtml
+          ? '<p class="feed-note soc-discover-empty">Aucun autre profil pour l’instant — invite des ami·es.</p>'
+          : "";
     return (
       '<div class="soc-invite-banner"><div><strong>Élargis ton cercle</strong><p class="feed-note">Suis des profils Soundlog ou invite des ami·es.</p></div><button type="button" class="btn btn-ghost btn-sm" id="btn-open-invite-modal">Inviter</button></div>' +
-      demoHint +
       '<div class="soc-discover-list">' +
       cloudHtml +
-      discoverHtml +
+      emptyDiscover +
       "</div>"
     );
   }
+
 
   function renderGigsPanel() {
     const zone = String((d.state.settings && d.state.settings.alertCity) || "").trim();
@@ -694,7 +537,7 @@
       '<p class="soc-hero__kicker">Cercle musical</p>' +
       '<h1 class="soc-hero__title">Communauté</h1>' +
       '<p class="soc-hero__lead">Fil d’écoutes, compatibilité, murmures et concerts — ' +
-      (signed ? "synchronisé avec ton compte." : "carnet local enrichi par le réseau démo.") +
+      (signed ? "synchronisé avec ton compte." : "connecte-toi pour rejoindre la communauté en ligne.") +
       "</p></div>" +
       '<div class="soc-hero__stats">' +
       '<div class="soc-stat"><b>' +

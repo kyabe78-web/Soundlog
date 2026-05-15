@@ -113,7 +113,6 @@
         },
       ],
       wishlist: ["a15", "a31", "a28"],
-      artworkCache: {},
       importedAlbums: [],
       settings: { youtubeApiKey: "", alertCity: "Paris", desktopAlerts: false, musicCountry: "FR" },
       profile: {
@@ -161,7 +160,6 @@
       eventInterestLocal: {},
       upcomingTourPreview: [],
       feedHomeTab: "following",
-      socialTab: "feed",
     };
   }
 
@@ -193,8 +191,6 @@
         lists: Array.isArray(parsed.lists) ? parsed.lists : base.lists,
         wishlist: Array.isArray(parsed.wishlist) ? parsed.wishlist : base.wishlist,
         importedAlbums: Array.isArray(parsed.importedAlbums) ? parsed.importedAlbums : base.importedAlbums,
-        artworkCache:
-          parsed.artworkCache && typeof parsed.artworkCache === "object" ? parsed.artworkCache : base.artworkCache,
         settings: { ...base.settings, ...(parsed.settings || {}) },
         profile: (() => {
           const prof = { ...base.profile, ...(parsed.profile || {}) };
@@ -225,7 +221,6 @@
           parsed.eventInterestLocal && typeof parsed.eventInterestLocal === "object" ? parsed.eventInterestLocal : base.eventInterestLocal,
         upcomingTourPreview: Array.isArray(parsed.upcomingTourPreview) ? parsed.upcomingTourPreview : base.upcomingTourPreview,
         feedHomeTab: parsed.feedHomeTab === "discover" ? "discover" : base.feedHomeTab,
-        socialTab: ["feed", "circle", "live"].includes(parsed.socialTab) ? parsed.socialTab : base.socialTab,
       };
     } catch {
       return defaultState();
@@ -586,7 +581,6 @@
       title: x.collectionName,
       artist: x.artistName,
       year: (x.releaseDate || "").slice(0, 4) || "—",
-      genre: x.primaryGenreName || "",
       artworkUrl: (x.artworkUrl100 || "").replace("100x100bb", "600x600bb"),
       apple: x.collectionViewUrl || null,
       appleCollectionId: x.collectionId ? String(x.collectionId) : null,
@@ -604,7 +598,7 @@
       title: x.title,
       artist: x.artist.name,
       year: (x.release_date || "").slice(0, 4) || "—",
-      artworkUrl: x.cover_xl || x.cover_big || x.cover_medium || x.cover || "",
+      artworkUrl: x.cover_medium || x.cover || "",
       deezer: x.link,
       deezerAlbumId: x.id ? String(x.id) : null,
       fromDeezer: true,
@@ -994,7 +988,6 @@
         title: row.title,
         artist: row.artist,
         year: row.year,
-        genre: row.genre || "Album",
         artworkUrl: row.artworkUrl || "",
         links,
         appleCollectionId: row.appleCollectionId || null,
@@ -2021,175 +2014,13 @@
   const COVER_FALLBACK_SVG =
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
 
-  function ensureArtworkCache() {
-    if (!state.artworkCache || typeof state.artworkCache !== "object") state.artworkCache = {};
-  }
-
-  function artworkCacheKey(album) {
-    if (!album) return "";
-    return normalizeKey(album.artist, album.title);
-  }
-
   function bestArtworkUrl(album) {
-    if (!album) return "";
-    let url = String(album.artworkUrl || "").trim();
-    if (!url) {
-      ensureArtworkCache();
-      const cached = state.artworkCache[artworkCacheKey(album)];
-      if (cached) url = String(cached).trim();
-    }
+    let url = String((album && album.artworkUrl) || "").trim();
     if (!url) return "";
     return url
       .replace(/100x100bb/gi, "600x600bb")
       .replace(/\/100x100-/gi, "/600x600-")
-      .replace(/cover_medium/gi, "cover_xl")
-      .replace(/cover_big/gi, "cover_xl");
-  }
-
-  async function fetchArtworkFromItunes(artist, title) {
-    const q = `${artist || ""} ${title || ""}`.trim();
-    if (q.length < 2) return "";
-    try {
-      const rows = await fetchItunesAlbums(q);
-      const want = normalizeKey(artist, title);
-      const hit =
-        rows.find((r) => normalizeKey(r.artist, r.title) === want) ||
-        rows.find((r) => softMatch(normalizeText(r.artist), normalizeText(artist))) ||
-        rows[0];
-      return (hit && hit.artworkUrl) || "";
-    } catch (_) {
-      return "";
-    }
-  }
-
-  async function fetchArtworkFromDeezer(artist, title) {
-    const q = `${artist || ""} ${title || ""}`.trim();
-    if (q.length < 2) return "";
-    try {
-      const rows = await fetchDeezerAlbums(q);
-      const want = normalizeKey(artist, title);
-      const hit = rows.find((r) => normalizeKey(r.artist, r.title) === want) || rows[0];
-      let url = (hit && hit.artworkUrl) || "";
-      if (url) url = url.replace(/cover_medium/gi, "cover_xl").replace(/cover_big/gi, "cover_xl");
-      return url;
-    } catch (_) {
-      return "";
-    }
-  }
-
-  async function resolveAlbumArtworkUrl(al) {
-    if (!al) return "";
-    const existing = bestArtworkUrl(al);
-    if (existing) return existing;
-    let url = await fetchArtworkFromItunes(al.artist, al.title);
-    if (!url) url = await fetchArtworkFromDeezer(al.artist, al.title);
-    if (!url) return "";
-    ensureArtworkCache();
-    state.artworkCache[artworkCacheKey(al)] = url;
-    const imp = (state.importedAlbums || []).find((a) => a.id === al.id);
-    if (imp) imp.artworkUrl = url;
-    return url;
-  }
-
-  function patchCoverFramesForAlbum(albumId) {
-    const al = albumById(albumId);
-    if (!al) return;
-    const url = bestArtworkUrl(al);
-    if (!url) return;
-    const sel = `.cover-frame[data-album="${albumId.replace(/"/g, '\"')}"]`;
-    document.querySelectorAll(sel).forEach((frame) => {
-      if (frame.classList.contains("has-art") && frame.querySelector(".cover-img")) return;
-      const cover = frame.querySelector(".cover");
-      if (!cover) return;
-      frame.classList.add("has-art");
-      cover.classList.remove("is-fallback");
-      cover.classList.add("has-img");
-      let img = cover.querySelector(".cover-img");
-      if (!img) {
-        img = document.createElement("img");
-        img.className = "cover-img";
-        img.loading = "lazy";
-        img.decoding = "async";
-        img.width = 600;
-        img.height = 600;
-        cover.insertBefore(img, cover.firstChild);
-      }
-      img.src = url;
-      img.alt = `${al.title} — ${al.artist}`;
-      img.onerror = () => {
-        frame.classList.remove("has-art");
-        cover.classList.add("is-fallback");
-        cover.classList.remove("has-img");
-        img.remove();
-      };
-    });
-  }
-
-  async function hydrateAlbumArtworks(albums, limit) {
-    const max = limit == null ? 20 : limit;
-    const need = [];
-    const seen = new Set();
-    for (const al of albums || []) {
-      if (!al || bestArtworkUrl(al)) continue;
-      const key = artworkCacheKey(al);
-      if (!key || seen.has(key)) continue;
-      seen.add(key);
-      need.push(al);
-      if (need.length >= max) break;
-    }
-    if (!need.length) return false;
-    let changed = false;
-    await Promise.all(
-      need.map(async (al) => {
-        const url = await resolveAlbumArtworkUrl(al);
-        if (url) changed = true;
-      })
-    );
-    if (changed) persist();
-    return changed;
-  }
-
-  async function injectLibraryArtworkHydration() {
-    if (route.view !== "libraries") return;
-    const shelf = libraryShelfAlbums();
-    const featured = libFeaturedAlbums();
-    const unique = [];
-    const ids = new Set();
-    for (const al of shelf.concat(featured)) {
-      if (!al || ids.has(al.id)) continue;
-      ids.add(al.id);
-      unique.push(al);
-    }
-    const hitsNeeding = (libraryRemoteHits || []).filter((h) => !String(h.artworkUrl || "").trim());
-    for (const h of hitsNeeding.slice(0, 12)) {
-      unique.push({ id: "", title: h.title, artist: h.artist, artworkUrl: "" });
-    }
-    await hydrateAlbumArtworks(unique, 24);
-    if (route.view !== "libraries") return;
-    unique.forEach((al) => {
-      if (al.id) patchCoverFramesForAlbum(al.id);
-    });
-    document.querySelectorAll(".cover-frame[data-art-key]").forEach((frame) => {
-      const key = frame.getAttribute("data-art-key");
-      if (!key) return;
-      ensureArtworkCache();
-      const url = state.artworkCache[key];
-      if (!url) return;
-      const cover = frame.querySelector(".cover");
-      if (!cover) return;
-      frame.classList.add("has-art");
-      cover.classList.remove("is-fallback");
-      cover.classList.add("has-img");
-      let img = cover.querySelector(".cover-img");
-      if (!img) {
-        img = document.createElement("img");
-        img.className = "cover-img";
-        img.loading = "lazy";
-        img.decoding = "async";
-        cover.insertBefore(img, cover.firstChild);
-      }
-      img.src = url;
-    });
+      .replace(/cover_medium/gi, "cover_big");
   }
 
   function coverHtml(album, small, sizeHint) {
@@ -2204,8 +2035,7 @@
     const img = artUrl
       ? `<img class="cover-img" src="${escapeHtml(artUrl)}" alt="${label}" loading="lazy" decoding="async" width="600" height="600" />`
       : "";
-    const artKey = artworkCacheKey(album);
-    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}"${artKey ? ` data-art-key="${escapeHtml(artKey)}"` : ""} style="${albumTintStyle(album)}">
+    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}" style="${albumTintStyle(album)}">
       <div class="cover-glow" style="${grad}" aria-hidden="true"></div>
       <div class="${coverCls}" style="${grad}" role="img" aria-label="${label}">
         ${img}
@@ -2720,705 +2550,766 @@
     </div>`;
   }
 
-
-  function getLibRecents() {
-    try {
-      const raw = localStorage.getItem(LIB_RECENTS_KEY);
-      const arr = raw ? JSON.parse(raw) : [];
-      return Array.isArray(arr) ? arr.filter((s) => typeof s === "string" && s.trim()).slice(0, 8) : [];
-    } catch (_) {
-      return [];
-    }
-  }
-
-  function pushLibRecent(q) {
-    const qq = String(q || "").trim();
-    if (qq.length < 2) return;
-    const next = [qq, ...getLibRecents().filter((s) => s.toLowerCase() !== qq.toLowerCase())].slice(0, 8);
-    try {
-      localStorage.setItem(LIB_RECENTS_KEY, JSON.stringify(next));
-    } catch (_) {}
-  }
-
-  function libraryStats() {
-    const myListen = (state.listenings || []).filter((l) => l.userId === "me");
-    const albumIds = new Set(myListen.map((l) => l.albumId));
-    (state.importedAlbums || []).forEach((a) => albumIds.add(a.id));
-    return {
-      albums: albumIds.size,
-      rated: myListen.filter((l) => l.rating).length,
-      wishlist: (state.wishlist || []).length,
-    };
-  }
-
-  function libraryShelfAlbums() {
-    const seen = new Set();
-    const out = [];
-    (state.listenings || [])
-      .filter((l) => l.userId === "me")
-      .sort((a, b) => (a.date < b.date ? 1 : -1))
-      .forEach((l) => {
-        if (seen.has(l.albumId)) return;
-        seen.add(l.albumId);
-        const al = albumById(l.albumId);
-        if (al) out.push(al);
-      });
-    (state.importedAlbums || []).forEach((a) => {
-      if (seen.has(a.id)) return;
-      seen.add(a.id);
-      out.push(a);
-    });
-    return out.slice(0, 16);
-  }
-
-  function catalogAlbumForHit(hit) {
-    const key = normalizeKey(hit.artist, hit.title);
-    return allAlbums().find((a) => normalizeKey(a.artist, a.title) === key) || null;
-  }
-
-  function listeningRatingForAlbumId(albumId) {
-    const rows = (state.listenings || []).filter((l) => l.userId === "me" && l.albumId === albumId && l.rating);
-    if (!rows.length) return null;
-    rows.sort((a, b) => (a.date < b.date ? 1 : -1));
-    return rows[0].rating;
-  }
-
-  function libFeaturedAlbums() {
-    const shelf = libraryShelfAlbums();
-    const shelfIds = new Set(shelf.map((a) => a.id));
-    const pool = CATALOG.filter((a) => !shelfIds.has(a.id));
-    const seed = (state.profile && state.profile.handle) || "soundlog";
-    let h = 0;
-    for (let i = 0; i < seed.length; i++) h = (h * 33 + seed.charCodeAt(i)) | 0;
-    return pool
-      .map((a, i) => ({ a, n: Math.abs((h + i * 17) % 997) }))
-      .sort((x, y) => x.n - y.n)
-      .slice(0, 10)
-      .map((x) => x.a);
-  }
-
-  function libChipsHtml() {
-    const recents = getLibRecents();
-    const chips = [];
-    recents.forEach((q) => chips.push({ label: q, q, kind: "recent" }));
-    LIB_MOOD_CHIPS.forEach((c) => chips.push({ ...c, kind: "mood" }));
-    return chips
-      .slice(0, 14)
-      .map(
-        (c) =>
-          `<button type="button" class="lib-chip${c.kind === "recent" ? " lib-chip--recent" : ""}" data-lib-chip="${escapeHtml(c.q)}">${escapeHtml(c.label)}</button>`
-      )
-      .join("");
-  }
-
-  function libShelfCardHtml(al) {
-    const rating = listeningRatingForAlbumId(al.id);
-    const ratingHtml = rating
-      ? `<span class="lib-shelf-card__rating" aria-label="Ta note">${starString(rating)}</span>`
-      : "";
-    return `<a href="#" class="lib-shelf-card" data-album="${escapeHtml(al.id)}"${albumCardStyle(al)}>
-      <span class="lib-shelf-card__cover">${coverHtml(al, true, "md")}</span>
-      <span class="lib-shelf-card__meta">
-        <strong class="lib-shelf-card__title">${escapeHtml(al.title)}</strong>
-        <span class="lib-shelf-card__artist">${escapeHtml(al.artist)}</span>
-      </span>
-      ${ratingHtml}
-    </a>`;
-  }
-
-  function libraryHitCardHtml(hit, idx) {
-    const g = gradientFromKey(hit.title + hit.artist);
-    const fakeAlbum = {
-      title: hit.title,
-      artist: hit.artist,
-      year: hit.year,
-      genre: hit.genre || "Album",
-      from: g.from,
-      to: g.to,
-      artworkUrl: hit.artworkUrl,
-    };
-    const catalog = catalogAlbumForHit(hit);
-    const rating = catalog ? listeningRatingForAlbumId(catalog.id) : null;
-    const pay = encodeURIComponent(JSON.stringify(hit));
-    const genre = String(hit.genre || "Album").trim() || "Album";
-    const srcBadges = [
-      hit.flags.apple ? `<span class="lib-src lib-src--apple" title="Apple Music"></span>` : "",
-      hit.flags.deezer ? `<span class="lib-src lib-src--deezer" title="Deezer"></span>` : "",
-      `<span class="lib-src lib-src--spotify" title="Spotify"></span>`,
-      `<span class="lib-src lib-src--yt" title="YouTube"></span>`,
-    ].join("");
-    const ownedBadge = catalog ? `<span class="lib-vcard__owned">Dans ton carnet</span>` : "";
-    const ratingBadge = rating ? `<span class="lib-vcard__rating" aria-label="Ta note">${starString(rating)}</span>` : "";
-    const cta = catalog
-      ? `<button type="button" class="lib-vcard__cta lib-vcard__cta--ghost" data-album="${escapeHtml(catalog.id)}">Ouvrir la fiche</button>`
-      : `<button type="button" class="lib-vcard__cta" data-import-hit="${pay}">Collectionner</button>`;
-    return `<article class="lib-vcard" style="--lib-i:${idx}">
-      <div class="lib-vcard__cover-wrap">
-        <div class="lib-vcard__cover">${coverHtml(fakeAlbum, true, "lg")}</div>
-        <div class="lib-vcard__float">
-          <span class="lib-vcard__year">${escapeHtml(String(hit.year))}</span>
-          ${ratingBadge}
-        </div>
-        <div class="lib-vcard__sources" aria-hidden="true">${srcBadges}</div>
-        <div class="lib-vcard__shine" aria-hidden="true"></div>
-      </div>
-      <div class="lib-vcard__body">
-        ${ownedBadge}
-        <h3 class="lib-vcard__title">${escapeHtml(hit.title)}</h3>
-        <p class="lib-vcard__artist">${escapeHtml(hit.artist)}</p>
-        <p class="lib-vcard__meta-row"><span class="lib-vcard__genre">${escapeHtml(genre)}</span></p>
-        ${listenPillsHtml(hit.links)}
-        ${cta}
-      </div>
-    </article>`;
-  }
-
-  function renderLibraryHomePanels() {
-    const shelf = libraryShelfAlbums();
-    const featured = libFeaturedAlbums();
-    const shelfBlock =
-      shelf.length > 0
-        ? `<section class="lib-panel lib-panel--shelf" aria-label="Ta collection">
-            <div class="lib-panel__head">
-              <h2 class="lib-panel__title">Ton carnet</h2>
-              <p class="lib-panel__sub">Les disques que tu as déjà rangés ici</p>
-            </div>
-            <div class="lib-shelf-scroll">${shelf.map(libShelfCardHtml).join("")}</div>
-          </section>`
-        : `<section class="lib-panel lib-panel--welcome">
-            <div class="lib-welcome-card">
-              <p class="lib-welcome-card__eyebrow">Premier disque</p>
-              <h2 class="lib-welcome-card__title">Commence ta collection</h2>
-              <p class="lib-welcome-card__text">Cherche un album ci-dessus — deux lettres suffisent pour faire apparaître de vraies pochettes depuis Apple Music et Deezer.</p>
-            </div>
-          </section>`;
-    const featuredBlock =
-      featured.length > 0
-        ? `<section class="lib-panel" aria-label="Coup de projecteur">
-            <div class="lib-panel__head">
-              <h2 class="lib-panel__title">Coup de projecteur</h2>
-              <p class="lib-panel__sub">Quelques classiques pour lancer une recherche</p>
-            </div>
-            <div class="lib-spotlight-scroll">${featured
-              .map((al) => {
-                const q = `${al.artist} ${al.title}`;
-                return `<button type="button" class="lib-spot-card" data-lib-chip="${escapeHtml(q)}">
-                  <span class="lib-spot-card__cover">${coverHtml(al, true, "md")}</span>
-                  <span class="lib-spot-card__meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></span>
-                </button>`;
-              })
-              .join("")}</div>
-          </section>`
-        : "";
-    return `${shelfBlock}${featuredBlock}`;
-  }
-
-  function renderLibraryResultsInner() {
-    if (libraryRemoteLoading) {
-      return `<div class="lib-status lib-status--loading" role="status" aria-live="polite">
+  function renderLibraries() {
+    const rowsHtml = (() => {
+      if (libraryRemoteLoading) {
+        return `<div class="lib-loading" role="status" aria-live="polite">
           <div class="lib-vinyl" aria-hidden="true"></div>
-          <p class="lib-status__text">On fouille les bacs…</p>
-          <div class="lib-skel-masonry">${Array.from({ length: 8 })
-            .map((_, i) => `<div class="lib-skel-vcard" style="--lib-i:${i}"><div class="lib-skel-vcard__cover"></div><div class="lib-skel-vcard__line"></div><div class="lib-skel-vcard__line short"></div>`)
+          <p class="lib-loading-text">On fouille les bacs…</p>
+          <div class="lib-skel-grid">${Array.from({ length: 8 })
+            .map(
+              (_, i) =>
+                `<div class="lib-skel-card" style="animation-delay:${(i * 0.04).toFixed(2)}s"><div class="lib-skel-cover"></div><div class="lib-skel-line"></div><div class="lib-skel-line short"></div></div>`
+            )
             .join("")}</div>
         </div>`;
-    }
-    if (libraryRemoteError) {
-      return `<div class="lib-status lib-status--err"><p>${escapeHtml(libraryRemoteError)}</p><p class="lib-status__hint">Vérifie ta connexion ou réessaie dans un instant.</p></div>`;
-    }
-    const t = libraryQuery.trim();
-    if (t.length < 2) return renderLibraryHomePanels();
-    if (!libraryRemoteHits.length) {
-      return `<div class="lib-status lib-status--empty">
-          <p>Aucun album pour <strong>${escapeHtml(t)}</strong>.</p>
-          <p class="lib-status__hint">Essaie un autre mot-clé, un nom d’artiste ou un titre plus court.</p>
+      }
+      if (libraryRemoteError) {
+        return `<div class="lib-empty lib-empty--err"><p>${escapeHtml(libraryRemoteError)}</p><p class="feed-note">Vérifie ta connexion ou réessaie dans un instant.</p></div>`;
+      }
+      const t = libraryQuery.trim();
+      if (t.length < 2) {
+        return `<div class="lib-empty lib-empty--hint">
+          <div class="lib-empty-icon" aria-hidden="true">♫</div>
+          <p><strong>2 lettres</strong> suffisent pour faire apparaître des <strong>pochettes</strong> depuis Apple Music &amp; Deezer.</p>
+          <p class="feed-note">Ensuite : écoute rapide sur les services, puis « Importer » pour ranger le disque dans Soundlog.</p>
         </div>`;
-    }
-    return `<section class="lib-results-section" aria-label="Résultats">
-        <div class="lib-results-head">
-          <h2 class="lib-results-head__title">${libraryRemoteHits.length} pochettes trouvées</h2>
-          <p class="lib-results-head__sub">Apple Music &amp; Deezer · écoute rapide puis collectionne dans ton carnet</p>
+      }
+      if (!libraryRemoteHits.length) {
+        return `<div class="lib-empty"><p>Aucun album pour <strong>${escapeHtml(t)}</strong>.</p><p class="feed-note">Essaie un autre mot-clé ou un nom d’artiste.</p></div>`;
+      }
+      return `<div class="lib-grid">${libraryRemoteHits
+        .map((hit, idx) => {
+          const g = gradientFromKey(hit.title + hit.artist);
+          const fakeAlbum = {
+            title: hit.title,
+            artist: hit.artist,
+            year: hit.year,
+            genre: "Import",
+            from: g.from,
+            to: g.to,
+            artworkUrl: hit.artworkUrl,
+          };
+          const pay = encodeURIComponent(JSON.stringify(hit));
+          const tilt = ((idx % 7) - 3) * 0.9;
+          const dots = [
+            hit.flags.apple ? `<span class="lib-dot lib-dot-apple" title="Trouvé via Apple"></span>` : "",
+            hit.flags.deezer ? `<span class="lib-dot lib-dot-deezer" title="Trouvé via Deezer"></span>` : "",
+            `<span class="lib-dot lib-dot-spotify" title="Lien Spotify"></span>`,
+            `<span class="lib-dot lib-dot-youtube" title="${hit.flags.yt ? "Vidéo YouTube" : "YouTube"}"></span>`,
+          ].join("");
+          return `<article class="lib-card" style="--lib-tilt:${tilt.toFixed(2)}deg">
+          <div class="lib-card-inner">
+            <div class="lib-cover-zone">
+              <div class="lib-cover-frame">${coverHtml(fakeAlbum, true)}</div>
+              <div class="lib-floating-dots" aria-hidden="true">${dots}</div>
+              <span class="lib-year-chip">${escapeHtml(String(hit.year))}</span>
+            </div>
+            <div class="lib-card-body">
+              <h3 class="lib-card-title">${escapeHtml(hit.title)}</h3>
+              <p class="lib-card-artist">${escapeHtml(hit.artist)}</p>
+              ${listenPillsHtml(hit.links)}
+              <button type="button" class="btn btn-primary lib-import-btn" data-import-hit="${pay}">Importer</button>
+            </div>
+          </div>
+        </article>`;
+        })
+        .join("")}</div>`;
+    })();
+    return `<div class="lib-studio view-libraries-themed">
+      <header class="lib-hero">
+        <div class="lib-hero-icon" aria-hidden="true">◎</div>
+        <div class="lib-hero-copy">
+          <p class="lib-hero-kicker">Mode disquaire</p>
+          <h1 class="page-title lib-hero-title">Bibliothèques</h1>
+          <p class="page-sub lib-hero-sub">Les résultats <strong>Apple Music</strong> et <strong>Deezer</strong> s’affichent en <strong>vraies pochettes</strong>. Spotify et YouTube ouvrent en un clic (recherche ou vidéo si tu as mis une clé YouTube).</p>
         </div>
-        <div class="lib-masonry">${libraryRemoteHits.map((hit, idx) => libraryHitCardHtml(hit, idx)).join("")}</div>
-      </section>`;
-  }
-
-  function renderLibraries() {
-    const stats = libraryStats();
-    const chips = libChipsHtml();
-    const searching = libraryQuery.trim().length >= 2;
-    return `<div class="lib-page view-libraries-themed">
-      <header class="lib-masthead">
-        <div class="lib-masthead__copy">
-          <p class="lib-masthead__kicker">Carnet personnel</p>
-          <h1 class="lib-masthead__title">Bibliothèques</h1>
-          <p class="lib-masthead__lead">Collectionne tes albums, note tes écoutes, découvre de nouvelles pochettes — comme un disquaire premium dans ta poche.</p>
-        </div>
-        <div class="lib-stats" aria-label="Statistiques de collection">
-          <div class="lib-stat"><b>${stats.albums}</b><span>disques</span></div>
-          <div class="lib-stat"><b>${stats.rated}</b><span>notés</span></div>
-          <div class="lib-stat"><b>${stats.wishlist}</b><span>envies</span></div>
-        </div>
-        <button type="button" class="lib-settings-btn" id="btn-api-settings" title="Clé YouTube (optionnel)">Réglages</button>
+        <button type="button" class="btn btn-ghost lib-api-btn" id="btn-api-settings">Clé YouTube</button>
       </header>
-
-      <div class="lib-search-stage${searching ? " lib-search-stage--active" : ""}">
-        <label for="lib-q" class="visually-hidden">Chercher un album</label>
-        <div class="lib-search-shell">
-          <span class="lib-search-icon" aria-hidden="true"></span>
-          <input type="search" id="lib-q" class="lib-search-input" placeholder="Artiste, album, humeur…" autocomplete="off" value="${escapeHtml(libraryQuery)}" />
-          ${searching ? `<button type="button" class="lib-search-clear" id="lib-search-clear" aria-label="Effacer">×</button>` : ""}
+      <section class="lib-dig-section" aria-label="Recherche">
+        <label for="lib-q" class="lib-dig-label">Chercher un album</label>
+        <div class="lib-dig-row">
+          <span class="lib-dig-glyph" aria-hidden="true"></span>
+          <input type="search" id="lib-q" class="library-search lib-dig-input" placeholder="Artiste, album, n’importe quoi…" autocomplete="off" value="${escapeHtml(libraryQuery)}" />
         </div>
-        ${chips ? `<div class="lib-chips" role="list">${chips}</div>` : ""}
-        <p class="lib-search-hint">${searching ? "Les pochettes arrivent en direct depuis les catalogues." : "Tape au moins 2 lettres — ou choisis une suggestion ci-dessus."}</p>
-      </div>
-
-      <div id="lib-results" class="lib-results">${renderLibraryResultsInner()}</div>
+        <p class="lib-dig-hint">Astuce : mots simples = plus de covers qui débarquent.</p>
+      </section>
+      <div id="lib-results" class="lib-results">${rowsHtml}</div>
     </div>`;
   }
 
-  function ensureSocialTab() {
-    const ok = ["feed", "circle", "live"];
-    if (!state.socialTab || !ok.includes(state.socialTab)) state.socialTab = "feed";
-  }
+  function renderSocial() {
+    ensureSocialArrays();
+    const zone = String((state.settings && state.settings.alertCity) || "").trim();
+    const desk = !!(state.settings && state.settings.desktopAlerts);
+    const favChips =
+      state.favoriteArtists.length === 0
+        ? `<p class="empty">Aucun artiste suivi pour les concerts. Ouvre une fiche album et active « Suivre pour les concerts ».</p>`
+        : `<div class="artist-chip-row">${state.favoriteArtists
+            .map(
+              (a) =>
+                `<span class="artist-chip">${escapeHtml(a)}<button type="button" class="chip-x" data-rm-fav="${encodeURIComponent(
+                  a
+                )}" title="Retirer" aria-label="Retirer">×</button></span>`
+            )
+            .join("")}</div>`;
 
-  function localCompatPreview(uid) {
-    const mine = collectMyTasteAlbumIds();
-    const peer = collectLocalTasteAlbumIdsForUser(uid);
-    return tasteOverlapScore(mine, peer);
-  }
+    const friendsHtml =
+      state.friends.length === 0
+        ? `<p class="empty">Pas encore d’ami·e — envoie une demande depuis un profil.</p>`
+        : `<div class="social-card-grid">${state.friends
+            .map((fid) => {
+              const u = userById(fid);
+              if (!u) return "";
+              return `<div class="social-card">
+            <div class="avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
+            <div class="social-card-text"><strong>${escapeHtml(u.name)}</strong><span class="feed-note">@${escapeHtml(u.handle)}</span></div>
+            <button type="button" class="btn btn-ghost btn-sm" data-profile="${u.id}">Profil</button>
+          </div>`;
+            })
+            .join("")}</div>`;
 
-  function socialListeningPostHtml(l) {
-    const al = albumById(l.albumId);
-    const u = userById(l.userId);
-    if (!al || !u) return "";
-    const comments = feedCommentsFor(l.id);
-    const commentsHtml =
-      comments.length === 0
-        ? ""
-        : `<ul class="soc-comments">${comments
-            .map((c) => {
-              const cu = userById(c.userId);
-              return `<li><button type="button" class="link" data-profile="${escapeHtml(cu.id)}">${escapeHtml(cu.name)}</button> <span>${escapeHtml(c.text)}</span></li>`;
+    const incomingHtml =
+      state.incomingFriendRequests.length === 0
+        ? `<p class="feed-note">Aucune demande en attente.</p>`
+        : `<ul class="req-list">${state.incomingFriendRequests
+            .map((r) => {
+              const u = userById(r.fromUserId);
+              if (!u) return "";
+              return `<li class="req-row">
+            <span><strong>${escapeHtml(u.name)}</strong> veut être ami·e</span>
+            <span>
+              <button type="button" class="btn btn-primary btn-sm" data-accept-friend="${escapeHtml(r.id)}">Accepter</button>
+              <button type="button" class="btn btn-ghost btn-sm" data-decline-friend="${escapeHtml(r.id)}">Refuser</button>
+            </span>
+          </li>`;
             })
             .join("")}</ul>`;
-    const whenRel = formatRelativeFeedTime(l.date);
-    const avatarInner = userAvatarHtml(u, "feed-post__avatar");
-    const avatar =
-      avatarInner ||
-      `<span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>`;
-    return `<article class="feed-post soc-feed-card" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(l.id)}">
-      <header class="feed-post__head">
-        ${avatar}
-        <div class="feed-post__who">
-          <button type="button" class="feed-post__user" data-profile="${u.id}">${escapeHtml(u.name)}</button>
-          <span class="feed-post__verb">a noté</span>
-        </div>
-        <time class="feed-post__time" datetime="${escapeHtml(l.date)}">${escapeHtml(whenRel)}</time>
-      </header>
-      <div class="soc-feed-card__body">
-        <div class="feed-post__media soc-feed-card__cover">${coverHtml(al, false, "lg")}</div>
-        <div class="soc-feed-card__copy">
-          <div class="soc-feed-card__rating">${starString(l.rating)}</div>
-          <button type="button" class="feed-post__album-title" data-album-open="${al.id}">${escapeHtml(al.title)}</button>
-          <p class="feed-post__album-meta">${escapeHtml(al.artist)} · ${escapeHtml(String(al.year))} · ${escapeHtml(al.genre || "")}</p>
-          ${previewNoteHtml(al)}
-          <div class="feed-post__caption">${l.review ? `<p>${escapeHtml(l.review)}</p>` : `<p class="feed-post__muted">Pas de critique.</p>`}</div>
-          ${commentsHtml}
-          ${feedPreviewSectionHtml(al)}
-          <footer class="feed-post__actions soc-feed-card__actions">
-            <button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>30 s</span></button>
-            <button type="button" class="feed-post__action-btn" data-comment-on="${escapeHtml(l.id)}"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</button>
-            <button type="button" class="feed-post__action-btn" data-album-open="${escapeHtml(al.id)}"><span class="feed-ic feed-ic--disc" aria-hidden="true"></span> Fiche</button>
-            <button type="button" class="feed-post__action-btn soc-react-btn" data-feed-react="${escapeHtml(l.id)}" title="Réagir">♥</button>
-          </footer>
-        </div>
-      </div>
-    </article>`;
-  }
 
-  function socialNotePostHtml(s) {
-    const u = userById(s.userId);
-    if (!u) return "";
-    const when = formatRelativeFeedTime(s.at || "");
-    return `<article class="soc-note-card">
-      <header class="soc-note-card__head">
-        <span class="soc-note-card__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
-        <div>
-          <button type="button" class="link soc-note-card__user" data-profile="${u.id}">${escapeHtml(u.name)}</button>
-          <span class="soc-note-card__tag">Murmure</span>
-        </div>
-        <time class="soc-note-card__time">${escapeHtml(when)}</time>
-      </header>
-      <p class="soc-note-card__text">${escapeHtml(s.text)}</p>
-    </article>`;
-  }
+    const outgoingHtml =
+      state.outgoingFriendRequests.length === 0
+        ? `<p class="feed-note">Aucune demande envoyée.</p>`
+        : `<ul class="req-list">${state.outgoingFriendRequests
+            .map((r) => {
+              const u = userById(r.toUserId);
+              if (!u) return "";
+              return `<li class="req-row">
+            <span>En attente chez <strong>${escapeHtml(u.name)}</strong></span>
+            <button type="button" class="btn btn-ghost btn-sm" data-cancel-friend-out="${escapeHtml(r.toUserId)}">Annuler</button>
+          </li>`;
+            })
+            .join("")}</ul>`;
 
-  function socialFriendPersonHtml(fid) {
-    const u = userById(fid);
-    if (!u) return "";
-    const compat = localCompatPreview(fid);
-    const recent = state.listenings
-      .filter((l) => l.userId === fid)
-      .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
-    const recentAl = recent ? albumById(recent.albumId) : null;
-    const canDm = isFriend(fid) && isCloudUuid(fid) && window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
-    const covers = state.listenings
-      .filter((l) => l.userId === fid)
-      .slice(0, 4)
-      .map((l) => albumById(l.albumId))
-      .filter(Boolean)
-      .map((al) => `<span class="soc-person__mini">${coverHtml(al, true, "sm")}</span>`)
-      .join("");
-    return `<article class="soc-person" data-friend-id="${escapeHtml(fid)}">
-      <button type="button" class="soc-person__link" data-profile="${escapeHtml(fid)}">
-        <span class="soc-person__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
-        <span class="soc-person__info">
+    const discoverHtml = USERS.filter((u) => u.id !== "me")
+      .map((u) => {
+        const fol = (state.follows || []).includes(u.id);
+        const fr = isFriend(u.id);
+        return `<div class="social-card social-card--wide">
+        <div class="avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
+        <div class="social-card-text">
           <strong>${escapeHtml(u.name)}</strong>
-          <span class="soc-person__handle">@${escapeHtml(u.handle)}</span>
-          <span class="soc-person__compat" data-compat-label>${compat.score}% · ${compat.shared} disque${compat.shared > 1 ? "s" : ""} en commun</span>
-        </span>
-        ${covers ? `<span class="soc-person__stack">${covers}</span>` : ""}
-      </button>
-      <div class="soc-person__actions">
-        ${canDm ? `<button type="button" class="btn btn-primary btn-sm" data-open-dm="${escapeHtml(fid)}">Message</button>` : ""}
-        <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(fid)}">Profil</button>
-      </div>
-    </article>`;
-  }
+          <span class="feed-note">@${escapeHtml(u.handle)} — ${escapeHtml(u.bio)}</span>
+        </div>
+        <div class="social-card-actions">
+          <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${u.id}">${fol ? "Abonné" : "Suivre"}</button>
+          ${
+            fr
+              ? `<span class="friend-badge-inline">Ami·e</span>`
+              : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${u.id}">Demande d’ami</button>`
+          }
+          <button type="button" class="btn btn-ghost btn-sm" data-profile="${u.id}">Profil</button>
+        </div>
+      </div>`;
+      })
+      .join("");
 
-  function socialDiscoverPersonHtml(u, opts) {
-    const id = opts.cloudId || u.id;
-    const fol = (state.follows || []).includes(id);
-    const fr = isFriend(id);
-    const pending = outgoingRequestTo(id);
-    const hue = u.hue != null ? u.hue : hueFromHandle(u.handle || u.name || "x");
-    return `<article class="soc-discover-card">
-      <span class="soc-discover-card__avatar" style="background:hsl(${hue},55%,42%)">${escapeHtml((u.name || "?").charAt(0))}</span>
-      <div class="soc-discover-card__body">
-        <strong>${escapeHtml(u.name || "?")}</strong>
-        <span class="feed-note">@${escapeHtml(u.handle || "")}</span>
-        ${u.bio ? `<p class="soc-discover-card__bio">${escapeHtml(u.bio)}</p>` : ""}
-      </div>
-      <div class="soc-discover-card__actions">
-        <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${escapeHtml(id)}">${fol ? "Suivi·e" : "Suivre"}</button>
-        ${
-          fr
-            ? `<span class="friend-badge-inline">Ami·e</span>`
-            : pending
-              ? `<span class="feed-note">En attente</span>`
-              : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${escapeHtml(id)}">Ajouter</button>`
-        }
-        <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(id)}">Voir</button>
-      </div>
-    </article>`;
-  }
+    const demoUserIds = new Set(USERS.map((u) => u.id));
+    const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
+    const cloudDiscoverPeers = (window.__slCloudPeers
+      ? [...window.__slCloudPeers.keys()].filter((id) => {
+          if (!isCloudUuid(id)) return false;
+          if (meCloud && id === meCloud) return false;
+          return !demoUserIds.has(id);
+        })
+      : []
+    ).slice(0, 24);
+    const cloudDiscoverHtml =
+      cloudDiscoverPeers.length === 0
+        ? ""
+        : `<h3 class="social-subh">Profils Soundlog</h3><div class="social-card-stack">${cloudDiscoverPeers
+            .map((cid) => {
+              const p = window.__slCloudPeers.get(cid);
+              if (!p) return "";
+              const fr = isFriend(cid);
+              const pending = outgoingRequestTo(cid);
+              const fol = (state.follows || []).includes(cid);
+              const hue = p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x");
+              return `<div class="social-card social-card--wide">
+        <div class="avatar" style="background:hsl(${hue},55%,42%)">${escapeHtml((p.name || "?").charAt(0))}</div>
+        <div class="social-card-text">
+          <strong>${escapeHtml(p.name || "?")}</strong>
+          <span class="feed-note">@${escapeHtml(p.handle || "")}</span>
+        </div>
+        <div class="social-card-actions">
+          <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${escapeHtml(cid)}">${fol ? "Abonné" : "Suivre"}</button>
+          ${
+            fr
+              ? `<span class="friend-badge-inline">Ami·e</span>`
+              : pending
+                ? `<span class="feed-note">En attente</span>`
+                : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${escapeHtml(cid)}">Demande d’ami</button>`
+          }
+          <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(cid)}">Profil</button>
+        </div>
+      </div>`;
+            })
+            .join("")}</div>`;
 
-  function socialGigCardHtml(row, manual) {
-    const evKey = row.key || tourSeenKey(row.artist, row.datetime, [row.venue, row.city].filter(Boolean).join(" — "));
-    const interested = !!(state.eventInterestLocal && state.eventInterestLocal[evKey]);
-    const dt = (row.datetime || "").slice(0, 16).replace("T", " ");
-    const where = [row.venue, row.city].filter(Boolean).join(" · ") || "Lieu à préciser";
-    const g = gradientFromKey(row.artist + (row.city || ""));
-    const fakeAl = { title: row.artist, artist: row.eventTitle || "Live", from: g.from, to: g.to, artworkUrl: row.artworkUrl || "" };
-    return `<article class="soc-gig-card" style="--gig-tint:${g.from}">
-      <div class="soc-gig-card__visual">${coverHtml(fakeAl, true, "md")}</div>
-      <div class="soc-gig-card__body">
-        <p class="soc-gig-card__date">${escapeHtml(dt || "Date TBA")}</p>
-        <h3 class="soc-gig-card__artist">${escapeHtml(row.artist)}</h3>
-        <p class="soc-gig-card__venue">${escapeHtml(where)}</p>
-        <p class="soc-gig-card__src feed-note">${manual ? "Ajout manuel" : row.source === "bit" ? "Repéré en ligne" : "Programmé"}</p>
-        <div class="soc-gig-card__foot">
-          <button type="button" class="btn ${interested ? "btn-primary" : "btn-ghost"} btn-sm event-interest-toggle ${interested ? "is-on" : ""}"
+    const shoutForm = `<div class="panel shout-panel">
+      <h3>Murmures du disquaire</h3>
+      <p class="feed-note">Petit pavé public (démo locale) — partagé avec les profils fictifs du carnet.</p>
+      <div class="shout-form-row">
+        <input type="text" id="social-shout-text" maxlength="280" placeholder="Un mot sur une sortie, une envie…" />
+        <button type="button" class="btn btn-primary" id="social-add-shout">Publier</button>
+      </div>
+      <ul class="shout-list">${(state.shoutouts || [])
+        .slice()
+        .sort((a, b) => (a.at < b.at ? 1 : -1))
+        .slice(0, 12)
+        .map((s) => {
+          const u = userById(s.userId);
+          return `<li><span class="feed-note">${escapeHtml((s.at || "").slice(0, 10))}</span> — <button type="button" class="link" data-profile="${u.id}">${escapeHtml(
+            u.name
+          )}</button> : ${escapeHtml(s.text)}</li>`;
+        })
+        .join("")}</ul>
+    </div>`;
+
+    const manualRows = (state.manualTourDates || [])
+      .slice()
+      .sort((a, b) => (a.datetime < b.datetime ? -1 : 1))
+      .map((row) => {
+        const evKey = tourSeenKey(row.artist, row.datetime, [row.venue, row.city].filter(Boolean).join(" — "));
+        const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[evKey]);
+        return `<tr>
+        <td>${escapeHtml(row.artist)}</td>
+        <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
+        <td>${escapeHtml(row.venue || "")}</td>
+        <td>${escapeHtml(row.city || "")}</td>
+        <td>
+          <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
             data-ev-key="${escapeHtml(evKey)}"
             data-ev-artist="${escapeHtml(row.artist)}"
             data-ev-dt="${escapeHtml(row.datetime || "")}"
             data-ev-venue="${escapeHtml(row.venue || "")}"
             data-ev-city="${escapeHtml(row.city || "")}"
-            data-ev-url="${escapeHtml(row.url || "")}">${interested ? "Partant·e ✓" : "Ça m'intéresse"}</button>
-          ${manual ? `<button type="button" class="btn btn-ghost btn-sm" data-rm-manual-tour="${escapeHtml(row.id)}">Retirer</button>` : ""}
-        </div>
-        <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(evKey)}"></div>
-      </div>
-    </article>`;
-  }
+            data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
+          <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(evKey)}"></div>
+        </td>
+        <td><button type="button" class="btn btn-ghost btn-sm" data-rm-manual-tour="${escapeHtml(row.id)}">Retirer</button></td>
+      </tr>`;
+      })
+      .join("");
 
-  function renderSocialFeedPanel() {
-    const items = feedItems();
-    const notes = (state.shoutouts || []).slice().sort((a, b) => (a.at < b.at ? 1 : -1));
-    const merged = [
-      ...items.map((l) => ({ sort: l.date || "", html: socialListeningPostHtml(l) })),
-      ...notes.map((s) => ({ sort: (s.at || "").slice(0, 10), html: socialNotePostHtml(s) })),
-    ]
-      .filter((x) => x.html)
-      .sort((a, b) => (a.sort < b.sort ? 1 : -1));
-    const body =
-      merged.length === 0
-        ? `<div class="soc-empty">
-            <p class="soc-empty__title">Le fil est calme</p>
-            <p class="soc-empty__text">Suis des profils, ajoute des ami·es ou logue une écoute dans ton <strong>Journal</strong>.</p>
-            <button type="button" class="btn btn-primary" data-nav-view="home">Voir l'accueil</button>
-          </div>`
-        : `<div class="soc-feed-stream">${merged.map((x) => x.html).join("")}</div>`;
-    return `${feedStoryStripHtml()}${body}`;
-  }
-
-  function renderSocialCirclePanel() {
-    ensureSocialArrays();
-    const friendsBlock =
-      state.friends.length === 0
-        ? `<p class="soc-empty-inline">Pas encore d'ami·e — envoie une demande depuis un profil.</p>`
-        : `<div class="soc-people-list">${state.friends.map(socialFriendPersonHtml).join("")}</div>`;
-    const incomingBlock =
-      state.incomingFriendRequests.length === 0
-        ? `<p class="feed-note">Aucune demande en attente.</p>`
-        : `<div class="soc-req-list">${state.incomingFriendRequests
-            .map((r) => {
-              const u = userById(r.fromUserId);
-              if (!u) return "";
-              return `<div class="soc-req-card">
-                <span class="soc-req-card__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
-                <div class="soc-req-card__body"><strong>${escapeHtml(u.name)}</strong><span class="feed-note">veut rejoindre ton cercle</span></div>
-                <div class="soc-req-card__actions">
-                  <button type="button" class="btn btn-primary btn-sm" data-accept-friend="${escapeHtml(r.id)}">Accepter</button>
-                  <button type="button" class="btn btn-ghost btn-sm" data-decline-friend="${escapeHtml(r.id)}">Refuser</button>
-                </div>
-              </div>`;
+    const previewRows =
+      (state.upcomingTourPreview || []).length === 0
+        ? `<tr><td colspan="6" class="empty">Rien pour l’instant — lance « Vérifier les dates maintenant ».</td></tr>`
+        : (state.upcomingTourPreview || [])
+            .map((row) => {
+              const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[row.key]);
+              return `<tr>
+            <td>${escapeHtml(row.artist)}</td>
+            <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
+            <td>${escapeHtml(row.venue || "")}</td>
+            <td>${escapeHtml(row.city || "")}</td>
+            <td><span class="feed-note">${row.source === "bit" ? "API" : "Manuel"}</span></td>
+            <td>
+              <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
+                data-ev-key="${escapeHtml(row.key)}"
+                data-ev-artist="${escapeHtml(row.artist)}"
+                data-ev-dt="${escapeHtml(row.datetime || "")}"
+                data-ev-venue="${escapeHtml(row.venue || "")}"
+                data-ev-city="${escapeHtml(row.city || "")}"
+                data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
+              <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(row.key)}"></div>
+            </td>
+          </tr>`;
             })
-            .join("")}</div>`;
-    const demoUserIds = new Set(USERS.map((u) => u.id));
-    const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
-    const cloudPeers = (window.__slCloudPeers
-      ? [...window.__slCloudPeers.keys()].filter((id) => isCloudUuid(id) && (!meCloud || id !== meCloud) && !demoUserIds.has(id))
-      : []
-    ).slice(0, 20);
-    const cloudHtml = cloudPeers.length
-      ? `<div class="soc-discover-list">${cloudPeers
-          .map((cid) => {
-            const p = window.__slCloudPeers.get(cid);
-            if (!p) return "";
-            return socialDiscoverPersonHtml(p, { cloudId: cid });
-          })
-          .join("")}</div>`
-      : "";
-    const demoHtml = `<div class="soc-discover-list">${USERS.filter((u) => u.id !== "me")
-      .map((u) => socialDiscoverPersonHtml(u, {}))
-      .join("")}</div>`;
-    const sentInv = (state.sentInvites || []).slice().reverse().slice(0, 8);
-    const inviteBlock = `<section class="soc-invite-banner">
-      <div>
-        <h3>Inviter quelqu'un</h3>
-        <p class="feed-note">Lien local — chaque personne crée son carnet sur son appareil.</p>
-      </div>
-      <button type="button" class="btn btn-primary" id="btn-open-invite-modal">Créer un lien</button>
-    </section>
-    ${
-      sentInv.length
-        ? `<ul class="invite-sent-list">${sentInv
+            .join("");
+
+    const sentInv = (state.sentInvites || []).slice().reverse().slice(0, 12);
+    const sentInvitesHtml =
+      sentInv.length === 0
+        ? `<p class="feed-note">Aucun lien généré sur cet appareil pour l’instant.</p>`
+        : `<ul class="invite-sent-list">${sentInv
             .map(
               (x) =>
-                `<li><span class="feed-note">${escapeHtml((x.createdAt || "").slice(0, 16).replace("T", " "))}</span> — <code>${escapeHtml(String(x.token || ""))}</code></li>`
+                `<li><span class="feed-note">${escapeHtml((x.createdAt || "").slice(0, 16).replace("T", " "))}</span> — jeton <code>${escapeHtml(
+                  String(x.token || "")
+                )}</code></li>`
             )
-            .join("")}</ul>`
-        : ""
-    }`;
-    return `${inviteBlock}
-      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Ton cercle</h2>${friendsBlock}</section>
-      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Demandes reçues</h2>${incomingBlock}</section>
-      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Découvrir</h2>${cloudHtml}${demoHtml}</section>`;
-  }
+            .join("")}</ul>`;
 
-  function renderSocialLivePanel() {
-    const zone = String((state.settings && state.settings.alertCity) || "").trim();
-    const desk = !!(state.settings && state.settings.desktopAlerts);
-    const favChips =
-      state.favoriteArtists.length === 0
-        ? `<p class="feed-note">Suis des artistes depuis une fiche album pour les alertes concerts.</p>`
-        : `<div class="artist-chip-row">${state.favoriteArtists
-            .map(
-              (a) =>
-                `<span class="artist-chip">${escapeHtml(a)}<button type="button" class="chip-x" data-rm-fav="${encodeURIComponent(a)}" title="Retirer">×</button></span>`
-            )
-            .join("")}</div>`;
-    const manualCards = (state.manualTourDates || [])
-      .slice()
-      .sort((a, b) => (a.datetime < b.datetime ? -1 : 1))
-      .map((row) => socialGigCardHtml(row, true))
-      .join("");
-    const previewCards =
-      (state.upcomingTourPreview || []).length === 0
-        ? `<p class="soc-empty-inline">Lance une vérification pour repérer des dates près de chez toi.</p>`
-        : (state.upcomingTourPreview || []).map((row) => socialGigCardHtml(row, false)).join("");
-    return `<section class="soc-live-tools">
-        <p class="feed-note">Concerts près de <strong>${escapeHtml(zone || "ta ville")}</strong> — dis si tu es partant·e, tes ami·es le verront.</p>
-        <div class="social-tools soc-live-tools__row">
-          <label class="social-inline"><span>Ville</span><input type="text" id="social-city" value="${escapeHtml(zone)}" placeholder="Paris" /></label>
-          <label class="social-inline social-check"><input type="checkbox" id="social-desk" ${desk ? "checked" : ""} /> Alertes navigateur</label>
-          <button type="button" class="btn btn-ghost btn-sm" id="social-notif-perm">Notifications</button>
-          <button type="button" class="btn btn-primary btn-sm" id="social-sync-tours">Actualiser les dates</button>
-        </div>
-        ${favChips}
-        <details class="soc-live-add">
-          <summary>Ajouter une date manuellement</summary>
-          <div class="manual-tour-grid">
-            <input type="text" id="social-man-artist" placeholder="Artiste" />
-            <input type="datetime-local" id="social-man-date" />
-            <input type="text" id="social-man-venue" placeholder="Salle" />
-            <input type="text" id="social-man-city" placeholder="Ville" />
-          </div>
-          <p><button type="button" class="btn btn-primary btn-sm" id="social-man-add">Enregistrer</button></p>
-        </details>
-      </section>
-      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Prochains live</h2><div class="soc-gig-scroll">${previewCards}</div></section>
-      ${manualCards ? `<section class="soc-panel-section"><h2 class="soc-panel-section__title">Tes dates</h2><div class="soc-gig-scroll">${manualCards}</div></section>` : ""}`;
-  }
+    const invitePanel = `<section class="panel social-section invite-panel">
+      <h2>Inviter quelqu’un (local)</h2>
+      <p class="feed-note">Génère un lien à copier (message, mail…). La personne l’ouvre sur <strong>son</strong> navigateur : elle crée <strong>son</strong> carnet local. Aucun serveur Soundlog — pas de synchro automatique entre machines.</p>
+      <p><button type="button" class="btn btn-primary" id="btn-open-invite-modal">Créer un lien d’invitation</button></p>
+      <h3 style="margin-top:1rem;font-size:1rem">Liens créés sur cet appareil</h3>
+      ${sentInvitesHtml}
+    </section>`;
 
-  async function injectSocialFriendCompat() {
-    if (route.view !== "social") return;
-    const cards = document.querySelectorAll(".soc-person[data-friend-id]");
-    for (const card of cards) {
-      const fid = card.getAttribute("data-friend-id");
-      const label = card.querySelector("[data-compat-label]");
-      if (!fid || !label) continue;
-      try {
-        const r = await computeMusicCompatibilityWith(fid);
-        label.textContent = `${r.score}% compat · ${r.shared} disque${r.shared > 1 ? "s" : ""} en commun`;
-      } catch (_) {}
-    }
-  }
-
-  async function injectSocialGigArtwork() {
-    if (route.view !== "social" || state.socialTab !== "live") return;
-    const cards = document.querySelectorAll(".soc-gig-card");
-    for (const card of cards) {
-      const artist = card.querySelector(".soc-gig-card__artist");
-      if (!artist) continue;
-      const name = artist.textContent.trim();
-      if (!name) continue;
-      const url = await fetchArtworkFromItunes(name, "live");
-      if (!url || route.view !== "social") return;
-      const frame = card.querySelector(".cover-frame");
-      if (!frame || frame.classList.contains("has-art")) continue;
-      const cover = frame.querySelector(".cover");
-      if (!cover) continue;
-      frame.classList.add("has-art");
-      cover.classList.remove("is-fallback");
-      cover.classList.add("has-img");
-      let img = cover.querySelector(".cover-img");
-      if (!img) {
-        img = document.createElement("img");
-        img.className = "cover-img";
-        img.loading = "lazy";
-        cover.insertBefore(img, cover.firstChild);
-      }
-      img.src = url;
-    }
-  }
-
-  function renderSocial() {
-    ensureSocialTab();
-    ensureSocialArrays();
-    const tab = state.socialTab;
     const nPendIn = (state.incomingFriendRequests || []).length;
     const signedCloud = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
-    const tabs = [
-      { id: "feed", label: "Fil" },
-      { id: "circle", label: "Cercle" },
-      { id: "live", label: "Live" },
-    ];
-    const tabHtml = tabs
-      .map(
-        (x) =>
-          `<button type="button" role="tab" class="soc-tab${tab === x.id ? " is-active" : ""}" data-social-tab="${x.id}" aria-selected="${tab === x.id}">${escapeHtml(x.label)}</button>`
-      )
-      .join("");
-    let panel = "";
-    if (tab === "circle") panel = renderSocialCirclePanel();
-    else if (tab === "live") panel = renderSocialLivePanel();
-    else panel = renderSocialFeedPanel();
-    const murmurComposer =
-      tab === "feed"
-        ? `<section class="soc-compose">
-            <label for="social-shout-text" class="visually-hidden">Murmure</label>
-            <div class="soc-compose__row">
-              <input type="text" id="social-shout-text" maxlength="280" placeholder="Un mot sur une sortie, une envie…" />
-              <button type="button" class="btn btn-primary" id="social-add-shout">Publier</button>
-            </div>
-          </section>`
-        : "";
-    return `<div class="soc-page view-social-themed">
-      <header class="soc-hero">
-        <div class="soc-hero__copy">
-          <p class="soc-hero__kicker">Réseau musical</p>
-          <h1 class="soc-hero__title">Communauté</h1>
-          <p class="soc-hero__lead">Fil d'écoutes, cercle d'ami·es, live dates et murmures — ton carnet devient social.</p>
-        </div>
-        <div class="soc-hero__stats">
-          <div class="soc-stat"><b>${state.friends.length}</b><span>ami·es</span></div>
-          <div class="soc-stat"><b>${(state.follows || []).length}</b><span>suivi·es</span></div>
-          <div class="soc-stat"><b>${nPendIn}</b><span>demandes</span></div>
-        </div>
-        <div class="soc-hero__actions">
+    const socialDash = `<section class="panel social-dash" aria-label="Aperçu de ton réseau">
+      <div class="social-dash__grid">
+        <article class="social-dash__tile"><strong>${state.friends.length}</strong><span>ami·es</span></article>
+        <article class="social-dash__tile"><strong>${(state.follows || []).length}</strong><span>suivi·es</span></article>
+        <article class="social-dash__tile"><strong>${nPendIn}</strong><span>demandes reçues</span></article>
+        <article class="social-dash__tile social-dash__tile--cta">
           <button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messages</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Accueil</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Fil</button>
+        </article>
+      </div>
+      <p class="feed-note social-dash__hint">${
+        signedCloud
+          ? "Graphe social synchronisé avec ton compte."
+          : "Passe en mode connecté pour DM, fil Découvrir et demandes d’ami en ligne."
+      }</p>
+    </section>`;
+
+    return `<div class="view-page social-hub view-social-themed">
+      <header class="social-hero">
+        <div>
+          <p class="social-kicker">Cercle &amp; alertes</p>
+          <h1 class="page-title">Communauté</h1>
+          <p class="page-sub">Ami·es, <strong>messages privés</strong>, test de <strong>compatibilité musicale</strong>, murmures et <strong>alertes concerts</strong>. Dis si tu es intéressé·e par une date : tes ami·es connecté·es le verront.</p>
+          <p class="social-hero-tools"><button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messagerie (ami·es)</button></p>
         </div>
       </header>
-      <nav class="soc-tabs" role="tablist">${tabHtml}</nav>
-      ${murmurComposer}
-      <div class="soc-layout${tab === "feed" ? " soc-layout--feed" : ""}">
-        <main class="soc-main">${panel}</main>
-        <aside class="soc-aside" aria-label="Raccourcis">
-          <section class="soc-aside-card">
-            <h3>Messages</h3>
-            <p class="feed-note">${signedCloud ? "Discute avec tes ami·es Soundlog." : "Connecte-toi pour la messagerie."}</p>
-            <button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Ouvrir</button>
-          </section>
-          <section class="soc-aside-card">
-            <h3>Compatibilité</h3>
-            <p class="feed-note">Ouvre le profil d'un·e ami·e pour le test détaillé de goûts.</p>
-          </section>
-          ${
-            tab !== "live"
-              ? `<section class="soc-aside-card soc-aside-card--cta">
-            <h3>Concerts</h3>
-            <p class="feed-note">Dates près de chez toi et envies partagées.</p>
-            <button type="button" class="btn btn-ghost btn-sm" data-social-tab="live">Voir les live</button>
-          </section>`
-              : ""
-          }
-        </aside>
+      ${socialDash}
+
+      ${invitePanel}
+
+      <section class="panel social-section">
+        <h2>Concerts à proximité</h2>
+        <p class="feed-note">On compare les prochaines dates (manuelles ou API) avec ta ville de référence.</p>
+        <div class="social-tools">
+          <label class="social-inline"><span>Ville / région</span><input type="text" id="social-city" value="${escapeHtml(zone)}" placeholder="ex. Paris" /></label>
+          <label class="social-inline social-check"><input type="checkbox" id="social-desk" ${desk ? "checked" : ""} /> <span>Alertes bureau (navigateur)</span></label>
+          <button type="button" class="btn btn-ghost btn-sm" id="social-notif-perm">Demander la permission</button>
+          <button type="button" class="btn btn-primary" id="social-sync-tours">Vérifier les dates maintenant</button>
+        </div>
+        ${favChips}
+        <h3 style="margin-top:1.25rem">Ajouter une date manuellement</h3>
+        <p class="feed-note">Si l’API est bloquée, enregistre ici une annonce (festivals, salles, presse).</p>
+        <div class="manual-tour-grid">
+          <input type="text" id="social-man-artist" placeholder="Artiste" />
+          <input type="datetime-local" id="social-man-date" />
+          <input type="text" id="social-man-venue" placeholder="Salle" />
+          <input type="text" id="social-man-city" placeholder="Ville" />
+        </div>
+        <p><button type="button" class="btn btn-primary" id="social-man-add">Ajouter cette date</button></p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Envies</th><th></th></tr></thead>
+            <tbody>${manualRows || `<tr><td colspan="6" class="empty">Aucune date manuelle.</td></tr>`}</tbody>
+          </table>
+        </div>
+        <h3 style="margin-top:1.5rem">Prochains concerts repérés</h3>
+        <p class="feed-note">Liste mise à jour quand tu cliques « Vérifier les dates maintenant » (même clé de lieu/date pour tout le monde : tes ami·es Soundlog voient qui est partant·e).</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Source</th><th>Envies</th></tr></thead>
+            <tbody>${previewRows}</tbody>
+          </table>
+        </div>
+      </section>
+
+      <div class="social-two">
+        <section class="panel social-section">
+          <h2>Ami·es</h2>
+          ${friendsHtml}
+          <h3 style="margin-top:1.25rem">Demandes reçues</h3>
+          ${incomingHtml}
+          <h3 style="margin-top:1.25rem">Demandes envoyées</h3>
+          ${outgoingHtml}
+        </section>
+        <section class="panel social-section">
+          <h2>Repérer des profils</h2>
+          ${cloudDiscoverHtml}
+          <h3 class="social-subh">Carnet de démo (local)</h3>
+          <div class="social-card-stack">${discoverHtml}</div>
+        </section>
       </div>
+
+      ${shoutForm}
     </div>`;
+  }
+
+  const DM_PAYLOAD_PREFIX = "SLDM:";
+  const DM_PINNED_KEY = "soundlog.dmPinned";
+
+  function getDmPinned() {
+    try {
+      const raw = localStorage.getItem(DM_PINNED_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter((x) => typeof x === "string") : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function toggleDmPinned(threadId) {
+    const id = String(threadId || "");
+    if (!id) return;
+    let pins = getDmPinned();
+    if (pins.includes(id)) pins = pins.filter((x) => x !== id);
+    else pins = [id, ...pins].slice(0, 12);
+    try {
+      localStorage.setItem(DM_PINNED_KEY, JSON.stringify(pins));
+    } catch (_) {}
+  }
+
+  function encodeDmPayload(payload) {
+    return DM_PAYLOAD_PREFIX + JSON.stringify(payload);
+  }
+
+  function parseDmPayload(body) {
+    const s = String(body || "");
+    if (!s.startsWith(DM_PAYLOAD_PREFIX)) return null;
+    try {
+      const o = JSON.parse(s.slice(DM_PAYLOAD_PREFIX.length));
+      if (!o || o.v !== 1 || !o.type) return null;
+      return o;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function dmPreviewText(body) {
+    const p = parseDmPayload(body);
+    if (!p) return String(body || "").replace(/\s+/g, " ").trim().slice(0, 72) || "…";
+    switch (p.type) {
+      case "album":
+        return `💿 ${p.title || "Album"} — ${p.artist || ""}`.trim();
+      case "listening":
+        return `🎧 ${p.title || "Écoute"} · ${p.artist || ""}`.trim();
+      case "concert":
+        return `🎤 ${p.artist || "Live"} · ${p.date || ""}`.trim();
+      case "preview":
+        return `▶ Extrait · ${p.title || "Album"}`;
+      case "discovery":
+        return `✨ Découverte · ${p.label || p.title || "Musique"}`;
+      case "moment":
+        return `🌙 Moment · ${p.text || ""}`.trim().slice(0, 60);
+      default:
+        return "🎵 Partage musical";
+    }
+  }
+
+  function dmAlbumFromPayload(p) {
+    if (p.albumId) {
+      const al = albumById(p.albumId);
+      if (al) return al;
+    }
+    if (p.title && p.artist) {
+      const g = gradientFromKey(p.title + p.artist);
+      return {
+        id: p.albumId || "",
+        title: p.title,
+        artist: p.artist,
+        year: p.year || "",
+        genre: p.genre || "",
+        from: g.from,
+        to: g.to,
+        artworkUrl: p.artworkUrl || "",
+      };
+    }
+    return null;
+  }
+
+  function dmShareCardHtml(p) {
+    if (p.type === "album" || p.type === "listening" || p.type === "preview") {
+      const al = dmAlbumFromPayload(p);
+      if (!al) return `<p class="dm-card-fallback">Album partagé</p>`;
+      const rating = p.rating != null ? `<span class="dm-card__rating">${starString(p.rating)}</span>` : "";
+      const note = p.note ? `<p class="dm-card__note">${escapeHtml(p.note)}</p>` : "";
+      const previewBtn =
+        p.type === "preview" || p.albumId
+          ? `<button type="button" class="dm-card__play" data-preview-play="${escapeHtml(al.id)}">▶ 30 s</button>`
+          : "";
+      return `<div class="dm-music-card" data-album="${escapeHtml(al.id)}"${albumCardStyle(al)}>
+        <div class="dm-music-card__cover">${coverHtml(al, true, "md")}</div>
+        <div class="dm-music-card__meta">
+          ${rating}
+          <strong class="dm-music-card__title">${escapeHtml(al.title)}</strong>
+          <span class="dm-music-card__artist">${escapeHtml(al.artist)} · ${escapeHtml(String(al.year))}</span>
+          ${note}
+          <div class="dm-music-card__actions">
+            ${previewBtn}
+            <button type="button" class="dm-card__open" data-album-open="${escapeHtml(al.id)}">Ouvrir</button>
+          </div>
+        </div>`;
+    }
+    if (p.type === "concert") {
+      const g = gradientFromKey((p.artist || "") + (p.city || ""));
+      const fake = { title: p.artist || "Live", artist: p.venue || p.city || "Concert", from: g.from, to: g.to, artworkUrl: "" };
+      return `<div class="dm-music-card dm-music-card--gig">
+        <div class="dm-music-card__cover">${coverHtml(fake, true, "sm")}</div>
+        <div class="dm-music-card__meta">
+          <span class="dm-card__badge">Live</span>
+          <strong class="dm-music-card__title">${escapeHtml(p.artist || "Artiste")}</strong>
+          <span class="dm-music-card__artist">${escapeHtml(p.date || "")} · ${escapeHtml([p.venue, p.city].filter(Boolean).join(" · "))}</span>
+        </div>
+      </div>`;
+    }
+    if (p.type === "discovery") {
+      return `<div class="dm-music-card dm-music-card--discover">
+        <p class="dm-card__badge">Découverte</p>
+        <strong>${escapeHtml(p.label || p.title || "Un son pour toi")}</strong>
+        ${p.text ? `<p class="dm-card__note">${escapeHtml(p.text)}</p>` : ""}
+      </div>`;
+    }
+    if (p.type === "moment") {
+      return `<div class="dm-music-card dm-music-card--moment">
+        <p class="dm-card__badge">Moment</p>
+        <p class="dm-card__note">${escapeHtml(p.text || "")}</p>
+      </div>`;
+    }
+    return "";
+  }
+
+  function dmMessageBubbleHtml(m, meId) {
+    const isMe = m.sender_id === meId;
+    const p = parseDmPayload(m.body);
+    const time = escapeHtml((m.created_at || "").slice(11, 16));
+    const reactions = `<div class="dm-bubble__reacts">
+      <button type="button" class="dm-react" data-dm-react="${escapeHtml(m.id)}" data-emoji="🔥" title="Feu">🔥</button>
+      <button type="button" class="dm-react" data-dm-react="${escapeHtml(m.id)}" data-emoji="💿" title="Disque">💿</button>
+      <button type="button" class="dm-react" data-dm-react="${escapeHtml(m.id)}" data-emoji="🎧" title="Écoute">🎧</button>
+    </div>`;
+    if (p) {
+      return `<div class="dm-bubble dm-bubble--card ${isMe ? "dm-bubble--me" : "dm-bubble--them"}" data-msg-id="${escapeHtml(m.id)}">
+        ${dmShareCardHtml(p)}
+        <div class="dm-bubble__foot"><span class="dm-bubble__time">${time}</span>${isMe ? reactions : ""}</div>
+      </div>`;
+    }
+    return `<div class="dm-bubble ${isMe ? "dm-bubble--me" : "dm-bubble--them"}" data-msg-id="${escapeHtml(m.id)}">
+        <p class="dm-bubble__text">${escapeHtml(m.body)}</p>
+        <div class="dm-bubble__foot"><span class="dm-bubble__time">${time}</span>${isMe ? reactions : ""}</div>
+      </div>`;
+  }
+
+  async function sendDmPayload(threadId, payload) {
+    const body = encodeDmPayload(payload);
+    if (body.length > 2000) throw new Error("Partage trop volumineux.");
+    return SLCloud.sendDmMessage(threadId, body);
+  }
+
+  function dmShareTrayHtml() {
+    return `<div class="dm-share-tray" id="dm-share-tray">
+      <button type="button" class="dm-share-chip" data-dm-share-kind="listening">🎧 Écoute</button>
+      <button type="button" class="dm-share-chip" data-dm-share-kind="album">💿 Album</button>
+      <button type="button" class="dm-share-chip" data-dm-share-kind="preview">▶ Extrait</button>
+      <button type="button" class="dm-share-chip" data-dm-share-kind="moment">🌙 Moment</button>
+      <button type="button" class="dm-share-chip" data-dm-share-kind="discovery">✨ Découverte</button>
+    </div>`;
+  }
+
+  function dmThreadPanelShell(threadId) {
+    return `<div class="dm-chat" id="inbox-thread-panel" data-thread-id="${escapeHtml(threadId)}">
+        <header class="dm-chat__head">
+          <button type="button" class="dm-chat__back" data-inbox-back aria-label="Retour">←</button>
+          <div class="dm-chat__peer" id="dm-chat-peer">
+            <span class="dm-chat__peer-avatar" id="dm-peer-avatar">♫</span>
+            <div>
+              <strong class="dm-chat__peer-name" id="dm-peer-name">…</strong>
+              <span class="dm-chat__peer-status feed-note" id="dm-peer-status">Ami·e Soundlog</span>
+            </div>
+          </div>
+          <button type="button" class="dm-chat__pin" id="dm-pin-thread" data-thread-pin="${escapeHtml(threadId)}" title="Épingler">📌</button>
+        </header>
+        <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
+        ${dmShareTrayHtml()}
+        <form class="dm-compose" id="inbox-compose">
+          <button type="button" class="dm-compose__attach" id="dm-toggle-share" title="Partager de la musique">+</button>
+          <label class="visually-hidden" for="inbox-msg-input">Message</label>
+          <input type="text" id="inbox-msg-input" class="dm-compose__input" maxlength="2000" placeholder="Message ou partage un son…" autocomplete="off" />
+          <button type="submit" class="dm-compose__send" aria-label="Envoyer">↑</button>
+        </form>
+      </div>`;
+  }
+
+  function openDmShareModal(threadId, kind) {
+    const recent = state.listenings
+      .filter((l) => l.userId === "me")
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .slice(0, 8);
+    if (kind === "moment" || kind === "discovery") {
+      openModal(`<h2>${kind === "moment" ? "Moment musical" : "Découverte"}</h2>
+        <label>Message</label>
+        <input type="text" id="dm-share-text" maxlength="200" placeholder="Ce morceau me fait penser à…" />
+        <p style="margin-top:0.85rem">
+          <button type="button" class="btn btn-primary" id="dm-share-send">Envoyer</button>
+          <button type="button" class="btn btn-ghost" id="dm-share-cancel">Annuler</button>
+        </p>`);
+      document.getElementById("dm-share-cancel").onclick = closeModal;
+      document.getElementById("dm-share-send").onclick = async () => {
+        const text = (document.getElementById("dm-share-text") && document.getElementById("dm-share-text").value.trim()) || "";
+        if (!text) return toast("Écris quelques mots.");
+        try {
+          await sendDmPayload(threadId, { v: 1, type: kind, text });
+          closeModal();
+          toast("Envoyé.");
+          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
+        } catch (e) {
+          toast(e.message || "Erreur");
+        }
+      };
+      return;
+    }
+    const rows = recent
+      .map((l) => {
+        const al = albumById(l.albumId);
+        if (!al) return "";
+        return `<button type="button" class="dm-pick-row" data-dm-pick-album="${escapeHtml(l.albumId)}" data-dm-pick-rating="${l.rating || ""}">
+          ${coverHtml(al, true, "sm")}
+          <span><strong>${escapeHtml(al.title)}</strong><span class="feed-note">${escapeHtml(al.artist)}</span></span>
+        </button>`;
+      })
+      .join("");
+    openModal(`<h2>Partager ${kind === "preview" ? "un extrait" : kind === "listening" ? "une écoute" : "un album"}</h2>
+      <p class="feed-note">Choisis un disque de ton carnet récent.</p>
+      <div class="dm-pick-list">${rows || "<p class=\"empty\">Logue une écoute dans ton Journal d'abord.</p>"}</div>
+      <p style="margin-top:0.85rem"><button type="button" class="btn btn-ghost" id="dm-share-cancel">Fermer</button></p>`);
+    document.getElementById("dm-share-cancel").onclick = closeModal;
+    document.querySelectorAll("[data-dm-pick-album]").forEach((btn) => {
+      btn.onclick = async () => {
+        const albumId = btn.getAttribute("data-dm-pick-album");
+        const al = albumById(albumId);
+        if (!al) return;
+        const rating = btn.getAttribute("data-dm-pick-rating");
+        const payload = {
+          v: 1,
+          type: kind === "preview" ? "preview" : kind === "listening" ? "listening" : "album",
+          albumId: al.id,
+          title: al.title,
+          artist: al.artist,
+          year: al.year,
+          genre: al.genre,
+          artworkUrl: bestArtworkUrl(al),
+          rating: rating ? Number(rating) : null,
+        };
+        try {
+          await sendDmPayload(threadId, payload);
+          closeModal();
+          toast("Partagé dans la conversation.");
+          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
+        } catch (e) {
+          toast(e.message || "Erreur");
+        }
+      };
+    });
+  }
+
+  function dmSortThreads(items) {
+    const pins = getDmPinned();
+    return [...items].sort((a, b) => {
+      const ap = pins.includes(a.thread.id) ? 0 : 1;
+      const bp = pins.includes(b.thread.id) ? 0 : 1;
+      if (ap !== bp) return ap - bp;
+      const at = (a.lastMessage && a.lastMessage.created_at) || "";
+      const bt = (b.lastMessage && b.lastMessage.created_at) || "";
+      return at < bt ? 1 : -1;
+    });
+  }
+
+  function dmThreadRowHtml({ thread, other, lastMessage }, activeId) {
+    const tid = thread.id;
+    const pinned = getDmPinned().includes(tid);
+    const name = other ? escapeHtml(other.name) : "…";
+    const handle = other ? escapeHtml(other.handle) : "";
+    const preview = lastMessage ? escapeHtml(dmPreviewText(lastMessage.body)) : "Nouvelle conversation";
+    const avatar = other
+      ? userAvatarHtml(other, "dm-thread__avatar")
+      : `<span class="dm-thread__avatar">?</span>`;
+    return `<li>
+      <button type="button" class="dm-thread${activeId === tid ? " is-active" : ""}${pinned ? " is-pinned" : ""}" data-open-thread="${escapeHtml(tid)}">
+        ${avatar}
+        <span class="dm-thread__body">
+          <span class="dm-thread__top"><strong>${name}</strong>${pinned ? '<span class="dm-thread__pin" aria-hidden="true">📌</span>' : ""}</span>
+          <span class="dm-thread__handle">@${handle}</span>
+          <span class="dm-thread__preview">${preview}</span>
+        </span>
+      </button>
+    </li>`;
+  }
+
+  function wireDmChatActions(root) {
+    if (!root) return;
+    root.querySelectorAll("[data-preview-play]").forEach((b) => {
+      if (b.dataset.dmWired) return;
+      b.dataset.dmWired = "1";
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void playAlbumPreview(b.getAttribute("data-preview-play"));
+      });
+    });
+    root.querySelectorAll("[data-album-open]").forEach((b) => {
+      if (b.dataset.dmWired) return;
+      b.dataset.dmWired = "1";
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = b.getAttribute("data-album-open");
+        if (id) navigate("album", { albumId: id });
+      });
+    });
+    root.querySelectorAll("[data-dm-react]").forEach((b) => {
+      if (b.dataset.dmWired) return;
+      b.dataset.dmWired = "1";
+      b.addEventListener("click", () => toast(b.getAttribute("data-emoji") + " — réaction enregistrée"));
+    });
   }
 
   function renderInbox() {
     const signed = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
     if (!signed) {
-      return `<div class="view-page inbox-view view-themed">
-        <header class="inbox-hero discover-hero"><h1 class="page-title">Messages</h1>
-        <p class="page-sub">Connecte-toi avec ton compte Soundlog pour chater avec tes ami·es.</p>
-        <button type="button" class="btn btn-primary" id="inbox-open-account">Se connecter</button></header></div>`;
+      return `<div class="dm-page dm-page--gate view-themed">
+        <div class="dm-gate">
+          <p class="dm-gate__kicker">Messages privés</p>
+          <h1 class="dm-gate__title">Tes conversations musicales</h1>
+          <p class="dm-gate__text">Connecte-toi pour échanger des albums, des extraits et des découvertes avec tes ami·es.</p>
+          <button type="button" class="btn btn-primary" id="inbox-open-account">Se connecter</button>
+        </div>
+      </div>`;
     }
-    const threadPanel =
-      route.dmThreadId
-        ? `<div class="inbox-thread-panel" id="inbox-thread-panel" data-thread-id="${escapeHtml(route.dmThreadId)}">
-             <div class="inbox-thread-head"><button type="button" class="btn btn-ghost btn-sm" data-inbox-back>← Retour</button></div>
-             <div class="inbox-messages" id="inbox-messages"></div>
-             <form class="inbox-compose" id="inbox-compose">
-               <label class="visually-hidden" for="inbox-msg-input">Message</label>
-               <textarea id="inbox-msg-input" rows="2" maxlength="2000" placeholder="Écrire…"></textarea>
-               <button type="submit" class="btn btn-primary">Envoyer</button>
-             </form>
-           </div>`
-        : `<div class="inbox-list-panel" id="inbox-list-panel">
-             <p class="feed-note" id="inbox-list-here">Chargement…</p>
-           </div>`;
-    return `<div class="view-page inbox-view view-themed inbox-split">
-      <header class="inbox-hero">
-        <h1 class="page-title">Messagerie</h1>
-        <p class="page-sub">Discute uniquement avec tes <strong>ami·es Soundlog</strong>. Les nouveaux messages arrivent en temps réel quand la migration SQL est appliquée.</p>
-      </header>
-      ${threadPanel}
+    const threadId = route.dmThreadId;
+    const mainContent = threadId
+      ? dmThreadPanelShell(threadId)
+      : `<div class="dm-chat dm-chat--empty" id="dm-empty-state">
+          <div class="dm-empty-state__icon" aria-hidden="true">♫</div>
+          <h2 class="dm-empty-state__title">Choisis une conversation</h2>
+          <p class="dm-empty-state__text">Partage un album, un extrait de 30 secondes ou un moment musical — comme un message vocal, mais pour la musique.</p>
+        </div>`;
+    return `<div class="dm-page view-themed${threadId ? " dm-page--thread" : ""}">
+      <aside class="dm-sidebar" id="dm-sidebar">
+        <header class="dm-sidebar__head">
+          <div>
+            <p class="dm-sidebar__kicker">Nuit sociale</p>
+            <h1 class="dm-sidebar__title">Messages</h1>
+          </div>
+          <button type="button" class="btn btn-ghost btn-sm" data-nav-view="social">Communauté</button>
+        </header>
+        <div class="dm-sidebar__search-wrap">
+          <input type="search" class="dm-sidebar__search" id="dm-thread-filter" placeholder="Rechercher…" autocomplete="off" />
+        </div>
+        <div class="dm-sidebar__list" id="inbox-list-panel">
+          <p class="feed-note">Chargement des conversations…</p>
+        </div>
+      </aside>
+      <main class="dm-main${threadId ? " dm-main--active" : ""}" id="dm-main">
+        ${mainContent}
+      </main>
     </div>`;
   }
 
@@ -4431,9 +4322,6 @@
     injectProfileCompatibility();
     injectSocialEventInterests();
     injectInboxHydration();
-    void injectLibraryArtworkHydration();
-    void injectSocialFriendCompat();
-    void injectSocialGigArtwork();
     if (route.view === "album") {
       requestAnimationFrame(() => applyAlbumBackdropTint());
     }
@@ -4674,7 +4562,7 @@
     }
   }
 
-  function injectInboxHydration() {
+function injectInboxHydration() {
     if (route.view !== "inbox") return;
     const acc = document.getElementById("inbox-open-account");
     if (acc) acc.addEventListener("click", () => openAccountModal("signin"));
@@ -4685,33 +4573,36 @@
 
   async function hydrateInboxList() {
     const host = document.getElementById("inbox-list-panel");
+    const filterEl = document.getElementById("dm-thread-filter");
     if (!host) return;
     try {
       const threads = await SLCloud.listDmThreads();
-      if (!threads.length) {
-        host.innerHTML = `<p class="empty">Aucune conversation. Ouvre le profil d’une personne avec qui tu es ami·e et clique « Message ».</p>`;
-        return;
-      }
-      host.innerHTML = `<ul class="inbox-thread-list">${threads
-        .map(({ thread, other, lastMessage }) => {
-          const name = other ? escapeHtml(other.name) : "…";
-          const handle = other ? escapeHtml(other.handle) : "";
-          const preview = lastMessage ? escapeHtml(String(lastMessage.body || "").slice(0, 72)) : "…";
-          const hue = other && other.hue != null ? other.hue : 200;
-          const initial = other ? escapeHtml(String(other.name || "?").charAt(0).toUpperCase()) : "?";
-          return `<li><button type="button" class="inbox-thread-row" data-open-thread="${escapeHtml(thread.id)}">
-          <span class="inbox-thread-avatar" style="background:hsl(${hue},55%,42%)">${initial}</span>
-          <span class="inbox-thread-meta"><strong>${name}</strong><span class="feed-note">@${handle}</span><span class="inbox-thread-preview">${preview}</span></span>
-        </button></li>`;
-        })
-        .join("")}</ul>`;
-      host.querySelectorAll("[data-open-thread]").forEach((b) => {
-        b.addEventListener("click", () => {
-          route.dmThreadId = b.getAttribute("data-open-thread");
-          window.location.hash = "#messagerie/" + route.dmThreadId;
-          render();
+      const activeId = route.dmThreadId;
+      const paintThreadList = (q) => {
+        let list = dmSortThreads(threads);
+        if (q) {
+          const qq = q.toLowerCase();
+          list = list.filter(
+            ({ other }) =>
+              (other && String(other.name || "").toLowerCase().includes(qq)) ||
+              (other && String(other.handle || "").toLowerCase().includes(qq))
+          );
+        }
+        if (!list.length) {
+          host.innerHTML = `<p class="empty dm-empty-list">Aucune conversation. Depuis un profil ami·e, touche « Message ».</p>`;
+          return;
+        }
+        host.innerHTML = `<ul class="dm-thread-list">${list.map((t) => dmThreadRowHtml(t, activeId)).join("")}</ul>`;
+        host.querySelectorAll("[data-open-thread]").forEach((b) => {
+          b.addEventListener("click", () => {
+            route.dmThreadId = b.getAttribute("data-open-thread");
+            window.location.hash = "#messagerie/" + route.dmThreadId;
+            render();
+          });
         });
-      });
+      };
+      paintThreadList(filterEl ? filterEl.value.trim() : "");
+      if (filterEl) filterEl.oninput = () => paintThreadList(filterEl.value.trim());
     } catch (e) {
       host.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur")}</p>`;
     }
@@ -4721,26 +4612,58 @@
     const box = document.getElementById("inbox-messages");
     const form = document.getElementById("inbox-compose");
     const ta = document.getElementById("inbox-msg-input");
+    const tray = document.getElementById("dm-share-tray");
+    const toggleShare = document.getElementById("dm-toggle-share");
+    const pinBtn = document.getElementById("dm-pin-thread");
     if (!box || !form || !ta) return;
+
+    let other = null;
+    try {
+      const threads = await SLCloud.listDmThreads();
+      const cur = threads.find((t) => t.thread && t.thread.id === threadId);
+      other = cur && cur.other;
+    } catch (_) {}
+
+    const peerName = document.getElementById("dm-peer-name");
+    const peerStatus = document.getElementById("dm-peer-status");
+    const peerAvatar = document.getElementById("dm-peer-avatar");
+    if (other && peerName) peerName.textContent = other.name || other.handle || "…";
+    if (other && peerStatus) peerStatus.textContent = "@" + (other.handle || "");
+    if (other && peerAvatar) peerAvatar.outerHTML = userAvatarHtml(other, "dm-chat__peer-avatar");
+
+    if (pinBtn) {
+      pinBtn.classList.toggle("is-on", getDmPinned().includes(threadId));
+      pinBtn.onclick = () => {
+        toggleDmPinned(threadId);
+        pinBtn.classList.toggle("is-on", getDmPinned().includes(threadId));
+        void hydrateInboxList();
+        toast(getDmPinned().includes(threadId) ? "Conversation épinglée" : "Épingle retirée");
+      };
+    }
+
+    if (tray) tray.classList.remove("is-open");
+    if (toggleShare && tray) toggleShare.onclick = () => tray.classList.toggle("is-open");
+    if (tray) {
+      tray.querySelectorAll("[data-dm-share-kind]").forEach((chip) => {
+        chip.onclick = () => openDmShareModal(threadId, chip.getAttribute("data-dm-share-kind"));
+      });
+    }
+
     const renderMsgs = (msgs) => {
       const me = SLCloud.me.id;
       box.innerHTML = msgs.length
-        ? msgs
-            .map(
-              (m) =>
-                `<div class="dm-bubble ${m.sender_id === me ? "dm-bubble--me" : "dm-bubble--them"}"><p>${escapeHtml(m.body)}</p><span class="feed-note">${escapeHtml(
-                  (m.created_at || "").slice(11, 16)
-                )}</span></div>`
-            )
-            .join("")
-        : `<p class="feed-note">Écris le premier message 💬</p>`;
+        ? msgs.map((m) => dmMessageBubbleHtml(m, me)).join("")
+        : `<p class="dm-chat__empty">Écris le premier message — ou partage un album 🎧</p>`;
       box.scrollTop = box.scrollHeight;
+      wireDmChatActions(box);
     };
+
     try {
       renderMsgs(await SLCloud.listDmMessages(threadId));
     } catch (e) {
       box.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "")}</p>`;
     }
+
     form.onsubmit = async (e) => {
       e.preventDefault();
       const t = ta.value.trim();
@@ -4749,10 +4672,12 @@
         await SLCloud.sendDmMessage(threadId, t);
         ta.value = "";
         renderMsgs(await SLCloud.listDmMessages(threadId));
+        void hydrateInboxList();
       } catch (err) {
         toast(err.message || "Envoi impossible");
       }
     };
+
     document.querySelectorAll("[data-inbox-back]").forEach((b) => {
       b.onclick = () => {
         route.dmThreadId = null;
@@ -4930,19 +4855,6 @@
       el.addEventListener("click", () => {
         route.searchTab = el.getAttribute("data-search-tab");
         render();
-      });
-    });
-    $main.querySelectorAll("[data-social-tab]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        state.socialTab = btn.getAttribute("data-social-tab") || "feed";
-        persist();
-        render();
-      });
-    });
-    document.querySelectorAll("[data-feed-react]").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        btn.classList.toggle("is-on");
-        toast("Réaction enregistrée localement.");
       });
     });
     $main.querySelectorAll("[data-feed-tab]").forEach((el) => {
@@ -5437,45 +5349,9 @@
     wireLibrarySearch();
   }
 
-  async function runLibrarySearch(q) {
-    const qq = String(q || "").trim();
-    if (qq.length < 2) {
-      libraryRemoteHits = [];
-      libraryRemoteLoading = false;
-      libraryRemoteError = null;
-      render();
-      return;
-    }
-    libraryRemoteLoading = true;
-    libraryRemoteError = null;
-    render();
-    try {
-      libraryRemoteHits = await mergeRemoteAlbums(qq);
-      libraryRemoteError = null;
-      pushLibRecent(qq);
-    } catch (e) {
-      libraryRemoteHits = [];
-      libraryRemoteError = e.message || String(e);
-    }
-    libraryRemoteLoading = false;
-    const h = (window.location.hash || "#").slice(1);
-    if (h !== "bibliotheques") return;
-    const still = document.getElementById("lib-q");
-    if (still && still.value.trim() === qq) {
-      render();
-      void injectLibraryArtworkHydration();
-    }
-  }
-
   function wireLibrarySearch() {
     const input = document.getElementById("lib-q");
     if (!input) return;
-    const triggerChip = (q) => {
-      libraryQuery = q;
-      input.value = q;
-      input.focus();
-      void runLibrarySearch(q);
-    };
     input.addEventListener("input", () => {
       libraryQuery = input.value;
       clearTimeout(libSearchTimer);
@@ -5490,23 +5366,23 @@
       libraryRemoteLoading = true;
       libraryRemoteError = null;
       render();
-      libSearchTimer = setTimeout(() => void runLibrarySearch(libraryQuery), 320);
-    });
-    document.querySelectorAll("[data-lib-chip]").forEach((btn) => {
-      btn.addEventListener("click", () => triggerChip(btn.getAttribute("data-lib-chip") || ""));
-    });
-    const clearBtn = document.getElementById("lib-search-clear");
-    if (clearBtn) {
-      clearBtn.addEventListener("click", () => {
-        libraryQuery = "";
-        input.value = "";
-        libraryRemoteHits = [];
+      libSearchTimer = setTimeout(async () => {
+        const q = libraryQuery.trim();
+        if (q.length < 2) return;
+        try {
+          libraryRemoteHits = await mergeRemoteAlbums(q);
+          libraryRemoteError = null;
+        } catch (e) {
+          libraryRemoteHits = [];
+          libraryRemoteError = e.message || String(e);
+        }
         libraryRemoteLoading = false;
-        libraryRemoteError = null;
-        input.focus();
-        render();
-      });
-    }
+        const h = (window.location.hash || "#").slice(1);
+        if (h !== "bibliotheques") return;
+        const still = document.getElementById("lib-q");
+        if (still && still.value.trim() === q) render();
+      }, 480);
+    });
     const apiBtn = document.getElementById("btn-api-settings");
     if (apiBtn) apiBtn.addEventListener("click", () => openApiSettingsModal());
     document.querySelectorAll("[data-import-hit]").forEach((btn) => {
@@ -7036,7 +6912,9 @@
         }
       },
       onDmMessage: () => {
-        if (route.view === "inbox" && route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
+        if (route.view !== "inbox") return;
+        void hydrateInboxList();
+        if (route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
       },
       onEventInterest: () => {
         if (route.view === "social") void injectSocialEventInterests();

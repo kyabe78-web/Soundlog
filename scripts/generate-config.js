@@ -1,16 +1,12 @@
 #!/usr/bin/env node
 /**
- * Génère config.js + injecte window.SLConfig dans index.html (build Vercel / CI).
- * Local : copie config.example.js → config.js et remplis à la main.
+ * Prépare config.js pour le dev local. Sur Vercel, la config prod vient de /api/sl-config.js.
  */
 const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
 const out = path.join(root, "config.js");
-const indexPath = path.join(root, "index.html");
-const CONFIG_MARKER = "<!-- @@SL_CONFIG@@ -->";
-
 const isVercel = !!(process.env.VERCEL || process.env.VERCEL_ENV);
 
 const cfg = {
@@ -26,36 +22,28 @@ const cfg = {
 
 const hasSecrets = !!(cfg.supabaseUrl && cfg.supabaseAnonKey && /^https?:\/\//i.test(cfg.supabaseUrl));
 
-if (isVercel && !hasSecrets) {
-  console.error(
-    "[generate-config] ERREUR Vercel : définis SL_SUPABASE_URL et SL_SUPABASE_ANON_KEY dans Settings → Environment Variables, puis Redeploy."
-  );
-  process.exit(1);
-}
-
-if (!hasSecrets && fs.existsSync(out) && !isVercel) {
-  console.log("[generate-config] Pas de variables Supabase en env — config.js local conservé.");
+if (isVercel) {
+  const stub = `/* Build Vercel — config runtime via /api/sl-config */
+window.SLConfig = window.SLConfig || ${JSON.stringify({ ...cfg, supabaseUrl: "", supabaseAnonKey: "" }, null, 2)};
+`;
+  fs.writeFileSync(out, stub, "utf8");
+  if (hasSecrets) {
+    console.log("[generate-config] Build OK — clés vues au build + /api/sl-config en prod.");
+  } else {
+    console.log(
+      "[generate-config] Build OK — config chargée à l'exécution via /api/sl-config (vérifie SL_SUPABASE_* dans Vercel → Environment Variables)."
+    );
+  }
   process.exit(0);
 }
 
-const body = `/* Généré par scripts/generate-config.js — ne pas éditer à la main en CI */
-window.SLConfig = ${JSON.stringify(cfg, null, 2)};
-`;
-
-fs.writeFileSync(out, body, "utf8");
-
-/* Sur Vercel : injecter la config dans index.html (config.js n’est pas versionné et le SPA rewrite peut le masquer). */
-if (isVercel && hasSecrets && fs.existsSync(indexPath)) {
-  let html = fs.readFileSync(indexPath, "utf8");
-  const inline = `<script>window.SLConfig=${JSON.stringify(cfg)};</script>`;
-  if (html.includes(CONFIG_MARKER)) {
-    html = html.replace(CONFIG_MARKER, `${inline}\n    ${CONFIG_MARKER}`);
-    fs.writeFileSync(indexPath, html, "utf8");
-  }
+if (!hasSecrets && fs.existsSync(out)) {
+  console.log("[generate-config] Pas de variables en env — config.js local conservé.");
+  process.exit(0);
 }
 
-console.log(
-  "[generate-config] Écrit",
-  path.basename(out),
-  hasSecrets ? "+ config inline dans index.html (cloud actif)" : "(mode invité / clés vides)"
-);
+const body = `/* Généré par scripts/generate-config.js */
+window.SLConfig = ${JSON.stringify(cfg, null, 2)};
+`;
+fs.writeFileSync(out, body, "utf8");
+console.log("[generate-config] Écrit config.js", hasSecrets ? "(cloud actif)" : "(mode invité)");

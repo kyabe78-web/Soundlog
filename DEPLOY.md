@@ -65,4 +65,4 @@ Coche **Production** et **Preview**.
 
 Lien public : `https://soundlog-nine.vercel.app`
 
-Sans ces variables, le message « Cloud non configuré » apparaît à la connexion.
+Les variables sont lues **à l’exécution** par `/api/sl-config` (le build ne plante plus si elles manquent au moment du build, mais la connexion nécessite quand même ces deux clés dans Vercel).

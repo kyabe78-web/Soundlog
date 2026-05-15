@@ -12,8 +12,25 @@
       supabaseAnonKey: String(c.supabaseAnonKey || "").trim(),
     };
   }
-  const CFG = readConfig();
-  const HAS_CONFIG = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && /^https?:\/\//i.test(CFG.supabaseUrl));
+  function hasValidConfig() {
+    const c = readConfig();
+    return !!(c.supabaseUrl && c.supabaseAnonKey && /^https?:\/\//i.test(c.supabaseUrl));
+  }
+  const HAS_CONFIG = hasValidConfig();
+
+  async function tryLoadRuntimeConfig() {
+    if (hasValidConfig()) return true;
+    try {
+      const r = await fetch("/api/sl-config", { cache: "no-store" });
+      if (!r.ok) return false;
+      // eslint-disable-next-line no-new-func
+      new Function(await r.text())();
+      SLCloud.available = hasValidConfig();
+      return hasValidConfig();
+    } catch (_) {
+      return false;
+    }
+  }
 
   const listeners = new Set();
   function emit(evt, payload) { listeners.forEach((cb) => { try { cb(evt, payload); } catch (_) {} }); }
@@ -30,14 +47,15 @@
     on(cb) { listeners.add(cb); return () => listeners.delete(cb); },
 
     async init() {
-      if (!HAS_CONFIG) return false;
+      if (!hasValidConfig()) return false;
       if (this.ready) return true;
       if (initPromise) return initPromise;
       initPromise = (async () => {
         try {
           await loadSdk();
           const { createClient } = window.supabase;
-          this.client = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
+          const cfg = readConfig();
+          this.client = createClient(cfg.supabaseUrl, cfg.supabaseAnonKey, {
             auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
           });
           this.ready = true;
@@ -64,9 +82,10 @@
 
     /** Attendre que le SDK Supabase soit prêt (évite « Cloud non initialisé » à l’ouverture du menu). */
     async ensureReady() {
-      if (!HAS_CONFIG) {
+      if (!hasValidConfig()) await tryLoadRuntimeConfig();
+      if (!hasValidConfig()) {
         throw new Error(
-          "Connexion cloud indisponible sur ce site. Les clés Supabase doivent être configurées au déploiement (Vercel → Environment Variables → SL_SUPABASE_URL et SL_SUPABASE_ANON_KEY, puis Redeploy)."
+          "Connexion cloud indisponible sur ce site. Ajoutez SL_SUPABASE_URL et SL_SUPABASE_ANON_KEY dans Vercel → Settings → Environment Variables (Production), puis Redeploy."
         );
       }
       const ok = await this.init();
@@ -1324,8 +1343,13 @@
   }
 
   window.SLCloud = SLCloud;
-  // Initialisation immédiate si la config est présente
-  if (HAS_CONFIG) SLCloud.init();
+  (async function bootCloud() {
+    if (!hasValidConfig()) await tryLoadRuntimeConfig();
+    if (hasValidConfig()) {
+      SLCloud.available = true;
+      await SLCloud.init();
+    }
+  })();
 
   // Si on revient d'un callback Spotify (?code=...&state=...), on échange.
   (async function handleSpotifyCallback() {

@@ -107,10 +107,13 @@
   opacity: 0.75;
 }
 
-/* Drawer messagerie */
+/* Drawer messagerie — backdrop only dims the app behind the panel (not the drawer itself) */
 .inbox-drawer-backdrop {
   position: fixed;
-  inset: 0;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  right: min(100vw, 420px);
   z-index: 900;
   background: rgba(0, 0, 0, 0.55);
   backdrop-filter: blur(6px);
@@ -166,11 +169,15 @@ body.inbox-drawer-open .modal-backdrop {
   z-index: 1000;
 }
 
+.inbox-drawer .dm-chat__head {
+  padding-right: 3.25rem;
+}
+
 .inbox-drawer__close {
   position: absolute;
   top: 0.65rem;
   right: 0.65rem;
-  z-index: 20;
+  z-index: 30;
   width: 36px;
   height: 36px;
   border: 0;
@@ -228,6 +235,10 @@ body.inbox-drawer-open .modal-backdrop {
 @media (min-width: 1024px) {
   .inbox-drawer {
     width: min(92vw, 720px);
+  }
+
+  .inbox-drawer-backdrop {
+    right: min(92vw, 720px);
   }
 
   .inbox-drawer__inner .dm-page {

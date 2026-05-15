@@ -125,6 +125,14 @@
         durationMs: isTrack ? x.trackTimeMillis : null,
         genres: [],
         sources: ["apple"],
+        meta: isTrack
+          ? {
+              previewUrl: x.previewUrl || null,
+              trackTitle: x.trackName,
+              albumTitle: x.collectionName || "",
+              appleTrackId: x.trackId ? String(x.trackId) : null,
+            }
+          : {},
         importPayload: {
           title: isTrack ? x.collectionName || x.trackName : title,
           artist: artist || x.artistName,
@@ -172,6 +180,12 @@
       durationMs: x.duration ? x.duration * 1000 : null,
       genres: [],
       sources: ["deezer"],
+      meta: {
+        previewUrl: x.preview || null,
+        trackTitle: x.title,
+        albumTitle: x.album?.title || "",
+        deezerTrackId: x.id ? String(x.id) : null,
+      },
       importPayload: {
         title: x.album?.title || x.title,
         artist: x.artist?.name || "",
@@ -383,12 +397,14 @@
           artworkUrl: img,
           genres: [],
           sources: ["spotify"],
+          meta: { spotifyAlbumId: a.id },
           importPayload: {
             title: a.name,
             artist: (a.artists || []).map((x) => x.name).join(", "),
             year: (a.release_date || "").slice(0, 4),
             artworkUrl: img,
             spotifyId: a.id,
+            spotifyAlbumId: a.id,
             fromSpotify: true,
           },
         })
@@ -406,11 +422,20 @@
           artworkUrl: img,
           durationMs: t.duration_ms,
           sources: ["spotify"],
+          meta: {
+            previewUrl: t.preview_url || null,
+            trackTitle: t.name,
+            albumTitle: t.album?.name || "",
+            spotifyTrackId: t.id,
+            spotifyAlbumId: t.album?.id || null,
+          },
           importPayload: {
             title: t.album?.name || t.name,
             artist: (t.artists || []).map((x) => x.name).join(", "),
             year: (t.album?.release_date || "").slice(0, 4),
             artworkUrl: img,
+            spotifyTrackId: t.id,
+            spotifyAlbumId: t.album?.id || null,
             fromSpotify: true,
           },
         })

@@ -2635,14 +2635,25 @@
             toggleDmShareTray(root);
             return;
           }
-          const pickBtn = e.target.closest("[data-dm-pick-album]");
+          const shareTab = e.target.closest("[data-dm-share-tab]");
+          if (shareTab && root.contains(shareTab)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const panel = root.querySelector("#inbox-thread-panel");
+            const tid = (panel && panel.getAttribute("data-thread-id")) || route.dmThreadId;
+            setDmShareMode(root, shareTab.getAttribute("data-dm-share-tab"));
+            if (tid) void renderDmShareSearch(root, tid);
+            return;
+          }
+          const pickBtn = e.target.closest("[data-dm-share-pick]");
           if (pickBtn && root.contains(pickBtn)) {
             e.preventDefault();
             e.stopImmediatePropagation();
             const panel = root.querySelector("#inbox-thread-panel, [data-thread-id]");
             const tid =
               (panel && panel.getAttribute("data-thread-id")) || route.dmThreadId;
-            if (tid) void sendDmPreviewFromPick(root, tid, pickBtn);
+            const uid = pickBtn.getAttribute("data-dm-share-pick");
+            if (tid && uid) void sendDmShareFromPick(root, tid, uid);
             return;
           }
         },
@@ -2650,7 +2661,13 @@
       );
     }
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && document.body.classList.contains("inbox-drawer-open")) closeInboxDrawer();
+      if (e.key !== "Escape") return;
+      const root = inboxRoot();
+      if (root && root.querySelector(".dm-share-tray.is-open")) {
+        closeDmShareTray(root);
+        return;
+      }
+      if (document.body.classList.contains("inbox-drawer-open")) closeInboxDrawer();
     });
   }
 
@@ -3393,6 +3410,9 @@
 
   const DM_PAYLOAD_PREFIX = "SLDM:";
   const DM_PINNED_KEY = "soundlog.dmPinned";
+  const dmShareResultCache = new Map();
+  let dmShareSearchTimer = null;
+  let dmShareSearchAbort = 0;
 
   function getDmPinned() {
     try {
@@ -3441,8 +3461,10 @@
         return `🎧 ${p.title || "Écoute"} · ${p.artist || ""}`.trim();
       case "concert":
         return `🎤 ${p.artist || "Live"} · ${p.date || ""}`.trim();
+      case "track":
+        return `🎵 ${p.trackTitle || p.title || "Titre"} · ${p.artist || ""}`.trim();
       case "preview":
-        return `▶ Extrait · ${p.title || "Album"}`;
+        return `▶ ${p.trackTitle || p.title || "Extrait"} · ${p.artist || ""}`.trim();
       case "discovery":
         return `✨ Découverte · ${p.label || p.title || "Musique"}`;
       case "moment":
@@ -3473,37 +3495,74 @@
     return null;
   }
 
+  function dmSpotifyOpenUrl(p) {
+    if (!p) return null;
+    if (p.spotifyUrl) return p.spotifyUrl;
+    if (p.spotifyTrackId) return "https://open.spotify.com/track/" + encodeURIComponent(p.spotifyTrackId);
+    if (p.spotifyAlbumId) return "https://open.spotify.com/album/" + encodeURIComponent(p.spotifyAlbumId);
+    const q = encodeURIComponent(((p.artist || "") + " " + (p.trackTitle || p.title || "")).trim());
+    return q.length > 2 ? "https://open.spotify.com/search/" + q : null;
+  }
+
+  function dmShareCardKindLabel(p) {
+    if (p.type === "track") return "Titre";
+    if (p.type === "preview") return "Extrait";
+    if (p.type === "album") return "Album";
+    if (p.type === "listening") return "Écoute";
+    return "Musique";
+  }
+
   function dmShareCardHtml(p) {
-    if (p.type === "album" || p.type === "listening" || p.type === "preview") {
+    if (p.type === "track" || p.type === "album" || p.type === "listening" || p.type === "preview") {
+      const isTrack = p.type === "track" || !!(p.trackTitle && p.type === "preview");
       const al = dmAlbumFromPayload(p);
-      if (!al) return `<p class="dm-card-fallback">Album partagé</p>`;
+      const cardId = (al && al.id) || p.albumId || p.uid || "dm-card";
+      const displayTitle = isTrack ? p.trackTitle || p.title || "Titre" : p.title || (al && al.title) || "Album";
+      const artistLine = p.artist || (al && al.artist) || "";
+      const albumLine = isTrack ? p.albumTitle || "" : [artistLine, p.year || (al && al.year)].filter(Boolean).join(" · ");
+      const gCard = gradientFromKey((p.artist || "") + displayTitle);
+      const coverAl =
+        al ||
+        (p.artist
+          ? { id: cardId, title: isTrack ? p.albumTitle || p.title : p.title, artist: p.artist, year: p.year || "", artworkUrl: p.artworkUrl || "", from: gCard.from, to: gCard.to }
+          : null);
+      if (!coverAl) return `<p class="dm-card-fallback">Musique partagée</p>`;
       const rating = p.rating != null ? `<span class="dm-card__rating">${starString(p.rating)}</span>` : "";
       const note = p.note ? `<p class="dm-card__note">${escapeHtml(p.note)}</p>` : "";
       const previewAttrs = p.previewUrl
-        ? ` data-preview-url="${escapeHtml(p.previewUrl)}" data-preview-track="${escapeHtml(p.trackName || "Extrait")}"`
+        ? ` data-preview-url="${escapeHtml(p.previewUrl)}" data-preview-track="${escapeHtml(p.trackName || p.trackTitle || "Extrait")}"`
         : "";
-      const previewBtn =
-        p.type === "preview" || p.albumId
-          ? `<button type="button" class="dm-card__play" data-preview-play="${escapeHtml(al.id)}"${previewAttrs}>▶ 30 s</button>`
+      const canPlay = !!(p.previewUrl || p.albumId || al);
+      const previewBtn = canPlay
+        ? `<button type="button" class="dm-card__play" data-preview-play="${escapeHtml(cardId)}"${previewAttrs} aria-label="Lire l'extrait">▶ Extrait</button>`
+        : "";
+      const spotifyHref = dmSpotifyOpenUrl(p);
+      const spotifyBtn = spotifyHref
+        ? `<a class="dm-card__spotify" href="${escapeHtml(spotifyHref)}" target="_blank" rel="noopener noreferrer">Spotify</a>`
+        : "";
+      const openBtn =
+        al && al.id && isCloudUuid(al.id)
+          ? `<button type="button" class="dm-card__open" data-album-open="${escapeHtml(al.id)}">Carnet</button>`
           : "";
-      const previewLine =
-        p.type === "preview" && p.trackName
-          ? `<p class="dm-card__note">Extrait : <strong>${escapeHtml(p.trackName)}</strong></p>`
-          : "";
-      return `<div class="dm-music-card" data-album="${escapeHtml(al.id)}"${albumCardStyle(al)}>
-        <div class="dm-music-card__cover">${coverHtml(al, true, "md")}</div>
+      return `<div class="dm-music-card" data-album="${escapeHtml(cardId)}"${albumCardStyle(coverAl)}>
+        <div class="dm-music-card__cover">${coverHtml(coverAl, true, "md")}</div>
         <div class="dm-music-card__meta">
           ${rating}
-          <strong class="dm-music-card__title">${escapeHtml(al.title)}</strong>
-          <span class="dm-music-card__artist">${escapeHtml(al.artist)} · ${escapeHtml(String(al.year))}</span>
-          ${previewLine}
+          <p class="dm-music-card__kind">${escapeHtml(dmShareCardKindLabel(p))}</p>
+          <strong class="dm-music-card__title">${escapeHtml(displayTitle)}</strong>
+          ${
+            isTrack
+              ? `<span class="dm-music-card__album-line">${escapeHtml(artistLine)}${albumLine ? " · " + escapeHtml(albumLine) : ""}</span>`
+              : `<span class="dm-music-card__artist">${escapeHtml(albumLine || artistLine)}</span>`
+          }
           ${note}
           <div class="dm-music-card__actions">
             ${previewBtn}
-            <button type="button" class="dm-card__open" data-album-open="${escapeHtml(al.id)}">Ouvrir</button>
+            ${spotifyBtn}
+            ${openBtn}
           </div>
         </div>
-        </div>`;
+      </div>`;
     }
     if (p.type === "concert") {
       const g = gradientFromKey((p.artist || "") + (p.city || ""));
@@ -3560,96 +3619,268 @@
     return SLCloud.sendDmMessage(threadId, body);
   }
 
+  function getDmShareMode(root) {
+    return root && root.getAttribute("data-dm-share-mode") === "album" ? "album" : "track";
+  }
+
+  function setDmShareMode(root, mode) {
+    if (!root) return;
+    const m = mode === "album" ? "album" : "track";
+    root.setAttribute("data-dm-share-mode", m);
+    root.querySelectorAll("[data-dm-share-tab]").forEach((t) => {
+      const on = t.getAttribute("data-dm-share-tab") === m;
+      t.classList.toggle("is-active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+  }
+
+  function syncDmShareTrayLayout(root, open) {
+    const box = root && root.querySelector("#inbox-messages");
+    const tray = root && root.querySelector("#dm-share-tray");
+    if (box) box.classList.toggle("dm-chat__messages--share-open", !!open);
+    if (tray) tray.setAttribute("aria-hidden", open ? "false" : "true");
+  }
+
+  function closeDmShareTray(root) {
+    if (!root) return;
+    const tray = root.querySelector("[data-dm-share-tray], #dm-share-tray");
+    const toggle = root.querySelector("[data-dm-toggle-share]");
+    if (tray) tray.classList.remove("is-open");
+    if (toggle) toggle.setAttribute("aria-expanded", "false");
+    syncDmShareTrayLayout(root, false);
+    dmShareSearchAbort += 1;
+  }
+
+  function dmShareSkeletonHtml(count) {
+    return Array.from({ length: count }, () =>
+      `<div class="dm-share-skeleton" aria-hidden="true"><div class="dm-share-skeleton__art"></div><div class="dm-share-skeleton__lines"><span></span><span></span></div></motion>`
+    ).join("");
+  }
+
+  function dmShareFilterResults(results, mode) {
+    const list = results || [];
+    if (mode === "track") {
+      return list.filter((r) => r.type === "single" || (r.meta && r.meta.trackTitle));
+    }
+    return list.filter((r) => {
+      if (r.type === "artist" || r.type === "playlist") return false;
+      return r.type === "album" || r.type === "ep";
+    });
+  }
+
+  function dmShareResultRowHtml(r) {
+    const isTrack = r.type === "single" || (r.meta && r.meta.trackTitle);
+    const title = isTrack ? (r.meta && r.meta.trackTitle) || r.title : r.title;
+    const sub = isTrack
+      ? [r.artist, (r.meta && r.meta.albumTitle) || (r.importPayload && r.importPayload.title)].filter(Boolean).join(" · ")
+      : [r.artist, r.year].filter(Boolean).join(" · ");
+    const dur =
+      window.SLMusicSearch && window.SLMusicSearch.formatDuration && r.durationMs
+        ? SLMusicSearch.formatDuration(r.durationMs)
+        : "";
+    const art = r.artworkUrl
+      ? `<img class="dm-share-result__art" src="${escapeHtml(r.artworkUrl)}" alt="" width="48" height="48" loading="lazy" />`
+      : `<span class="dm-share-result__art dm-share-result__art--ph" aria-hidden="true">♫</span>`;
+    return `<button type="button" class="dm-share-result" data-dm-share-pick="${escapeHtml(r.uid)}" role="option">
+      ${art}
+      <span class="dm-share-result__meta">
+        <span class="dm-share-result__title">${escapeHtml(title)}</span>
+        <span class="dm-share-result__sub">${escapeHtml(sub)}</span>
+      </span>
+      <span class="dm-share-result__badge">${escapeHtml(r.platform || "")}</span>
+      ${dur ? `<span class="dm-share-result__dur">${escapeHtml(dur)}</span>` : ""}
+    </button>`;
+  }
+
+  async function resolvePreviewForDmResult(result, mode) {
+    const meta = result.meta || {};
+    if (meta.previewUrl) {
+      return {
+        url: meta.previewUrl,
+        trackName: meta.trackTitle || result.title,
+        source: (result.sources && result.sources[0]) || "catalog",
+      };
+    }
+    const imp = result.importPayload || {};
+    if (mode === "track" && imp.spotifyTrackId && SLCloud.spotify && SLCloud.spotify.hasToken()) {
+      try {
+        const t = await SLCloud.spotify.api("/tracks/" + imp.spotifyTrackId);
+        if (t && t.preview_url) return { url: t.preview_url, trackName: t.name, source: "spotify" };
+      } catch (_) {}
+    }
+    const fakeAl = {
+      id: result.localAlbumId || result.uid,
+      title: imp.title || result.title,
+      artist: imp.artist || result.artist,
+      year: imp.year || result.year,
+      artworkUrl: result.artworkUrl,
+      appleCollectionId: imp.appleCollectionId,
+      deezerAlbumId: imp.deezerAlbumId,
+    };
+    const prev = await resolveAlbumPreview(fakeAl);
+    if (prev) return { url: prev.url, trackName: prev.trackName || meta.trackTitle || result.title, source: prev.source };
+    return null;
+  }
+
+  function buildDmPayloadFromResult(result, mode, preview) {
+    const meta = result.meta || {};
+    const imp = result.importPayload || {};
+    const spotifyTrackId = meta.spotifyTrackId || imp.spotifyTrackId || null;
+    const spotifyAlbumId = meta.spotifyAlbumId || imp.spotifyAlbumId || imp.spotifyId || null;
+    const base = {
+      v: 1,
+      artworkUrl: result.artworkUrl || "",
+      artist: result.artist || imp.artist || "",
+      year: result.year || imp.year || "",
+      uid: result.uid,
+    };
+    if (mode === "track") {
+      return {
+        ...base,
+        type: "track",
+        trackTitle: meta.trackTitle || result.title,
+        title: meta.albumTitle || imp.title || result.title,
+        albumTitle: meta.albumTitle || imp.title || "",
+        durationMs: result.durationMs || null,
+        spotifyTrackId,
+        spotifyAlbumId,
+        previewUrl: preview && preview.url ? preview.url : null,
+        trackName: preview && preview.trackName ? preview.trackName : meta.trackTitle || result.title,
+        previewSource: preview && preview.source ? preview.source : null,
+      };
+    }
+    return {
+      ...base,
+      type: "album",
+      title: result.title,
+      spotifyAlbumId,
+      previewUrl: preview && preview.url ? preview.url : null,
+      trackName: preview && preview.trackName ? preview.trackName : null,
+      previewSource: preview && preview.source ? preview.source : null,
+    };
+  }
+
+  async function renderDmShareSearch(root, threadId) {
+    const host = root.querySelector("#dm-share-results");
+    const input = root.querySelector("#dm-share-search-input");
+    const hint = root.querySelector("#dm-share-hint");
+    if (!host) return;
+    const mode = getDmShareMode(root);
+    const q = (input && input.value.trim()) || "";
+    if (q.length < 2) {
+      host.innerHTML = `<p class="dm-share-empty">Recherche un ${mode === "track" ? "titre" : "album"} (min. 2 caractères).</p>`;
+      if (hint) hint.textContent = "Spotify (si connecté), Apple Music, Deezer, MusicBrainz…";
+      return;
+    }
+    host.innerHTML = dmShareSkeletonHtml(4);
+    const reqId = ++dmShareSearchAbort;
+    try {
+      if (typeof ensureCloudReady === "function") await ensureCloudReady();
+    } catch (_) {}
+    let data = { results: [], error: null };
+    try {
+      if (window.SLMusicSearch) {
+        const localAlbums = [...(state.importedAlbums || []), ...(state.albums || [])];
+        data = await SLMusicSearch.search(q, { localAlbums });
+      } else {
+        data.error = "Module de recherche indisponible.";
+      }
+    } catch (e) {
+      if (reqId !== dmShareSearchAbort) return;
+      host.innerHTML = `<p class="dm-share-error">${escapeHtml(e.message || "Erreur réseau")}</p>`;
+      return;
+    }
+    if (reqId !== dmShareSearchAbort) return;
+    const filtered = dmShareFilterResults(data.results, mode);
+    filtered.forEach((r) => dmShareResultCache.set(r.uid, r));
+    if (!filtered.length) {
+      host.innerHTML = `<p class="dm-share-empty">${escapeHtml(data.error || "Aucun résultat — essaie un autre terme.")}</p>`;
+      return;
+    }
+    host.innerHTML = filtered.slice(0, 24).map(dmShareResultRowHtml).join("");
+    if (hint) hint.textContent = `${filtered.length} résultat(s)`;
+  }
+
+  function wireDmSharePanel(root, threadId) {
+    if (!root || root.dataset.dmSharePanelWired) return;
+    root.dataset.dmSharePanelWired = "1";
+    const input = root.querySelector("#dm-share-search-input");
+    if (input) {
+      input.addEventListener("input", () => {
+        clearTimeout(dmShareSearchTimer);
+        dmShareSearchTimer = setTimeout(() => void renderDmShareSearch(root, threadId), 300);
+      });
+    }
+  }
+
+  async function sendDmShareFromPick(root, threadId, uid) {
+    const result = dmShareResultCache.get(uid);
+    if (!result) return toast("Résultat expiré — relance la recherche.");
+    const mode = getDmShareMode(root);
+    const btn = root.querySelector('[data-dm-share-pick="' + String(uid).replace(/"/g, "") + '"]');
+    if (btn) btn.disabled = true;
+    toast("Envoi…");
+    try {
+      const preview = await resolvePreviewForDmResult(result, mode);
+      const payload = buildDmPayloadFromResult(result, mode, preview);
+      await sendDmPayload(threadId, payload);
+      toast(mode === "track" ? "Titre partagé." : "Album partagé.");
+      closeDmShareTray(root);
+      const input = root.querySelector("#dm-share-search-input");
+      if (input) input.value = "";
+      void hydrateInboxThread(threadId);
+    } catch (e) {
+      toast(e.message || "Envoi impossible");
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
   function toggleDmShareTray(root) {
     if (!root) return false;
     const tray = root.querySelector("[data-dm-share-tray], #dm-share-tray");
     const toggle = root.querySelector("[data-dm-toggle-share]");
     if (!tray || !toggle) return false;
     const open = !tray.classList.contains("is-open");
-    tray.classList.toggle("is-open", open);
-    toggle.setAttribute("aria-expanded", open ? "true" : "false");
     if (open) {
+      tray.classList.add("is-open");
+      toggle.setAttribute("aria-expanded", "true");
+      syncDmShareTrayLayout(root, true);
       const panel = root.querySelector("#inbox-thread-panel");
       const tid = (panel && panel.getAttribute("data-thread-id")) || route.dmThreadId;
-      if (tid) void renderDmSharePickerInTray(root, tid);
+      if (!root.getAttribute("data-dm-share-mode")) setDmShareMode(root, "track");
+      if (tid) {
+        wireDmSharePanel(root, tid);
+        void renderDmShareSearch(root, tid);
+        const input = root.querySelector("#dm-share-search-input");
+        if (input) setTimeout(() => input.focus(), 120);
+      }
+    } else {
+      closeDmShareTray(root);
     }
     return open;
   }
 
   function dmShareTrayHtml() {
-    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="region" aria-label="Partager un extrait">
-      <p class="dm-share-tray__title">▶ Partager un extrait (30 s)</p>
-      <p class="feed-note dm-share-tray__hint">Choisis un album dans ton carnet</p>
-      <div class="dm-pick-inline" id="dm-pick-inline"><p class="feed-note">Chargement…</p></div>
+    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="dialog" aria-label="Partager de la musique" aria-hidden="true">
+      <div class="dm-share-tabs" role="tablist">
+        <button type="button" class="dm-share-tab is-active" data-dm-share-tab="track" role="tab" aria-selected="true">Titre</button>
+        <button type="button" class="dm-share-tab" data-dm-share-tab="album" role="tab" aria-selected="false">Album</button>
+      </div>
+      <label class="visually-hidden" for="dm-share-search-input">Rechercher de la musique</label>
+      <div class="dm-share-search">
+        <span class="dm-share-search__icon" aria-hidden="true">⌕</span>
+        <input type="search" id="dm-share-search-input" class="dm-share-search__input" placeholder="Artiste, titre, album…" autocomplete="off" enterkeyhint="search" />
+      </div>
+      <p class="dm-share-tray__hint feed-note" id="dm-share-hint">Recherche globale — Spotify, Apple Music, Deezer…</p>
+      <div class="dm-share-results" id="dm-share-results" role="listbox" aria-live="polite">
+        <p class="dm-share-empty">Tape au moins 2 caractères.</p>
+      </div>
     </div>`;
   }
 
-  async function renderDmSharePickerInTray(root, threadId) {
-    const host = root.querySelector("#dm-pick-inline");
-    if (!host) return;
-    host.innerHTML = `<p class="feed-note">Chargement de ton carnet…</p>`;
-    try {
-      if (typeof ensureCloudReady === "function") await ensureCloudReady();
-    } catch (_) {}
-    const candidates = await dmShareCandidates();
-    const rows = candidates
-      .filter((c) => c.al)
-      .map(
-        (c) =>
-          `<button type="button" class="dm-pick-row dm-pick-row--inline" data-dm-pick-album="${escapeHtml(c.albumId)}" data-dm-pick-rating="${c.rating || ""}">
-          ${coverHtml(c.al, true, "sm")}
-          <span><strong>${escapeHtml(c.al.title)}</strong><span class="feed-note">${escapeHtml(c.al.artist)}</span></span>
-        </button>`
-      )
-      .join("");
-    host.innerHTML =
-      rows || `<p class="empty">Logue une écoute dans ton Journal, puis réessaie.</p>`;
-  }
-
-  async function sendDmPreviewFromPick(root, threadId, btn) {
-    const albumId = btn.getAttribute("data-dm-pick-album");
-    let al = albumById(albumId);
-    if (!al) al = await hydrateAlbumById(albumId);
-    if (!al) return toast("Album introuvable — synchronise ton compte.");
-    const rating = btn.getAttribute("data-dm-pick-rating");
-    const payload = {
-      v: 1,
-      type: "preview",
-      albumId: al.id,
-      title: al.title,
-      artist: al.artist,
-      year: al.year,
-      genre: al.genre,
-      artworkUrl: bestArtworkUrl(al),
-      rating: rating ? Number(rating) : null,
-    };
-    btn.disabled = true;
-    toast("Préparation de l'extrait…");
-    try {
-      const preview = await resolveAlbumPreview(al);
-      if (!preview || !preview.url) {
-        toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
-        return;
-      }
-      payload.previewUrl = preview.url;
-      payload.trackName = preview.trackName;
-      payload.previewSource = preview.source;
-      await sendDmPayload(threadId, payload);
-      toast("Extrait envoyé.");
-      const tray = root.querySelector("[data-dm-share-tray], #dm-share-tray");
-      const toggle = root.querySelector("[data-dm-toggle-share]");
-      if (tray) tray.classList.remove("is-open");
-      if (toggle) toggle.setAttribute("aria-expanded", "false");
-      if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
-    } catch (e) {
-      toast(e.message || "Envoi impossible");
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
   function dmThreadPanelShell(threadId) {
-    return `<div class="dm-chat" id="inbox-thread-panel" data-thread-id="${escapeHtml(threadId)}">
+    return `<div class="dm-chat" id="inbox-thread-panel" data-thread-id="${escapeHtml(threadId)}" data-dm-share-mode="track">
         <header class="dm-chat__head">
           <button type="button" class="dm-chat__back" data-inbox-back aria-label="Retour">←</button>
           <div class="dm-chat__peer" id="dm-chat-peer">
@@ -3661,10 +3892,12 @@
           </div>
           <button type="button" class="dm-chat__pin" id="dm-pin-thread" data-thread-pin="${escapeHtml(threadId)}" title="Épingler">📌</button>
         </header>
-        <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
-        ${dmShareTrayHtml()}
+        <div class="dm-chat__body">
+          <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
+          ${dmShareTrayHtml()}
+        </div>
         <form class="dm-compose" id="inbox-compose">
-          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager un extrait 30 s">+</button>
+          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager un titre ou un album">+</button>
           <label class="visually-hidden" for="inbox-msg-input">Message</label>
           <input type="text" id="inbox-msg-input" class="dm-compose__input" maxlength="2000" placeholder="Message ou partage un son…" autocomplete="off" />
           <button type="submit" class="dm-compose__send" aria-label="Envoyer">↑</button>
@@ -3698,117 +3931,6 @@
     } catch (_) {
       return null;
     }
-  }
-
-  async function dmShareCandidates() {
-    const seen = new Set();
-    const items = [];
-    const mine = state.listenings
-      .filter((l) => l.userId === "me" && l.albumId)
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
-    for (const l of mine) {
-      if (seen.has(l.albumId)) continue;
-      seen.add(l.albumId);
-      let al = albumById(l.albumId);
-      if (!al) al = await hydrateAlbumById(l.albumId);
-      items.push({ albumId: l.albumId, al, rating: l.rating });
-      if (items.length >= 12) break;
-    }
-    return items;
-  }
-
-  function openDmShareModal(threadId, kind) {
-    void openDmShareModalWork(threadId, kind);
-  }
-
-  async function openDmShareModalWork(threadId, kind) {
-    if (kind === "moment" || kind === "discovery") {
-      openModal(`<h2>${kind === "moment" ? "Moment musical" : "Découverte"}</h2>
-        <label>Message</label>
-        <input type="text" id="dm-share-text" maxlength="200" placeholder="Ce morceau me fait penser à…" />
-        <p style="margin-top:0.85rem">
-          <button type="button" class="btn btn-primary" id="dm-share-send">Envoyer</button>
-          <button type="button" class="btn btn-ghost" id="dm-share-cancel">Annuler</button>
-        </p>`);
-      document.getElementById("dm-share-cancel").onclick = closeModal;
-      document.getElementById("dm-share-send").onclick = async () => {
-        const text = (document.getElementById("dm-share-text") && document.getElementById("dm-share-text").value.trim()) || "";
-        if (!text) return toast("Écris quelques mots.");
-        try {
-          await sendDmPayload(threadId, { v: 1, type: kind, text });
-          closeModal();
-          toast("Envoyé.");
-          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
-        } catch (e) {
-          toast(e.message || "Erreur");
-        }
-      };
-      return;
-    }
-    openModal(`<h2>Partager ${kind === "preview" ? "un extrait" : kind === "listening" ? "une écoute" : "un album"}</h2>
-      <p class="feed-note">Chargement de ton carnet…</p>
-      <div class="dm-pick-list" id="dm-pick-host"><p class="empty">…</p></div>
-      <p style="margin-top:0.85rem"><button type="button" class="btn btn-ghost" id="dm-share-cancel">Fermer</button></p>`);
-    document.getElementById("dm-share-cancel").onclick = closeModal;
-    const host = document.getElementById("dm-pick-host");
-    try {
-      if (typeof ensureCloudReady === "function") await ensureCloudReady();
-    } catch (_) {}
-    const candidates = await dmShareCandidates();
-    const rows = candidates
-      .filter((c) => c.al)
-      .map(
-        (c) =>
-          `<button type="button" class="dm-pick-row" data-dm-pick-album="${escapeHtml(c.albumId)}" data-dm-pick-rating="${c.rating || ""}">
-          ${coverHtml(c.al, true, "sm")}
-          <span><strong>${escapeHtml(c.al.title)}</strong><span class="feed-note">${escapeHtml(c.al.artist)}</span></span>
-        </button>`
-      )
-      .join("");
-    if (host) {
-      host.innerHTML =
-        rows ||
-        `<p class="empty">Logue une écoute dans ton Journal d'abord, ou synchronise ton compte.</p>`;
-    }
-    document.querySelectorAll("[data-dm-pick-album]").forEach((btn) => {
-      btn.onclick = async () => {
-        const albumId = btn.getAttribute("data-dm-pick-album");
-        let al = albumById(albumId);
-        if (!al) al = await hydrateAlbumById(albumId);
-        if (!al) return toast("Album introuvable — réessaie après sync.");
-        const rating = btn.getAttribute("data-dm-pick-rating");
-        const payload = {
-          v: 1,
-          type: kind === "preview" ? "preview" : kind === "listening" ? "listening" : "album",
-          albumId: al.id,
-          title: al.title,
-          artist: al.artist,
-          year: al.year,
-          genre: al.genre,
-          artworkUrl: bestArtworkUrl(al),
-          rating: rating ? Number(rating) : null,
-        };
-        try {
-          if (kind === "preview") {
-            toast("Préparation de l'extrait…");
-            const preview = await resolveAlbumPreview(al);
-            if (!preview || !preview.url) {
-              toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
-              return;
-            }
-            payload.previewUrl = preview.url;
-            payload.trackName = preview.trackName;
-            payload.previewSource = preview.source;
-          }
-          await sendDmPayload(threadId, payload);
-          closeModal();
-          toast(kind === "preview" ? "Extrait envoyé." : "Partagé dans la conversation.");
-          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
-        } catch (e) {
-          toast(e.message || "Erreur");
-        }
-      };
-    });
   }
 
   function dmSortThreads(items) {
@@ -5686,8 +5808,7 @@
       };
     }
 
-    if (tray) tray.classList.remove("is-open");
-    if (toggleShare) toggleShare.setAttribute("aria-expanded", "false");
+    closeDmShareTray(root);
 
     const renderMsgs = (msgs) => {
       if (!SLCloud.me || !SLCloud.me.id) {
@@ -6127,6 +6248,7 @@
       });
     });
     document.querySelectorAll("[data-album-open]").forEach((b) => {
+      if (b.closest(".dm-chat, #inbox-drawer-mount")) return;
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-album-open");
@@ -6330,6 +6452,7 @@
     });
 
     document.querySelectorAll("[data-preview-play]").forEach((b) => {
+      if (b.closest(".dm-chat, #inbox-drawer-mount")) return;
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         void playAlbumPreview(b.getAttribute("data-preview-play"));
@@ -8319,7 +8442,7 @@
         scheduleSoftRender();
       },
       onDmMessage: () => {
-        if (route.view !== "inbox") return;
+        if (route.view !== "inbox" && !document.body.classList.contains("inbox-drawer-open")) return;
         void hydrateInboxList();
         if (route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
       },

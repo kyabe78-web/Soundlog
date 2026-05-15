@@ -114,7 +114,7 @@
       ],
       wishlist: ["a15", "a31", "a28"],
       importedAlbums: [],
-      settings: { youtubeApiKey: "", alertCity: "Paris", desktopAlerts: false },
+      settings: { youtubeApiKey: "", alertCity: "Paris", desktopAlerts: false, musicCountry: "FR" },
       profile: {
         displayName: "Toi",
         handle: "moi",
@@ -156,6 +156,7 @@
       invitedPeers: [],
       sentInvites: [],
       adaptive: defaultAdaptive(),
+      previewByAlbumId: {},
     };
   }
 
@@ -204,6 +205,15 @@
           a.listenLogs = typeof a.listenLogs === "number" && !Number.isNaN(a.listenLogs) ? a.listenLogs : 0;
           return a;
         })(),
+        previewByAlbumId: (() => {
+          const raw =
+            parsed.previewByAlbumId && typeof parsed.previewByAlbumId === "object" ? parsed.previewByAlbumId : {};
+          const cleaned = {};
+          for (const [id, p] of Object.entries(raw)) {
+            if (p && p.v === PREVIEW_CACHE_V && p.url && !p.unavailable) cleaned[id] = p;
+          }
+          return cleaned;
+        })(),
       };
     } catch {
       return defaultState();
@@ -211,6 +221,8 @@
   }
 
   let state = loadState();
+  let previewAudio = null;
+  let previewAlbumId = null;
 
   function persist() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -232,11 +244,136 @@
   let libraryRemoteError = null;
   let libSearchTimer = null;
 
-  function normalizeKey(artist, title) {
-    return (String(artist) + "|" + String(title))
-      .toLowerCase()
+  const PREVIEW_CACHE_V = 2;
+  const MIN_ALBUM_MATCH_SCORE = 58;
+
+  function normalizeText(s) {
+    return normalizeArtistKey(
+      String(s || "")
+        .replace(/\([^)]*\)/g, " ")
+        .replace(/\[[^\]]*\]/g, " ")
+        .replace(/\s+/g, " ")
+    );
+  }
+
+  function normalizeAlbumKey(artist, title) {
+    const t = normalizeText(title)
+      .replace(/\b(deluxe|remaster|remastered|edition|version|expanded|anniversary|bonus)\b/gi, "")
       .replace(/\s+/g, " ")
       .trim();
+    return `${normalizeText(artist)}|${t}`;
+  }
+
+  function normalizeKey(artist, title) {
+    return normalizeAlbumKey(artist, title);
+  }
+
+  function musicCountry() {
+    const c = (state.settings && state.settings.musicCountry) || "FR";
+    return /^[A-Z]{2}$/i.test(c) ? c.toUpperCase() : "FR";
+  }
+
+  function scoreAlbumCandidate(al, candidateArtist, candidateTitle, candidateYear) {
+    const wantKey = normalizeAlbumKey(al.artist, al.title);
+    const gotKey = normalizeAlbumKey(candidateArtist, candidateTitle);
+    let score = 0;
+    if (wantKey === gotKey) score += 100;
+    else {
+      const [wa, wt] = wantKey.split("|");
+      const [ga, gt] = gotKey.split("|");
+      if (wa && ga && (wa === ga || wa.includes(ga) || ga.includes(wa))) score += 38;
+      if (wt && gt && (wt === gt || wt.includes(gt) || gt.includes(wt))) score += 38;
+    }
+    const y = parseInt(String(al.year).replace(/\D/g, ""), 10);
+    const cy = parseInt(String(candidateYear || "").replace(/\D/g, ""), 10);
+    if (Number.isFinite(y) && Number.isFinite(cy) && Math.abs(y - cy) <= 1) score += 12;
+    return score;
+  }
+
+  function pickBestAlbumMatch(al, items, mapRow) {
+    let best = null;
+    let bestScore = 0;
+    for (const row of items) {
+      const mapped = mapRow(row);
+      const s = scoreAlbumCandidate(al, mapped.artist, mapped.title, mapped.year);
+      if (s > bestScore) {
+        bestScore = s;
+        best = mapped;
+      }
+    }
+    if (!best || bestScore < MIN_ALBUM_MATCH_SCORE) return null;
+    return best;
+  }
+
+  function parseAppleCollectionId(url) {
+    if (!url) return null;
+    try {
+      const s = String(url);
+      const m = s.match(/\/album\/[^/]+\/(\d{5,})/) || s.match(/[?&]i=(\d{5,})/);
+      return m ? m[1] : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function parseDeezerAlbumId(url) {
+    if (!url) return null;
+    try {
+      const m = String(url).match(/deezer\.com\/(?:[a-z]{2}\/)?album\/(\d+)/i);
+      return m ? m[1] : null;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  function albumPlatformIds(al) {
+    const links = streamingLinksForAlbum(al);
+    return {
+      appleCollectionId: al.appleCollectionId || parseAppleCollectionId(links.apple),
+      deezerAlbumId: al.deezerAlbumId || parseDeezerAlbumId(links.deezer),
+    };
+  }
+
+  function persistPlatformIdsOnAlbum(al, ids) {
+    if (!ids || !al) return;
+    if (String(al.id).startsWith("ext-")) {
+      const imp = (state.importedAlbums || []).find((a) => a.id === al.id);
+      if (imp) {
+        if (ids.appleCollectionId) imp.appleCollectionId = ids.appleCollectionId;
+        if (ids.deezerAlbumId) imp.deezerAlbumId = ids.deezerAlbumId;
+        persist();
+      }
+    }
+  }
+
+  function pickLeadItunesTrack(results) {
+    const tracks = (results || [])
+      .filter((x) => x.wrapperType === "track" && x.previewUrl && x.trackName)
+      .sort((a, b) => (a.trackNumber || 999) - (b.trackNumber || 999));
+    return tracks[0] || null;
+  }
+
+  function pickLeadDeezerTrack(tracks) {
+    const sorted = (tracks || [])
+      .filter((t) => t.preview && t.title)
+      .sort((a, b) => (a.track_position || 999) - (b.track_position || 999));
+    return sorted[0] || null;
+  }
+
+  function buildPreviewRecord(al, track, source, platformIds) {
+    return {
+      v: PREVIEW_CACHE_V,
+      url: track.url,
+      trackName: track.trackName,
+      trackNumber: track.trackNumber || 1,
+      source,
+      albumKey: normalizeAlbumKey(al.artist, al.title),
+      albumTitle: al.title,
+      artistName: al.artist,
+      appleCollectionId: platformIds?.appleCollectionId || null,
+      deezerAlbumId: platformIds?.deezerAlbumId || null,
+      resolvedAt: new Date().toISOString(),
+    };
   }
 
   function gradientFromKey(key) {
@@ -270,7 +407,8 @@
   }
 
   async function fetchItunesAlbums(q) {
-    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=album&limit=25&country=FR`;
+    const country = musicCountry();
+    const url = `https://itunes.apple.com/search?term=${encodeURIComponent(q)}&entity=album&limit=25&country=${country}`;
     const r = await fetch(url);
     if (!r.ok) throw new Error("Apple / iTunes");
     const j = await r.json();
@@ -281,6 +419,7 @@
       year: (x.releaseDate || "").slice(0, 4) || "—",
       artworkUrl: (x.artworkUrl100 || "").replace("100x100bb", "600x600bb"),
       apple: x.collectionViewUrl || null,
+      appleCollectionId: x.collectionId ? String(x.collectionId) : null,
       fromItunes: true,
     }));
   }
@@ -297,8 +436,295 @@
       year: (x.release_date || "").slice(0, 4) || "—",
       artworkUrl: x.cover_medium || x.cover || "",
       deezer: x.link,
+      deezerAlbumId: x.id ? String(x.id) : null,
       fromDeezer: true,
     }));
+  }
+
+  function ensurePreviewCache() {
+    if (!state.previewByAlbumId || typeof state.previewByAlbumId !== "object") state.previewByAlbumId = {};
+  }
+
+  function getCachedAlbumPreview(albumId, al) {
+    ensurePreviewCache();
+    const p = state.previewByAlbumId[albumId];
+    if (!p || p.unavailable || !p.url) return null;
+    if (p.v !== PREVIEW_CACHE_V) return null;
+    if (al && p.albumKey && p.albumKey !== normalizeAlbumKey(al.artist, al.title)) return null;
+    return p;
+  }
+
+  function cacheAlbumPreview(albumId, preview) {
+    ensurePreviewCache();
+    state.previewByAlbumId[albumId] = preview;
+    persist();
+  }
+
+  function invalidateAlbumPreview(albumId) {
+    ensurePreviewCache();
+    delete state.previewByAlbumId[albumId];
+    persist();
+  }
+
+  async function fetchItunesPreviewByCollectionId(collectionId, al) {
+    const country = musicCountry();
+    const lr = await fetch(
+      `https://itunes.apple.com/lookup?id=${encodeURIComponent(collectionId)}&entity=song&limit=50&country=${country}`
+    );
+    if (!lr.ok) throw new Error("iTunes lookup");
+    const lj = await lr.json();
+    const pick = pickLeadItunesTrack(lj.results);
+    if (!pick) return null;
+    return {
+      preview: {
+        url: pick.previewUrl,
+        trackName: pick.trackName,
+        trackNumber: pick.trackNumber || 1,
+        source: "apple",
+      },
+      appleCollectionId: String(collectionId),
+    };
+  }
+
+  async function fetchDeezerPreviewByAlbumId(albumId, al) {
+    const tr = await fetch(`https://api.deezer.com/album/${encodeURIComponent(albumId)}/tracks`);
+    if (!tr.ok) throw new Error("Deezer tracks");
+    const tj = await tr.json();
+    const pick = pickLeadDeezerTrack(tj.data);
+    if (!pick) return null;
+    return {
+      preview: {
+        url: pick.preview,
+        trackName: pick.title,
+        trackNumber: pick.track_position || 1,
+        source: "deezer",
+      },
+      deezerAlbumId: String(albumId),
+    };
+  }
+
+  async function fetchItunesAlbumPreview(al) {
+    const country = musicCountry();
+    const term = encodeURIComponent(`${al.artist} ${al.title}`);
+    const searchUrl = `https://itunes.apple.com/search?term=${term}&entity=album&limit=12&country=${country}`;
+    const r = await fetch(searchUrl);
+    if (!r.ok) throw new Error("iTunes");
+    const j = await r.json();
+    const results = j.results || [];
+    const match = pickBestAlbumMatch(al, results, (x) => ({
+      artist: x.artistName,
+      title: x.collectionName,
+      year: (x.releaseDate || "").slice(0, 4),
+      collectionId: x.collectionId,
+    }));
+    if (!match || !match.collectionId) return null;
+    const resolved = await fetchItunesPreviewByCollectionId(match.collectionId, al);
+    return resolved;
+  }
+
+  async function fetchDeezerAlbumPreview(al) {
+    const searchUrl = `https://api.deezer.com/search/album?q=${encodeURIComponent(`${al.artist} ${al.title}`)}&limit=12`;
+    const r = await fetch(searchUrl);
+    if (!r.ok) throw new Error("Deezer");
+    const j = await r.json();
+    const data = j.data || [];
+    const match = pickBestAlbumMatch(al, data, (x) => ({
+      artist: x.artist.name,
+      title: x.title,
+      year: (x.release_date || "").slice(0, 4),
+      albumId: x.id,
+    }));
+    if (!match || !match.albumId) return null;
+    return fetchDeezerPreviewByAlbumId(match.albumId, al);
+  }
+
+  async function resolveAlbumPreview(al, opts) {
+    const force = opts && opts.force;
+    if (!force) {
+      const cached = getCachedAlbumPreview(al.id, al);
+      if (cached) return cached;
+    }
+    ensurePreviewCache();
+    const stale = state.previewByAlbumId[al.id];
+    if (stale && stale.unavailable && !force) {
+      const age = Date.now() - new Date(stale.checkedAt || 0).getTime();
+      if (age < 1000 * 60 * 60 * 12) return null;
+    }
+
+    const platformIds = albumPlatformIds(al);
+    let resolvedIds = { ...platformIds };
+    let track = null;
+    let source = null;
+
+    if (platformIds.appleCollectionId) {
+      try {
+        const r = await fetchItunesPreviewByCollectionId(platformIds.appleCollectionId, al);
+        if (r) {
+          track = r.preview;
+          source = "apple";
+          resolvedIds.appleCollectionId = r.appleCollectionId;
+        }
+      } catch (_) {}
+    }
+    if (!track && platformIds.deezerAlbumId) {
+      try {
+        const r = await fetchDeezerPreviewByAlbumId(platformIds.deezerAlbumId, al);
+        if (r) {
+          track = r.preview;
+          source = "deezer";
+          resolvedIds.deezerAlbumId = r.deezerAlbumId;
+        }
+      } catch (_) {}
+    }
+    if (!track) {
+      try {
+        const r = await fetchItunesAlbumPreview(al);
+        if (r) {
+          track = r.preview;
+          source = "apple";
+          resolvedIds.appleCollectionId = r.appleCollectionId;
+        }
+      } catch (_) {}
+    }
+    if (!track) {
+      try {
+        const r = await fetchDeezerAlbumPreview(al);
+        if (r) {
+          track = r.preview;
+          source = "deezer";
+          resolvedIds.deezerAlbumId = r.deezerAlbumId;
+        }
+      } catch (_) {}
+    }
+
+    if (track) {
+      const record = buildPreviewRecord(al, track, source || track.source, resolvedIds);
+      cacheAlbumPreview(al.id, record);
+      persistPlatformIdsOnAlbum(al, resolvedIds);
+      return record;
+    }
+
+    cacheAlbumPreview(al.id, {
+      v: PREVIEW_CACHE_V,
+      unavailable: true,
+      albumKey: normalizeAlbumKey(al.artist, al.title),
+      checkedAt: new Date().toISOString(),
+    });
+    return null;
+  }
+
+  function ensurePreviewAudio() {
+    if (!previewAudio) {
+      previewAudio = new Audio();
+      previewAudio.preload = "none";
+      previewAudio.addEventListener("ended", () => stopAlbumPreview());
+      previewAudio.addEventListener("timeupdate", () => syncPreviewProgress());
+    }
+    return previewAudio;
+  }
+
+  function syncPreviewProgress() {
+    if (!previewAudio || !previewAlbumId) return;
+    const dur = previewAudio.duration && Number.isFinite(previewAudio.duration) ? previewAudio.duration : 30;
+    const pct = Math.min(100, (previewAudio.currentTime / dur) * 100);
+    document.querySelectorAll(`[data-preview-album="${previewAlbumId}"] .feed-preview__progress`).forEach((el) => {
+      el.style.width = `${pct}%`;
+    });
+  }
+
+  function updatePreviewUi(albumId, preview, playing) {
+    const roots = document.querySelectorAll(`[data-preview-album="${albumId}"]`);
+    roots.forEach((root) => {
+      root.classList.toggle("is-preview-active", !!playing);
+      const panel = root.querySelector(".feed-preview");
+      const trackEl = root.querySelector(".feed-preview__track");
+      const noteEl = root.querySelector("[data-preview-note]");
+      const playBtn = root.querySelector("[data-preview-play]");
+      if (panel) panel.hidden = !playing;
+      if (trackEl && preview) trackEl.textContent = preview.trackName || "Extrait";
+      if (noteEl && preview) {
+        noteEl.innerHTML = `Extrait : <strong>${escapeHtml(preview.trackName)}</strong> <span class="feed-note">(${escapeHtml(
+          preview.albumTitle || ""
+        )})</span>`;
+      }
+      if (playBtn) {
+        playBtn.classList.toggle("is-playing", !!playing);
+        playBtn.classList.remove("is-loading");
+        playBtn.setAttribute("aria-pressed", playing ? "true" : "false");
+        const label = playBtn.querySelector("[data-preview-btn-label]");
+        if (label) label.textContent = playing ? "Pause" : "Extrait 30 s";
+      }
+    });
+  }
+
+  function stopAlbumPreview() {
+    if (previewAudio) {
+      previewAudio.pause();
+      previewAudio.removeAttribute("src");
+      previewAudio.load();
+    }
+    const old = previewAlbumId;
+    previewAlbumId = null;
+    if (old) updatePreviewUi(old, null, false);
+    document.querySelectorAll("[data-preview-play].is-loading").forEach((b) => b.classList.remove("is-loading"));
+  }
+
+  async function playAlbumPreview(albumId, opts) {
+    const force = opts && opts.force;
+    const al = albumById(albumId);
+    if (!al) return;
+    if (previewAlbumId === albumId && previewAudio && !previewAudio.paused) {
+      stopAlbumPreview();
+      return;
+    }
+    stopAlbumPreview();
+    document.querySelectorAll(`[data-preview-play="${albumId}"]`).forEach((b) => b.classList.add("is-loading"));
+    const preview = await resolveAlbumPreview(al, { force });
+    document.querySelectorAll(`[data-preview-play="${albumId}"]`).forEach((b) => b.classList.remove("is-loading"));
+    if (!preview) {
+      toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
+      return;
+    }
+    const audio = ensurePreviewAudio();
+    previewAlbumId = albumId;
+    audio.src = preview.url;
+    try {
+      await audio.play();
+    } catch (_) {
+      if (!force) {
+        invalidateAlbumPreview(albumId);
+        return playAlbumPreview(albumId, { force: true });
+      }
+      previewAlbumId = null;
+      toast("Lecture bloquée — réessaie après un clic sur la page.");
+      return;
+    }
+    updatePreviewUi(albumId, preview, true);
+  }
+
+  function feedPreviewSectionHtml(al) {
+    const cached = getCachedAlbumPreview(al.id, al);
+    const src = cached && cached.source === "deezer" ? "Deezer" : "Apple";
+    return `<div class="feed-preview" data-preview-panel="${escapeHtml(al.id)}" hidden>
+      <div class="feed-preview__bar">
+        <button type="button" class="feed-preview__stop" data-preview-stop="${escapeHtml(al.id)}" aria-label="Arrêter l’extrait">×</button>
+        <div class="feed-preview__progress-wrap" aria-hidden="true"><div class="feed-preview__progress" style="width:0%"></div></div>
+        <span class="feed-preview__track">${cached ? escapeHtml(cached.trackName) : ""}</span>
+        <span class="feed-preview__badge">30 s · ${src}</span>
+      </div>
+    </div>`;
+  }
+
+  function previewNoteHtml(al) {
+    const cached = getCachedAlbumPreview(al.id, al);
+    if (cached) {
+      return `<p class="feed-post__preview-note" data-preview-note="${escapeHtml(al.id)}">Extrait : <strong>${escapeHtml(
+        cached.trackName
+      )}</strong> <span class="feed-note">(${escapeHtml(al.title)})</span></p>`;
+    }
+    return `<p class="feed-post__preview-note feed-note" data-preview-note="${escapeHtml(al.id)}">Extrait du 1<sup>er</sup> morceau de <strong>${escapeHtml(
+      al.title
+    )}</strong></p>`;
   }
 
   async function tryYoutubeId(artist, title, apiKey) {
@@ -327,6 +753,8 @@
           }
           if (row.apple) cur.apple = row.apple;
           if (row.deezer) cur.deezer = row.deezer;
+          if (row.appleCollectionId) cur.appleCollectionId = row.appleCollectionId;
+          if (row.deezerAlbumId) cur.deezerAlbumId = row.deezerAlbumId;
           cur.fromItunes = cur.fromItunes || row.fromItunes;
           cur.fromDeezer = cur.fromDeezer || row.fromDeezer;
         }
@@ -358,6 +786,8 @@
         year: row.year,
         artworkUrl: row.artworkUrl || "",
         links,
+        appleCollectionId: row.appleCollectionId || null,
+        deezerAlbumId: row.deezerAlbumId || null,
         flags: { apple: !!row.fromItunes, deezer: !!row.fromDeezer, yt: !!row.youtubeId },
       };
     });
@@ -419,6 +849,8 @@
       to: g.to,
       artworkUrl: hit.artworkUrl || "",
       links: { ...hit.links },
+      appleCollectionId: hit.appleCollectionId || parseAppleCollectionId(hit.links && hit.links.apple) || null,
+      deezerAlbumId: hit.deezerAlbumId || parseDeezerAlbumId(hit.links && hit.links.deezer) || null,
     });
     persist();
     toast("Album importé — tu peux le noter comme les autres.");
@@ -427,10 +859,14 @@
 
   function openApiSettingsModal() {
     const cur = (state.settings && state.settings.youtubeApiKey) || "";
-    openModal(`<h2>Clé YouTube (facultatif)</h2>
+    const country = (state.settings && state.settings.musicCountry) || "FR";
+    openModal(`<h2>Paramètres API (facultatif)</h2>
       <p class="api-note">Pour résoudre une <strong>vidéo</strong> automatiquement dans la vue Bibliothèques, coller une clé <strong>YouTube Data API v3</strong> (Google Cloud). Stockée uniquement dans ton navigateur.</p>
-      <label>Clé API</label>
+      <label>Clé API YouTube</label>
       <input type="password" id="yt-key" value="${escapeHtml(cur)}" autocomplete="off" placeholder="AIza…" />
+      <label>Boutique Apple Music (extraits)</label>
+      <input type="text" id="music-country" value="${escapeHtml(country)}" maxlength="2" placeholder="FR" autocomplete="off" />
+      <p class="api-note">Code pays ISO à 2 lettres (ex. FR, BE, CA) pour les extraits iTunes / Apple Music.</p>
       <p style="margin-top:0.75rem">
         <button type="button" class="btn btn-primary" id="yt-save">Enregistrer</button>
         <button type="button" class="btn btn-ghost" id="yt-clear">Effacer la clé</button>
@@ -448,9 +884,11 @@
     document.getElementById("yt-save").addEventListener("click", () => {
       state.settings = state.settings || {};
       state.settings.youtubeApiKey = document.getElementById("yt-key").value.trim();
+      const cc = document.getElementById("music-country").value.trim().toUpperCase();
+      if (cc && /^[A-Z]{2}$/.test(cc)) state.settings.musicCountry = cc;
       persist();
       closeModal();
-      toast("Clé enregistrée. Relance une recherche dans Bibliothèques.");
+      toast("Paramètres enregistrés.");
       render();
     });
   }
@@ -1240,6 +1678,26 @@
     }
   }
 
+  function bindMobileShell() {
+    const mq = window.matchMedia("(max-width: 1023px)");
+    const syncViewport = () => {
+      document.documentElement.style.setProperty("--vh", `${window.innerHeight * 0.01}px`);
+    };
+    const syncMobile = () => {
+      document.body.classList.toggle("is-mobile", mq.matches);
+      document.body.classList.toggle(
+        "is-touch",
+        mq.matches && ("ontouchstart" in window || navigator.maxTouchPoints > 0)
+      );
+      if (!mq.matches) closeSidebar();
+    };
+    syncViewport();
+    syncMobile();
+    mq.addEventListener("change", syncMobile);
+    window.addEventListener("resize", syncViewport);
+    window.visualViewport?.addEventListener("resize", syncViewport);
+  }
+
   function navigate(view, extra) {
     const pop = document.getElementById("notif-popover");
     const bell = document.getElementById("notif-bell");
@@ -1813,7 +2271,7 @@
                         )} <span class="feed-note">${escapeHtml((c.at || "").slice(0, 10))}</span></li>`;
                       })
                       .join("")}</ul>`;
-              return `<article class="feed-post" data-album="${al.id}">
+              return `<article class="feed-post" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}">
             <header class="feed-post__head">
               <span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
               <div class="feed-post__who">
@@ -1826,11 +2284,14 @@
             <div class="feed-post__album">
               <button type="button" class="feed-post__album-title" data-album-open="${al.id}">${escapeHtml(al.title)}</button>
               <span class="feed-post__album-meta">${escapeHtml(al.artist)} · ${al.year}</span>
+              ${previewNoteHtml(al)}
             </div>
             <div class="feed-post__stars">${starString(l.rating)}</div>
+            ${feedPreviewSectionHtml(al)}
             <div class="feed-post__caption">${l.review ? `<p>${escapeHtml(l.review)}</p>` : `<p class="feed-note feed-post__muted">Pas de critique.</p>`}</div>
             ${commentsHtml}
             <footer class="feed-post__actions">
+              <button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>Extrait 30 s</span></button>
               <button type="button" class="feed-post__action-btn" data-comment-on="${escapeHtml(l.id)}"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</button>
               <button type="button" class="feed-post__action-btn" data-album-open="${escapeHtml(al.id)}"><span class="feed-ic feed-ic--disc" aria-hidden="true"></span> Fiche album</button>
             </footer>
@@ -1920,14 +2381,17 @@
             .map((l) => {
               const al = albumById(l.albumId);
               if (!al) return "";
-              return `<article class="feed-item diary-entry" data-album="${al.id}">
+              return `<article class="feed-item diary-entry" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}">
           ${coverHtml(al, true)}
           <div class="feed-body">
             <div class="feed-head"><strong>${escapeHtml(l.date)}</strong> — <button type="button" class="link" data-album="${al.id}">${escapeHtml(
                 al.title
               )}</button></div>
             <div class="stars">${starString(l.rating)}</div>
+            ${previewNoteHtml(al)}
+            ${feedPreviewSectionHtml(al)}
             ${l.review ? `<p>${escapeHtml(l.review)}</p>` : ""}
+            <button type="button" class="btn btn-ghost btn-sm feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false">Extrait 30 s</button>
             <button type="button" class="btn btn-ghost btn-sm" data-edit-listen="${l.id}">Modifier</button>
             <button type="button" class="btn btn-ghost btn-sm" data-del-listen="${l.id}">Supprimer</button>
           </div>
@@ -2228,9 +2692,16 @@
           .join("")
       : `<p class="empty">Pas encore de critiques publiques.</p>`;
 
-    const streamPanel = `<div class="panel">
-        <h3>Écouter sur les services</h3>
-        <p class="feed-note">Liens vers Apple Music, Deezer, Spotify et YouTube (recherche ou page album quand l’API l’a fourni).</p>
+    const streamPanel = `<div class="panel album-preview-panel" data-preview-album="${escapeHtml(al.id)}">
+        <h3>Extrait &amp; plateformes</h3>
+        <p class="feed-note">Extrait officiel ~30&nbsp;s du <strong>1<sup>er</sup> morceau</strong> de <em>${escapeHtml(al.title)}</em> (Apple Music ou Deezer).</p>
+        ${previewNoteHtml(al)}
+        ${feedPreviewSectionHtml(al)}
+        <p style="margin:0.65rem 0 0">
+          <button type="button" class="btn btn-primary btn-sm feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>Extrait 30 s</span></button>
+        </p>
+        <hr style="border:0;border-top:1px solid var(--border);margin:1rem 0" />
+        <h4 style="margin:0 0 0.5rem;font-size:0.95rem">Écouter sur les services</h4>
         ${listenLinksHtml(streamingLinksForAlbum(al))}
       </div>`;
 
@@ -2486,6 +2957,7 @@
   }
 
   function render() {
+    stopAlbumPreview();
     parseHash();
     adaptiveTickAfterParse();
     setNavActive();
@@ -2814,6 +3286,18 @@
       });
     });
 
+    document.querySelectorAll("[data-preview-play]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void playAlbumPreview(b.getAttribute("data-preview-play"));
+      });
+    });
+    document.querySelectorAll("[data-preview-stop]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        stopAlbumPreview();
+      });
+    });
     document.querySelectorAll("[data-comment-on]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -3311,7 +3795,12 @@
       });
     });
     const menuToggle = document.getElementById("menu-toggle");
-    if (menuToggle) menuToggle.addEventListener("click", () => openSidebar());
+    if (menuToggle) {
+      menuToggle.addEventListener("click", () => {
+        if (document.body.classList.contains("sidebar-open")) closeSidebar();
+        else openSidebar();
+      });
+    }
     const backdrop = document.getElementById("sidebar-backdrop");
     if (backdrop) backdrop.addEventListener("click", () => closeSidebar());
     document.addEventListener("keydown", (e) => {
@@ -3319,6 +3808,7 @@
     });
   }
 
+  bindMobileShell();
   bindShellNavigation();
   document.getElementById("logo-link").addEventListener("click", (e) => {
     e.preventDefault();

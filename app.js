@@ -1034,16 +1034,11 @@
       .join("")}</div>`;
   }
 
-  function importCatalogHit(hit) {
+  function upsertAlbumFromRemoteHit(hit) {
     const key = normalizeKey(hit.artist, hit.title);
+    const found = allAlbums().find((a) => normalizeKey(a.artist, a.title) === key);
+    if (found) return found.id;
     state.importedAlbums = state.importedAlbums || [];
-    const dup = state.importedAlbums.some((a) => normalizeKey(a.artist, a.title) === key);
-    if (dup) {
-      toast("Cet album est déjà dans ta base locale.");
-      const existing = state.importedAlbums.find((a) => normalizeKey(a.artist, a.title) === key);
-      if (existing) navigate("album", { albumId: existing.id });
-      return;
-    }
     const id = "ext-" + Date.now().toString(36) + "-" + Math.random().toString(36).slice(2, 7);
     const g = gradientFromKey(id + key);
     const yearNum = parseInt(String(hit.year).replace(/\D/g, ""), 10);
@@ -1052,16 +1047,28 @@
       title: hit.title,
       artist: hit.artist,
       year: Number.isFinite(yearNum) ? yearNum : new Date().getFullYear(),
-      genre: "Import",
+      genre: hit.genre || "Catalogue",
       from: g.from,
       to: g.to,
       artworkUrl: hit.artworkUrl || "",
-      links: { ...hit.links },
+      links: { ...(hit.links || {}) },
       appleCollectionId: hit.appleCollectionId || parseAppleCollectionId(hit.links && hit.links.apple) || null,
       deezerAlbumId: hit.deezerAlbumId || parseDeezerAlbumId(hit.links && hit.links.deezer) || null,
     });
     persist();
-    toast("Album importé — tu peux le noter comme les autres.");
+    return id;
+  }
+
+  function importCatalogHit(hit) {
+    const id = upsertAlbumFromRemoteHit({ ...hit, genre: hit.genre || "Import" });
+    if (!id) return;
+    const key = normalizeKey(hit.artist, hit.title);
+    const wasDup = allAlbums().some((a) => a.id !== id && normalizeKey(a.artist, a.title) === key);
+    if (wasDup) {
+      toast("Cet album est déjà dans ta base locale.");
+    } else {
+      toast("Album importé — tu peux le noter comme les autres.");
+    }
     navigate("album", { albumId: id });
   }
 
@@ -2106,7 +2113,11 @@
   let modalKeydownHandler = null;
 
   function closeModal() {
-    document.body.classList.remove("modal-open");
+    document.body.classList.remove("modal-open", "modal-open--log-listen");
+    if (typeof window.__slLogListenCleanup === "function") {
+      window.__slLogListenCleanup();
+      window.__slLogListenCleanup = null;
+    }
     if (modalKeydownHandler) {
       document.removeEventListener("keydown", modalKeydownHandler);
       modalKeydownHandler = null;
@@ -2114,8 +2125,12 @@
     $modal.innerHTML = "";
   }
 
-  function openModal(html) {
-    $modal.innerHTML = `<div class="modal-backdrop" id="modal-bd"><div class="modal">${html}</div></div>`;
+  function openModal(html, opts) {
+    opts = opts || {};
+    document.body.classList.add("modal-open");
+    if (opts.variant === "log-listen") document.body.classList.add("modal-open--log-listen");
+    const modalCls = opts.variant === "log-listen" ? " modal--log-listen" : "";
+    $modal.innerHTML = `<div class="modal-backdrop" id="modal-bd"><div class="modal${modalCls}">${html}</div></div>`;
     document.getElementById("modal-bd").addEventListener("click", (e) => {
       if (e.target.id === "modal-bd") closeModal();
     });
@@ -5194,6 +5209,29 @@
 
   // Reset cache après import
   function resetRecoCache() { discoverRecosCache = null; }
+
+  if (window.SLLogListen && window.SLLogListen.install) {
+    window.__slMusicCountry = musicCountry;
+    window.SLLogListen.install({
+      escapeHtml,
+      allAlbums,
+      albumById,
+      persist,
+      toast,
+      navigate,
+      closeModal,
+      openModal,
+      coverHtml,
+      buildPlatformLinks,
+      normalizeKey,
+      gradientFromKey,
+      state,
+      ensureAdaptive,
+      upsertAlbumFromRemoteHit,
+      musicCountry,
+      applyAlbumBackdropTint,
+    });
+  }
   window.__sl = window.__sl || {};
   window.__sl.resetRecoCache = resetRecoCache;
 
@@ -6113,82 +6151,11 @@
   }
 
   function openListenModal(editId, presetAlbumId) {
-    const existing = editId ? state.listenings.find((l) => l.id === editId) : null;
-    const albumOptions = allAlbums()
-      .map((a) => {
-      const sel =
-        (existing && existing.albumId === a.id) || (!existing && presetAlbumId === a.id) ? " selected" : "";
-      return `<option value="${a.id}"${sel}>${escapeHtml(a.title)} — ${escapeHtml(a.artist)}</option>`;
-    }).join("");
-    const today = new Date().toISOString().slice(0, 10);
-    openModal(`<h2>${existing ? "Modifier l’écoute" : "Logger une écoute"}</h2>
-      <label>Album</label>
-      <select id="ln-album" style="width:100%;padding:0.5rem;border-radius:8px;margin-bottom:0.75rem;background:var(--bg-elevated);color:var(--text);border:1px solid var(--border)">${albumOptions}</select>
-      <label>Date</label>
-      <input type="date" id="ln-date" value="${existing ? existing.date : today}" />
-      <label>Note (clique pour 0.5 à 5)</label>
-      <div class="star-picker" id="ln-stars"></div>
-      <input type="hidden" id="ln-rating" value="${existing ? existing.rating : 4}" />
-      <label>Critique (optionnel)</label>
-      <textarea id="ln-review" placeholder="Ton avis…">${existing && existing.review ? escapeHtml(existing.review) : ""}</textarea>
-      <button type="button" class="btn btn-primary" id="ln-save">${existing ? "Mettre à jour" : "Enregistrer"}</button>
-      <button type="button" class="btn btn-ghost" id="ln-cancel" style="margin-left:0.5rem">Annuler</button>`);
-    const hid = document.getElementById("ln-rating");
-    const wrap = document.getElementById("ln-stars");
-    const steps = [0.5, 1, 1.5, 2, 2.5, 3, 3.5, 4, 4.5, 5];
-    function paintStars() {
-      const r = parseFloat(hid.value, 10);
-      wrap.innerHTML = steps
-        .map(
-          (s) =>
-            `<button type="button" data-s="${s}" class="${r >= s ? "on" : ""}">${s % 1 ? "½" : Math.floor(s)}</button>`
-        )
-        .join("");
-      wrap.querySelectorAll("button").forEach((btn) => {
-        btn.addEventListener("click", () => {
-          hid.value = btn.getAttribute("data-s");
-          paintStars();
-        });
-      });
+    if (window.SLLogListen && window.SLLogListen.open) {
+      window.SLLogListen.open(editId, presetAlbumId);
+      return;
     }
-    paintStars();
-    document.getElementById("ln-cancel").addEventListener("click", closeModal);
-    document.getElementById("ln-save").addEventListener("click", () => {
-      const albumId = document.getElementById("ln-album").value;
-      const date = document.getElementById("ln-date").value;
-      const rating = parseFloat(document.getElementById("ln-rating").value, 10);
-      const review = document.getElementById("ln-review").value.trim();
-      if (!albumId || !date) return toast("Album et date requis.");
-      if (existing) {
-        existing.albumId = albumId;
-        existing.date = date;
-        existing.rating = rating;
-        existing.review = review;
-      } else {
-        const dup = state.listenings.find((l) => l.userId === "me" && l.albumId === albumId);
-        if (dup) {
-          dup.date = date;
-          dup.rating = rating;
-          dup.review = review;
-        } else {
-          state.listenings.push({
-            id: "l" + Date.now(),
-            userId: "me",
-            albumId,
-            date,
-            rating,
-            review,
-          });
-        }
-      }
-      ensureAdaptive();
-      state.adaptive.listenLogs = (state.adaptive.listenLogs || 0) + 1;
-      persist();
-      if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
-      closeModal();
-      toast("Journal mis à jour.");
-      navigate("carnet", { hubTab: "journal" });
-    });
+    toast("Chargement du module de log en cours…");
   }
 
   function bindShellNavigation() {

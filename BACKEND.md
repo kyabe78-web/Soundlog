@@ -242,7 +242,7 @@ Voir le guide dédié `PLAYLISTS.md`. En résumé : crée une app Spotify Develo
 
 ## 15. Avatars personnalisés
 
-Une fois `MIGRATION_v2.sql` joué, n'importe quel utilisateur peut uploader son avatar via la modale Compte → Mon profil → "Changer mon avatar". Stocké dans le bucket `avatars/<user-uuid>/`, lecture publique, écriture limitée au propriétaire (RLS Storage). Max 2 Mo recommandé côté UI.
+Une fois `MIGRATION_v2.sql` joué, n'importe quel utilisateur peut uploader son avatar via la modale Compte → Mon profil → "Changer mon avatar". Stocké dans le bucket `avatars/<user-uuid>/`, lecture publique, écriture limitée au propriétaire (RLS Storage). Max 10 Mo côté UI (compression automatique si l’image est très grande).
 
 ## 16. Statistiques utilisateur
 

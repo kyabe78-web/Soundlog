@@ -262,6 +262,9 @@
 
   const PREVIEW_CACHE_V = 3;
   const MIN_ALBUM_MATCH_SCORE = 70;
+  /** Taille max fichier avatar avant envoi (photos téléphone). */
+  const AVATAR_MAX_BYTES = 10 * 1024 * 1024;
+  const AVATAR_MAX_MB = 10;
 
   function normalizeText(s) {
     return normalizeArtistKey(
@@ -4314,13 +4317,13 @@
     const logThis = document.getElementById("btn-log-this");
     if (logThis) logThis.addEventListener("click", () => openListenModal(null, route.albumId));
 
-    $main.querySelectorAll("[data-edit-listen]").forEach((b) => {
+    document.querySelectorAll("[data-edit-listen]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         openListenModal(b.getAttribute("data-edit-listen"), null);
       });
     });
-    $main.querySelectorAll("[data-del-listen]").forEach((b) => {
+    document.querySelectorAll("[data-del-listen]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-del-listen");
@@ -4331,7 +4334,7 @@
         render();
       });
     });
-    $main.querySelectorAll("[data-rm-wish]").forEach((b) => {
+    document.querySelectorAll("[data-rm-wish]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-rm-wish");
@@ -4341,7 +4344,7 @@
         render();
       });
     });
-    $main.querySelectorAll("[data-add-wish-suggest]").forEach((b) => {
+    document.querySelectorAll("[data-add-wish-suggest]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-add-wish-suggest");
@@ -4354,14 +4357,14 @@
         render();
       });
     });
-    $main.querySelectorAll("[data-album-open]").forEach((b) => {
+    document.querySelectorAll("[data-album-open]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-album-open");
         if (id) navigate("album", { albumId: id });
       });
     });
-    $main.querySelectorAll("[data-follow]").forEach((b) => {
+    document.querySelectorAll("[data-follow]").forEach((b) => {
       b.addEventListener("click", () => {
         const uid = b.getAttribute("data-follow");
         const i = state.follows.indexOf(uid);
@@ -4383,7 +4386,7 @@
     if (btnNewList) btnNewList.addEventListener("click", openNewListModal);
     const btnAddConcert = document.getElementById("btn-add-concert");
     if (btnAddConcert) btnAddConcert.addEventListener("click", openAddConcertModal);
-    $main.querySelectorAll("[data-del-concert]").forEach((b) => {
+    document.querySelectorAll("[data-del-concert]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-del-concert");
@@ -4393,7 +4396,7 @@
         render();
       });
     });
-    $main.querySelectorAll("[data-nav-view]").forEach((b) => {
+    document.querySelectorAll("[data-nav-view]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -4401,7 +4404,7 @@
         if (v) navigate(v);
       });
     });
-    $main.querySelectorAll("[data-open-dm]").forEach((b) => {
+    document.querySelectorAll("[data-open-dm]").forEach((b) => {
       b.addEventListener("click", async () => {
         const uid = b.getAttribute("data-open-dm");
         if (!window.SLCloud || !SLCloud.isSignedIn()) {
@@ -4418,7 +4421,7 @@
         }
       });
     });
-    $main.querySelectorAll("[data-compat-detail]").forEach((b) => {
+    document.querySelectorAll("[data-compat-detail]").forEach((b) => {
       b.addEventListener("click", async () => {
         const uid = b.getAttribute("data-compat-detail");
         try {
@@ -4434,7 +4437,7 @@
             <p class="page-sub">Score <strong>${r.score}%</strong> — ${r.shared} albums en commun (${r.union} uniques au total dans nos goûts comparés).</p>
             <p class="feed-note">Basé sur nos <strong>écoutes publiques</strong> et <strong>listes publiques</strong> Soundlog (ta pile « à écouter » côté toi uniquement).</p>
             <div class="grid-albums" style="margin-top:1rem">${grid || `<p class="empty">Pas d’album en commun indexé pour l’instant.</p>`}</div>`);
-          $main.querySelectorAll("#modal-bd [data-album]").forEach((el) => {
+          document.querySelectorAll("#modal-bd [data-album]").forEach((el) => {
             el.addEventListener("click", () => {
               const id = el.getAttribute("data-album");
               closeModal();
@@ -4446,7 +4449,7 @@
         }
       });
     });
-    $main.querySelectorAll(".event-interest-toggle").forEach((btn) => {
+    document.querySelectorAll(".event-interest-toggle").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const key = btn.getAttribute("data-ev-key");
         if (!key) return;
@@ -4487,7 +4490,7 @@
 
     const btnAddPerfVideo = document.getElementById("btn-add-perf-video");
     if (btnAddPerfVideo) btnAddPerfVideo.addEventListener("click", () => openPerformanceVideoModal());
-    $main.querySelectorAll("[data-del-perf-video]").forEach((b) => {
+    document.querySelectorAll("[data-del-perf-video]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -4528,13 +4531,13 @@
       });
     });
 
-    $main.querySelectorAll("[data-preview-play]").forEach((b) => {
+    document.querySelectorAll("[data-preview-play]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         void playAlbumPreview(b.getAttribute("data-preview-play"));
       });
     });
-    $main.querySelectorAll("[data-preview-swap]").forEach((b) => {
+    document.querySelectorAll("[data-preview-swap]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-preview-swap");
@@ -4554,25 +4557,25 @@
         void playAlbumPreview(id, { force: true });
       });
     });
-    $main.querySelectorAll("[data-preview-stop]").forEach((b) => {
+    document.querySelectorAll("[data-preview-stop]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         stopAlbumPreview();
       });
     });
-    $main.querySelectorAll("[data-comment-on]").forEach((b) => {
+    document.querySelectorAll("[data-comment-on]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         openCommentModal(b.getAttribute("data-comment-on"));
       });
     });
-    $main.querySelectorAll("[data-friend-req]").forEach((b) => {
+    document.querySelectorAll("[data-friend-req]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         sendFriendRequest(b.getAttribute("data-friend-req"));
       });
     });
-    $main.querySelectorAll("[data-friend-remove]").forEach((b) => {
+    document.querySelectorAll("[data-friend-remove]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const uid = b.getAttribute("data-friend-remove");
@@ -4589,25 +4592,25 @@
         render();
       });
     });
-    $main.querySelectorAll("[data-accept-friend]").forEach((b) => {
+    document.querySelectorAll("[data-accept-friend]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         acceptIncomingFriendRequest(b.getAttribute("data-accept-friend"));
       });
     });
-    $main.querySelectorAll("[data-decline-friend]").forEach((b) => {
+    document.querySelectorAll("[data-decline-friend]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         declineIncomingFriendRequest(b.getAttribute("data-decline-friend"));
       });
     });
-    $main.querySelectorAll("[data-cancel-friend-out]").forEach((b) => {
+    document.querySelectorAll("[data-cancel-friend-out]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         cancelOutgoingFriendRequest(b.getAttribute("data-cancel-friend-out"));
       });
     });
-    $main.querySelectorAll("[data-rm-fav]").forEach((b) => {
+    document.querySelectorAll("[data-rm-fav]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         try {
@@ -4621,7 +4624,7 @@
         } catch (_) {}
       });
     });
-    $main.querySelectorAll("[data-rm-manual-tour]").forEach((b) => {
+    document.querySelectorAll("[data-rm-manual-tour]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-rm-manual-tour");
@@ -5075,47 +5078,19 @@
 
   bindMobileShell();
   bindShellNavigation();
-  if (!$modal.dataset.albumDelegate) {
-    $modal.dataset.albumDelegate = "1";
-    $modal.addEventListener("click", (ev) => {
-      const card = ev.target.closest("[data-album]");
-      if (!card || ev.target.closest("button")) return;
-      const id = card.getAttribute("data-album");
-      if (!id) return;
-      closeModal();
-      navigate("album", { albumId: id });
-    });
-  }
-  if (!$main.dataset.importHitDelegate) {
-    $main.dataset.importHitDelegate = "1";
-    $main.addEventListener("click", (ev) => {
-      const btn = ev.target.closest("[data-import-hit]");
-      if (!btn) return;
-      ev.preventDefault();
-      ev.stopPropagation();
-      try {
-        importCatalogHit(JSON.parse(decodeURIComponent(btn.getAttribute("data-import-hit"))));
-      } catch (_) {
-        toast("Import impossible (données invalides).");
-      }
-    });
-  }
-
   document.getElementById("logo-link").addEventListener("click", (e) => {
     e.preventDefault();
     $search.value = "";
     navigate("home");
   });
   const userChip = document.getElementById("user-chip");
-  if (userChip) {
-    userChip.addEventListener("click", () => navigate("profile", { userId: "me" }));
-    userChip.addEventListener("keydown", (e) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        navigate("profile", { userId: "me" });
-      }
-    });
-  }
+  userChip.addEventListener("click", () => navigate("profile", { userId: "me" }));
+  userChip.addEventListener("keydown", (e) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      navigate("profile", { userId: "me" });
+    }
+  });
   // =======================================================================
   // Recherche unifiée — popover live multi-entités (users / artists / albums / tracks)
   // =======================================================================
@@ -6421,132 +6396,53 @@
     return `${h} h ${r} min`;
   }
 
-  function cloudStatsTimeout(promise, ms, label) {
-    return Promise.race([
-      promise,
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} : délai dépassé`)), ms)),
-    ]);
-  }
-
   async function openCloudStatsModal() {
     if (!SLCloud || !SLCloud.isSignedIn()) return;
     const uid = SLCloud.me.id;
-    let connected = [];
-    try {
-      connected = await SLCloud.getConnectedPlatforms(uid);
-    } catch (_) {}
-    const canSyncHistory =
-      (SLCloud.spotify && SLCloud.spotify.isConfigured() && SLCloud.spotify.hasToken()) ||
-      (connected.includes("lastfm") && window.SLConfig && window.SLConfig.lastfmApiKey);
-
+    const spReady = SLCloud.spotify && SLCloud.spotify.isConfigured() && SLCloud.spotify.hasToken();
     openModal(`<h2>Mes statistiques</h2>
       <div id="cloud-stats" class="cloud-stats"><p class="feed-note">Calcul…</p></div>
       <p class="modal-actions cloud-stats-actions">
-        <button type="button" class="btn btn-primary" id="cloud-stats-sync-all" ${canSyncHistory ? "" : "disabled"}>Synchroniser les plateformes connectées</button>
+        <button type="button" class="btn btn-primary" id="cloud-stats-sync-spotify" ${spReady ? "" : "disabled"} title="Session Spotify requise">Sync Spotify (écoutes récentes)</button>
         <button type="button" class="btn btn-ghost" id="cloud-stats-close">Fermer</button>
       </p>
-      <p class="feed-note cloud-stats-foot">Le score cumule les <strong>imports de toutes tes plateformes</strong> (Spotify, Deezer, YouTube, Last.fm…) et l'<strong>historique récent</strong> synchronisable (Spotify + Last.fm). Deezer/YouTube comptent via les durées des playlists importées.</p>`);
+      <p class="feed-note cloud-stats-foot">Le classement combine la <strong>durée des titres importés</strong> (quand connue) et l’<strong>historique « récemment écouté »</strong> Spotify. Réautorise Spotify si la sync est refusée (nouvelle permission).</p>`);
     document.getElementById("cloud-stats-close").addEventListener("click", closeModal);
-    const syncBtn = document.getElementById("cloud-stats-sync-all");
-    if (syncBtn) {
+    const syncBtn = document.getElementById("cloud-stats-sync-spotify");
+    if (syncBtn && spReady) {
       syncBtn.addEventListener("click", async () => {
         syncBtn.disabled = true;
         syncBtn.textContent = "Synchronisation…";
         try {
-          const results = await SLCloud.syncAllConnectedPlatforms();
-          const ok = results.filter((r) => !r.error && (r.inserted || 0) > 0);
-          const err = results.filter((r) => r.error);
-          if (ok.length) {
-            toast(
-              ok.map((r) => `${r.source}${r.username ? " @" + r.username : ""} : ${r.inserted} événement(s)`).join(" · ")
-            );
-          } else if (!results.length) {
-            toast("Aucune plateforme à synchroniser — importe des playlists ou connecte Spotify.");
-          } else {
-            toast("Sync terminée (aucune nouvelle ligne).");
-          }
-          if (err.length) console.warn("[sync platforms]", err);
+          const r = await SLCloud.syncSpotifyPlayHistory();
+          toast(`Historique Spotify : ${r.inserted || 0} ligne(s) traitée(s).`);
           await fillCloudStatsPanel(uid);
         } catch (e) {
-          toast(e.message || "Synchronisation impossible.");
+          toast(e.message || "Sync impossible — reconnecte Spotify.");
         } finally {
-          syncBtn.disabled = !canSyncHistory;
-          syncBtn.textContent = "Synchroniser les plateformes connectées";
+          syncBtn.disabled = false;
+          syncBtn.textContent = "Sync Spotify (écoutes récentes)";
         }
       });
     }
-
     async function fillCloudStatsPanel(userId) {
       const node = document.getElementById("cloud-stats");
       if (!node) return;
       node.innerHTML = `<p class="feed-note">Chargement…</p>`;
       try {
-        const platformP = cloudStatsTimeout(SLCloud.getListeningStatsByPlatform(userId), 20000, "Plateformes");
-        const settled = await Promise.allSettled([
-          cloudStatsTimeout(SLCloud.getUserStats(userId), 12000, "Statistiques"),
-          cloudStatsTimeout(SLCloud.getTopArtists(userId, 12), 12000, "Top artistes"),
-          cloudStatsTimeout(SLCloud.getRecommendations(userId, 12), 12000, "Recommandations"),
-          cloudStatsTimeout(SLCloud.getListeningRank(userId), 12000, "Classement"),
-          cloudStatsTimeout(SLCloud.getListeningLeaderboard(14), 12000, "Leaderboard"),
-          platformP,
-          cloudStatsTimeout(SLCloud.getConnectedPlatforms(userId), 8000, "Connexions"),
+        const [stats, top, recos, rankRow, board] = await Promise.all([
+          SLCloud.getUserStats(userId),
+          SLCloud.getTopArtists(userId, 12),
+          SLCloud.getRecommendations(userId, 12),
+          SLCloud.getListeningRank(userId).catch(() => null),
+          SLCloud.getListeningLeaderboard(14).catch(() => []),
         ]);
-
-        const val = (i) => (settled[i].status === "fulfilled" ? settled[i].value : null);
-        let stats = val(0);
-        const top = val(1) || [];
-        const recos = val(2) || [];
-        const rankRow = val(3);
-        const board = val(4) || [];
-        const byPlatform = val(5) || [];
-        connected = val(6) || connected;
-
-        const totals = await SLCloud.computeListeningTotals(userId, byPlatform);
-        const v4Missing = stats && stats.imported_library_ms == null && stats.streaming_recent_ms == null;
-        if (!stats || v4Missing) {
-          stats = {
-            ...(stats || {}),
-            imported_library_ms: totals.imported_ms,
-            streaming_recent_ms: totals.streaming_recent_ms,
-            streaming_recent_plays: totals.streaming_recent_plays,
-            total_imported_tracks: totals.total_imported_tracks,
-          };
-        }
-
-        const libMs = stats.imported_library_ms != null ? stats.imported_library_ms : totals.imported_ms;
-        const recMs = stats.streaming_recent_ms != null ? stats.streaming_recent_ms : totals.streaming_recent_ms;
-        const recPlays = stats.streaming_recent_plays != null ? stats.streaming_recent_plays : totals.streaming_recent_plays;
-        const combinedMs = (Number(libMs) || 0) + (Number(recMs) || 0);
-
-        const connectedLabels = connected.length
-          ? connected.map((s) => (SLCloud.platformLabels && SLCloud.platformLabels[s]) || s).join(", ")
-          : "aucune pour l'instant";
-
-        const platformTable =
-          byPlatform.length > 0
-            ? `<table class="cloud-platform-table"><thead><tr><th>Plateforme</th><th>Imports</th><th>Historique récent</th><th>Total</th></tr></thead><tbody>${byPlatform
-                .map(
-                  (row) => `<tr>
-                    <td><strong>${escapeHtml(row.label)}</strong></td>
-                    <td>${escapeHtml(formatListenMs(row.imported_ms))}<br><span class="feed-note">${row.tracks} titre(s)${row.playlists ? ` · ${row.playlists} playlist(s)` : ""}</span></td>
-                    <td>${escapeHtml(formatListenMs(row.stream_ms))}<br><span class="feed-note">${row.stream_plays || 0} événement(s)</span></td>
-                    <td><strong>${escapeHtml(formatListenMs(row.combined_ms))}</strong></td>
-                  </tr>`
-                )
-                .join("")}</tbody></table>`
-            : `<p class="feed-note">Importe des playlists (Spotify, Deezer, YouTube, Last.fm…) depuis ton profil pour alimenter le calcul.</p>`;
-
-        const migrationHint =
-          v4Missing || settled.some((s) => s.status === "rejected")
-            ? `<p class="feed-note">Certaines données viennent d'un calcul direct. Pour le classement global, exécute <strong>MIGRATION_v4.sql</strong> dans Supabase si ce n'est pas déjà fait.</p>`
-            : "";
-
+        const libMs = stats && (stats.imported_library_ms != null ? stats.imported_library_ms : null);
+        const recMs = stats && (stats.streaming_recent_ms != null ? stats.streaming_recent_ms : null);
+        const recPlays = stats && (stats.streaming_recent_plays != null ? stats.streaming_recent_plays : null);
         const rankLine = rankRow
           ? `<p class="cloud-rank-line"><strong>Rang #${rankRow.rank_listen}</strong> sur ${rankRow.leaderboard_size || "?"} · combiné ${escapeHtml(String(rankRow.combined_minutes))} min</p>`
-          : combinedMs > 0
-            ? `<p class="feed-note">Classement global : <strong>${escapeHtml(formatListenMs(combinedMs))}</strong> cumulé sur toutes tes plateformes.</p>`
-            : `<p class="feed-note">Pas encore classé·e — importe des playlists (avec durées quand l'API le permet) puis synchronise l'historique récent.</p>`;
-
+          : `<p class="feed-note">Pas encore classé·e — importe des playlists avec durées ou synchronise Spotify.</p>`;
         const lb =
           board && board.length
             ? `<ol class="cloud-leaderboard">${board
@@ -6556,26 +6452,20 @@
                       row.name || row.handle || "?"
                     )}</span><span class="cloud-lb-meta">${escapeHtml(String(row.combined_minutes))} min</span>${
                       Number(row.recent_listen_minutes) > 0
-                        ? `<span class="cloud-lb-sub">${escapeHtml(String(row.recent_listen_minutes))} min historique récent</span>`
+                        ? `<span class="cloud-lb-sub">${escapeHtml(String(row.recent_listen_minutes))} min Spotify récent</span>`
                         : ""
                     }</li>`
                 )
                 .join("")}</ol>`
-            : `<p class="feed-note">Classement vide pour l'instant.</p>`;
-
+            : `<p class="feed-note">Classement vide pour l’instant.</p>`;
         node.innerHTML = `
         <section class="cloud-streaming-summary">
-          <h3>Volume d'écoute (toutes plateformes)</h3>
-          <p class="feed-note">Connecté·e : <strong>${escapeHtml(connectedLabels)}</strong></p>
-          <p class="feed-note">Bibliothèque importée : <strong>${escapeHtml(formatListenMs(libMs))}</strong> · historique récent synchronisé : <strong>${escapeHtml(
+          <h3>Streaming &amp; durée</h3>
+          <p class="feed-note">Volume musical des imports : <strong>${escapeHtml(formatListenMs(libMs))}</strong> · lectures enregistrées (API Spotify) : <strong>${escapeHtml(
             formatListenMs(recMs)
           )}</strong>${recPlays != null ? ` <span class="feed-note">(${recPlays} événements)</span>` : ""}</p>
-          <p class="feed-note">Total estimé : <strong>${escapeHtml(formatListenMs(combinedMs))}</strong></p>
           ${rankLine}
         </section>
-        <h3>Détail par plateforme</h3>
-        ${platformTable}
-        ${migrationHint}
         <section class="cloud-stats-grid">
           <article><strong>${stats?.total_listenings || 0}</strong><span>écoutes</span></article>
           <article><strong>${stats?.unique_albums || 0}</strong><span>albums uniques</span></article>
@@ -6583,7 +6473,7 @@
           <article><strong>${stats?.total_lists || 0}</strong><span>listes</span></article>
           <article><strong>${stats?.total_concerts || 0}</strong><span>concerts vus</span></article>
           <article><strong>${stats?.total_wishlist || 0}</strong><span>à écouter</span></article>
-          <article><strong>${stats?.total_imported_tracks || totals.total_imported_tracks || 0}</strong><span>titres importés</span></article>
+          <article><strong>${stats?.total_imported_tracks || 0}</strong><span>titres importés</span></article>
           <article><strong>${stats?.imported_unique_artists || 0}</strong><span>artistes ext.</span></article>
         </section>
         <h3>Classement (durée cumulée)</h3>
@@ -6593,13 +6483,55 @@
         <h3>Recommandé pour toi</h3>
         ${recos.length ? `<ul class="cloud-recos">${recos.map((r) => `<li><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.artist)} <em>(score ${Number(r.score).toFixed(1)})</em></li>`).join("")}</ul>` : `<p class="feed-note">Pas assez de données collectives pour reco — invite des ami·es !</p>`}`;
       } catch (e) {
-        node.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p><p class="feed-note">Vérifie ta connexion et exécute <strong>MIGRATION_v4.sql</strong> dans Supabase si la modale reste vide.</p>`;
+        node.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p><p class="feed-note">Si tu viens de déployer la base, exécute <strong>MIGRATION_v4.sql</strong> dans Supabase.</p>`;
       }
     }
     await fillCloudStatsPanel(uid);
   }
 
   // ---------- Avatar upload ----------
+
+  /** Réduit les très grandes images avant upload (affichage avatar = petit cercle). */
+  async function prepareAvatarForUpload(file) {
+    if (!file || !file.type.startsWith("image/")) throw new Error("Choisis une image (JPG, PNG ou WebP).");
+    if (file.size > AVATAR_MAX_BYTES) {
+      throw new Error(`Image trop lourde (max ${AVATAR_MAX_MB} Mo).`);
+    }
+    if (file.size <= 900 * 1024) return file;
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("Impossible de lire cette image."));
+        el.src = url;
+      });
+      const maxDim = 1200;
+      let w = img.naturalWidth || img.width;
+      let h = img.naturalHeight || img.height;
+      if (w > maxDim || h > maxDim) {
+        if (w >= h) {
+          h = Math.round((h * maxDim) / w);
+          w = maxDim;
+        } else {
+          w = Math.round((w * maxDim) / h);
+          h = maxDim;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = w;
+      canvas.height = h;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return file;
+      ctx.drawImage(img, 0, 0, w, h);
+      const blob = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.88));
+      if (!blob) return file;
+      return new File([blob], "avatar.jpg", { type: "image/jpeg" });
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   function openAvatarUploadModal() {
     if (!SLCloud || !SLCloud.isSignedIn()) return;
     const me = SLCloud.me;
@@ -6609,9 +6541,10 @@
     openModal(`<h2>Avatar</h2>
       ${current}
       <label class="cloud-upload">
-        <span>Choisir une image (PNG/JPG, max 2 Mo)</span>
-        <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp" />
+        <span>Choisir une image (JPG, PNG, WebP — max ${AVATAR_MAX_MB} Mo)</span>
+        <input type="file" id="avatar-file" accept="image/png,image/jpeg,image/webp,image/jpg" />
       </label>
+      <p class="feed-note">Les photos lourdes sont automatiquement optimisées avant l'envoi.</p>
       <p class="auth-error" id="avatar-err" hidden></p>
       <p class="modal-actions">
         <button type="button" class="btn btn-primary" id="avatar-save">Téléverser</button>
@@ -6621,21 +6554,29 @@
     document.getElementById("avatar-save").addEventListener("click", async () => {
       const f = document.getElementById("avatar-file").files[0];
       if (!f) return;
-      if (f.size > 2 * 1024 * 1024) {
-        const err = document.getElementById("avatar-err");
-        err.textContent = "Image trop lourde (max 2 Mo).";
-        err.hidden = false;
-        return;
-      }
+      const err = document.getElementById("avatar-err");
+      const saveBtn = document.getElementById("avatar-save");
       try {
-        await SLCloud.uploadAvatar(f);
+        if (err) err.hidden = true;
+        if (saveBtn) {
+          saveBtn.disabled = true;
+          saveBtn.textContent = "Envoi…";
+        }
+        const prepared = await prepareAvatarForUpload(f);
+        await SLCloud.uploadAvatar(prepared);
         toast("Avatar mis à jour.");
         closeModal();
         render();
       } catch (e) {
-        const err = document.getElementById("avatar-err");
-        err.textContent = e.message || "Échec du téléversement.";
-        err.hidden = false;
+        if (err) {
+          err.textContent = e.message || "Échec du téléversement.";
+          err.hidden = false;
+        }
+      } finally {
+        if (saveBtn) {
+          saveBtn.disabled = false;
+          saveBtn.textContent = "Téléverser";
+        }
       }
     });
   }

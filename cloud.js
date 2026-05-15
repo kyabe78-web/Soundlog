@@ -498,8 +498,13 @@
     },
 
     // ---------- Avatars ----------
+    avatarMaxBytes: 10 * 1024 * 1024,
+
     async uploadAvatar(file) {
       if (!this.me) throw new Error("Pas connecté");
+      if (file.size > this.avatarMaxBytes) {
+        throw new Error("Image trop lourde (max 10 Mo).");
+      }
       const ext = (file.name.split(".").pop() || "png").toLowerCase();
       const path = `${this.me.id}/avatar.${ext}`;
       const { error } = await this.client.storage.from("avatars").upload(path, file, {

@@ -358,6 +358,24 @@
   const $toast = document.getElementById("toast-root");
   const $search = document.getElementById("global-search");
 
+  /** cloud.js est chargé avant app.js — doit exister avant le premier render(). */
+  const SLCloud = window.SLCloud;
+  const cloudPeers = new Map();
+  window.__slCloudPeers = cloudPeers;
+
+  function cloudSignedIn() {
+    return !!(SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn());
+  }
+
+  function cloudMeRow() {
+    return cloudSignedIn() && SLCloud.me ? SLCloud.me : null;
+  }
+
+  function syncAccountChrome() {
+    updateHeaderUser();
+    updateSidebarAccount();
+  }
+
   let libraryQuery = "";
   let libraryRemoteHits = [];
   let libraryRemoteLoading = false;
@@ -1815,7 +1833,7 @@
 
   function userById(id) {
     if (id === "me") {
-      const cloudMe = window.SLCloud && window.SLCloud.me;
+      const cloudMe = cloudMeRow();
       if (cloudMe) {
         return {
           id: "me",
@@ -1825,6 +1843,16 @@
           bio: cloudMe.bio || "",
           hue: cloudMe.hue != null ? cloudMe.hue : 152,
           avatar_url: cloudMe.avatar_url || "",
+        };
+      }
+      if (cloudSignedIn()) {
+        return {
+          id: "me",
+          name: state.profile.displayName || "Compte",
+          handle: state.profile.handle || "…",
+          bio: state.profile.bio || "",
+          hue: 152,
+          avatar_url: "",
         };
       }
       return {
@@ -3704,7 +3732,7 @@
   }
 
   function renderHomeMurmursBlock() {
-    const signed = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
+    const signed = cloudSignedIn();
     const local = renderLocalShoutCards();
     const cloud = signed
       ? `<section class="home-murmurs home-murmurs--cloud"><header class="home-murmurs__head"><h2 class="home-murmurs__title">Murmures Soundlog</h2><button type="button" class="btn btn-ghost btn-sm" id="home-shoutouts-add">Publier</button></header><div id="home-cloud-shoutouts" class="home-murmurs__list"><p class="feed-note">Chargement…</p></div></section>`
@@ -4748,7 +4776,7 @@
     parseHash();
     adaptiveTickAfterParse();
     setNavActive();
-    updateHeaderUser();
+    syncAccountChrome();
     let html = "";
     const searchQ = getSearchQuery();
     if (searchQ && route.view !== "join") {
@@ -4777,7 +4805,7 @@
           html = renderSocialHub();
           break;
         case "inbox":
-          html = renderHome();
+          html = renderInbox();
           break;
         case "join":
           html = renderJoin();
@@ -5364,20 +5392,25 @@
   }
 
   function updateHeaderUser() {
-    const u = userById("me");
-    document.getElementById("header-username").textContent = u.name;
+    const nameEl = document.getElementById("header-username");
     const av = document.getElementById("header-avatar");
-    const cloudMe = window.SLCloud && window.SLCloud.me;
+    if (!nameEl || !av) return;
+    const cloudMe = cloudMeRow();
+    const u = userById("me");
+    if (cloudSignedIn() && !cloudMe) {
+      nameEl.textContent = "Synchronisation…";
+    } else {
+      nameEl.textContent = u.name || "Invité";
+    }
     if (cloudMe && cloudMe.avatar_url) {
-      av.style.backgroundImage = `url("${cloudMe.avatar_url}")`;
-      av.style.backgroundSize = "cover";
-      av.style.backgroundPosition = "center";
+      av.style.backgroundImage = "";
       av.textContent = "";
       av.style.background = `center / cover no-repeat url("${cloudMe.avatar_url}")`;
     } else {
       av.style.backgroundImage = "";
-      av.textContent = u.name.charAt(0).toUpperCase();
-      av.style.background = "hsl(" + u.hue + ",55%,42%)";
+      const label = cloudSignedIn() && !cloudMe ? "…" : (u.name || "?").charAt(0).toUpperCase();
+      av.textContent = label;
+      av.style.background = "hsl(" + (u.hue != null ? u.hue : 152) + ",55%,42%)";
     }
   }
 
@@ -6655,15 +6688,15 @@
   applyTheme(getTheme());
 
   bindNotifHub();
+  if (SLCloud && SLCloud.available && typeof SLCloud.init === "function") {
+    void SLCloud.init().then(() => syncAccountChrome());
+  }
   render();
   void syncTourAlerts({}).then(() => updateHeaderNotifications());
 
   // =======================================================================
   // Intégration cloud (Supabase) — non-invasive
   // =======================================================================
-  const SLCloud = window.SLCloud;
-  const cloudPeers = new Map();
-  window.__slCloudPeers = cloudPeers;
 
   function registerCloudPeerProfiles(rows) {
     if (!rows || !rows.length) return;
@@ -7060,8 +7093,7 @@
       await Promise.all(missingAlbumIds.slice(i, i + 8).map(hydrateOne));
     }
     persistLocalOnly();
-    updateHeaderUser();
-    updateSidebarAccount();
+    syncAccountChrome();
     render();
     schedulePushCloud();
     } catch (e) {
@@ -7083,10 +7115,18 @@
       return;
     }
     btn.style.display = "";
-    if (SLCloud.isSignedIn() && SLCloud.me) {
+    const cloudMe = cloudMeRow();
+    if (cloudMe) {
       btn.classList.add("is-signed-in");
-      label.innerHTML = `<span>${escapeHtml(SLCloud.me.name)}</span><small>@${escapeHtml(SLCloud.me.handle)} · gérer</small>`;
+      label.innerHTML = `<span>${escapeHtml(cloudMe.name)}</span><small>@${escapeHtml(cloudMe.handle)} · gérer</small>`;
       if (note) note.textContent = "Synchronisé · accessible sur tous tes appareils.";
+    } else if (cloudSignedIn()) {
+      btn.classList.add("is-signed-in");
+      label.innerHTML = `<span>Synchronisation…</span><small>chargement du profil</small>`;
+      if (note) note.textContent = "Session active — finalisation…";
+      if (typeof SLCloud.refreshProfile === "function") {
+        void SLCloud.refreshProfile().then(() => syncAccountChrome()).catch(() => {});
+      }
     } else {
       btn.classList.remove("is-signed-in");
       label.innerHTML = `<span>Se connecter</span><small>ou créer un compte</small>`;
@@ -7339,12 +7379,10 @@
   if (SLCloud && SLCloud.on) {
     SLCloud.on((evt) => {
       if (evt === "ready") {
-        updateSidebarAccount();
-        updateHeaderUser();
+        syncAccountChrome();
         if (SLCloud.isSignedIn()) void pullCloudIntoState();
       } else if (evt === "auth") {
-        updateSidebarAccount();
-        updateHeaderUser();
+        syncAccountChrome();
       } else if (evt === "profile") {
         syncMeFromCloud();
         render();

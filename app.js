@@ -3653,7 +3653,7 @@
 
   function dmShareSkeletonHtml(count) {
     return Array.from({ length: count }, () =>
-      `<div class="dm-share-skeleton" aria-hidden="true"><div class="dm-share-skeleton__art"></div><div class="dm-share-skeleton__lines"><span></span><span></span></div></motion>`
+      `<div class="dm-share-skeleton" aria-hidden="true"><div class="dm-share-skeleton__art"></motion><motion class="dm-share-skeleton__lines"><span></span><span></span></div></div>`
     ).join("");
   }
 
@@ -3862,25 +3862,79 @@
   }
 
   function dmShareTrayHtml() {
-    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="dialog" aria-label="Partager de la musique" aria-hidden="true">
-      <div class="dm-share-tabs" role="tablist">
-        <button type="button" class="dm-share-tab is-active" data-dm-share-tab="track" role="tab" aria-selected="true">Titre</button>
-        <button type="button" class="dm-share-tab" data-dm-share-tab="album" role="tab" aria-selected="false">Album</button>
-      </div>
-      <label class="visually-hidden" for="dm-share-search-input">Rechercher de la musique</label>
-      <div class="dm-share-search">
-        <span class="dm-share-search__icon" aria-hidden="true">⌕</span>
-        <input type="search" id="dm-share-search-input" class="dm-share-search__input" placeholder="Artiste, titre, album…" autocomplete="off" enterkeyhint="search" />
-      </div>
-      <p class="dm-share-tray__hint feed-note" id="dm-share-hint">Recherche globale — Spotify, Apple Music, Deezer…</p>
-      <div class="dm-share-results" id="dm-share-results" role="listbox" aria-live="polite">
-        <p class="dm-share-empty">Tape au moins 2 caractères.</p>
-      </div>
+    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="region" aria-label="Partager un extrait">
+      <p class="dm-share-tray__title">▶ Partager un extrait (30 s)</p>
+      <p class="feed-note dm-share-tray__hint">Choisis un album dans ton carnet</p>
+      <div class="dm-pick-inline" id="dm-pick-inline"><p class="feed-note">Chargement…</p></div>
     </div>`;
   }
 
+  async function renderDmSharePickerInTray(root, threadId) {
+    const host = root.querySelector("#dm-pick-inline");
+    if (!host) return;
+    host.innerHTML = `<p class="feed-note">Chargement de ton carnet…</p>`;
+    try {
+      if (typeof ensureCloudReady === "function") await ensureCloudReady();
+    } catch (_) {}
+    const candidates = await dmShareCandidates();
+    const rows = candidates
+      .filter((c) => c.al)
+      .map(
+        (c) =>
+          `<button type="button" class="dm-pick-row dm-pick-row--inline" data-dm-pick-album="${escapeHtml(c.albumId)}" data-dm-pick-rating="${c.rating || ""}">
+          ${coverHtml(c.al, true, "sm")}
+          <span><strong>${escapeHtml(c.al.title)}</strong><span class="feed-note">${escapeHtml(c.al.artist)}</span></span>
+        </button>`
+      )
+      .join("");
+    host.innerHTML =
+      rows || `<p class="empty">Logue une écoute dans ton Journal, puis réessaie.</p>`;
+  }
+
+  async function sendDmPreviewFromPick(root, threadId, btn) {
+    const albumId = btn.getAttribute("data-dm-pick-album");
+    let al = albumById(albumId);
+    if (!al) al = await hydrateAlbumById(albumId);
+    if (!al) return toast("Album introuvable — synchronise ton compte.");
+    const rating = btn.getAttribute("data-dm-pick-rating");
+    const payload = {
+      v: 1,
+      type: "preview",
+      albumId: al.id,
+      title: al.title,
+      artist: al.artist,
+      year: al.year,
+      genre: al.genre,
+      artworkUrl: bestArtworkUrl(al),
+      rating: rating ? Number(rating) : null,
+    };
+    btn.disabled = true;
+    toast("Préparation de l'extrait…");
+    try {
+      const preview = await resolveAlbumPreview(al);
+      if (!preview || !preview.url) {
+        toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
+        return;
+      }
+      payload.previewUrl = preview.url;
+      payload.trackName = preview.trackName;
+      payload.previewSource = preview.source;
+      await sendDmPayload(threadId, payload);
+      toast("Extrait envoyé.");
+      const tray = root.querySelector("[data-dm-share-tray], #dm-share-tray");
+      const toggle = root.querySelector("[data-dm-toggle-share]");
+      if (tray) tray.classList.remove("is-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+      if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
+    } catch (e) {
+      toast(e.message || "Envoi impossible");
+    } finally {
+      btn.disabled = false;
+    }
+  }
+
   function dmThreadPanelShell(threadId) {
-    return `<div class="dm-chat" id="inbox-thread-panel" data-thread-id="${escapeHtml(threadId)}" data-dm-share-mode="track">
+    return `<div class="dm-chat" id="inbox-thread-panel" data-thread-id="${escapeHtml(threadId)}">
         <header class="dm-chat__head">
           <button type="button" class="dm-chat__back" data-inbox-back aria-label="Retour">←</button>
           <div class="dm-chat__peer" id="dm-chat-peer">
@@ -3892,12 +3946,10 @@
           </div>
           <button type="button" class="dm-chat__pin" id="dm-pin-thread" data-thread-pin="${escapeHtml(threadId)}" title="Épingler">📌</button>
         </header>
-        <div class="dm-chat__body">
-          <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
-          ${dmShareTrayHtml()}
-        </div>
+        <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
+        ${dmShareTrayHtml()}
         <form class="dm-compose" id="inbox-compose">
-          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager un titre ou un album">+</button>
+          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager un extrait 30 s">+</button>
           <label class="visually-hidden" for="inbox-msg-input">Message</label>
           <input type="text" id="inbox-msg-input" class="dm-compose__input" maxlength="2000" placeholder="Message ou partage un son…" autocomplete="off" />
           <button type="submit" class="dm-compose__send" aria-label="Envoyer">↑</button>
@@ -3931,6 +3983,117 @@
     } catch (_) {
       return null;
     }
+  }
+
+  async function dmShareCandidates() {
+    const seen = new Set();
+    const items = [];
+    const mine = state.listenings
+      .filter((l) => l.userId === "me" && l.albumId)
+      .sort((a, b) => (a.date < b.date ? 1 : -1));
+    for (const l of mine) {
+      if (seen.has(l.albumId)) continue;
+      seen.add(l.albumId);
+      let al = albumById(l.albumId);
+      if (!al) al = await hydrateAlbumById(l.albumId);
+      items.push({ albumId: l.albumId, al, rating: l.rating });
+      if (items.length >= 12) break;
+    }
+    return items;
+  }
+
+  function openDmShareModal(threadId, kind) {
+    void openDmShareModalWork(threadId, kind);
+  }
+
+  async function openDmShareModalWork(threadId, kind) {
+    if (kind === "moment" || kind === "discovery") {
+      openModal(`<h2>${kind === "moment" ? "Moment musical" : "Découverte"}</h2>
+        <label>Message</label>
+        <input type="text" id="dm-share-text" maxlength="200" placeholder="Ce morceau me fait penser à…" />
+        <p style="margin-top:0.85rem">
+          <button type="button" class="btn btn-primary" id="dm-share-send">Envoyer</button>
+          <button type="button" class="btn btn-ghost" id="dm-share-cancel">Annuler</button>
+        </p>`);
+      document.getElementById("dm-share-cancel").onclick = closeModal;
+      document.getElementById("dm-share-send").onclick = async () => {
+        const text = (document.getElementById("dm-share-text") && document.getElementById("dm-share-text").value.trim()) || "";
+        if (!text) return toast("Écris quelques mots.");
+        try {
+          await sendDmPayload(threadId, { v: 1, type: kind, text });
+          closeModal();
+          toast("Envoyé.");
+          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
+        } catch (e) {
+          toast(e.message || "Erreur");
+        }
+      };
+      return;
+    }
+    openModal(`<h2>Partager ${kind === "preview" ? "un extrait" : kind === "listening" ? "une écoute" : "un album"}</h2>
+      <p class="feed-note">Chargement de ton carnet…</p>
+      <div class="dm-pick-list" id="dm-pick-host"><p class="empty">…</p></div>
+      <p style="margin-top:0.85rem"><button type="button" class="btn btn-ghost" id="dm-share-cancel">Fermer</button></p>`);
+    document.getElementById("dm-share-cancel").onclick = closeModal;
+    const host = document.getElementById("dm-pick-host");
+    try {
+      if (typeof ensureCloudReady === "function") await ensureCloudReady();
+    } catch (_) {}
+    const candidates = await dmShareCandidates();
+    const rows = candidates
+      .filter((c) => c.al)
+      .map(
+        (c) =>
+          `<button type="button" class="dm-pick-row" data-dm-pick-album="${escapeHtml(c.albumId)}" data-dm-pick-rating="${c.rating || ""}">
+          ${coverHtml(c.al, true, "sm")}
+          <span><strong>${escapeHtml(c.al.title)}</strong><span class="feed-note">${escapeHtml(c.al.artist)}</span></span>
+        </button>`
+      )
+      .join("");
+    if (host) {
+      host.innerHTML =
+        rows ||
+        `<p class="empty">Logue une écoute dans ton Journal d'abord, ou synchronise ton compte.</p>`;
+    }
+    document.querySelectorAll("[data-dm-pick-album]").forEach((btn) => {
+      btn.onclick = async () => {
+        const albumId = btn.getAttribute("data-dm-pick-album");
+        let al = albumById(albumId);
+        if (!al) al = await hydrateAlbumById(albumId);
+        if (!al) return toast("Album introuvable — réessaie après sync.");
+        const rating = btn.getAttribute("data-dm-pick-rating");
+        const payload = {
+          v: 1,
+          type: kind === "preview" ? "preview" : kind === "listening" ? "listening" : "album",
+          albumId: al.id,
+          title: al.title,
+          artist: al.artist,
+          year: al.year,
+          genre: al.genre,
+          artworkUrl: bestArtworkUrl(al),
+          rating: rating ? Number(rating) : null,
+        };
+        try {
+          if (kind === "preview") {
+            toast("Préparation de l'extrait…");
+            const preview = await resolveAlbumPreview(al);
+            if (!preview || !preview.url) {
+              toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
+              return;
+            }
+            payload.previewUrl = preview.url;
+            payload.trackName = preview.trackName;
+            payload.previewSource = preview.source;
+          }
+          await sendDmPayload(threadId, payload);
+          closeModal();
+          toast(kind === "preview" ? "Extrait envoyé." : "Partagé dans la conversation.");
+          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
+        } catch (e) {
+          toast(e.message || "Erreur");
+        }
+      };
+    });
   }
 
   function dmSortThreads(items) {
@@ -5722,8 +5885,8 @@
     const acc = document.getElementById("inbox-open-account");
     if (acc) acc.addEventListener("click", () => openAccountModal("signin"));
     if (!window.SLCloud || !SLCloud.isSignedIn()) return;
+    void hydrateInboxList();
     if (route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
-    else void hydrateInboxList();
   }
 
   async function hydrateInboxList() {
@@ -5732,6 +5895,7 @@
     const filterEl = root.querySelector("#dm-thread-filter");
     if (!host) return;
     try {
+      if (typeof ensureCloudReady === "function") await ensureCloudReady();
       const threads = await SLCloud.listDmThreads();
       const activeId = route.dmThreadId;
       const paintThreadList = (q) => {
@@ -7484,8 +7648,29 @@
 
   function registerPwa() {
     if (!("serviceWorker" in navigator)) return;
+    let reloaded = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloaded) return;
+      reloaded = true;
+      window.location.reload();
+    });
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("/sw.js").catch(() => {});
+      navigator.serviceWorker
+        .register("/sw.js?v=7")
+        .then((reg) => {
+          if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
+          reg.update();
+          reg.addEventListener("updatefound", () => {
+            const nw = reg.installing;
+            if (!nw) return;
+            nw.addEventListener("statechange", () => {
+              if (nw.state === "installed" && navigator.serviceWorker.controller) {
+                nw.postMessage({ type: "SKIP_WAITING" });
+              }
+            });
+          });
+        })
+        .catch(() => {});
     });
   }
   registerPwa();

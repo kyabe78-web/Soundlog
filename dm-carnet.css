@@ -856,6 +856,25 @@
   border-color: var(--accent);
 }
 
+/* Drawer messagerie — hauteur pleine (mobile + desktop) */
+.inbox-drawer__inner .dm-page {
+  min-height: 0;
+  max-height: 100dvh;
+  height: 100%;
+  margin: 0;
+}
+
+.inbox-drawer__inner .dm-page--thread .dm-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+.inbox-drawer__inner .dm-chat__body {
+  flex: 1;
+  min-height: 0;
+}
+
 /* Mobile */
 @media (max-width: 768px) {
   .dm-page {
@@ -864,11 +883,18 @@
     min-height: calc(100vh - var(--nav-height, 64px) - 1rem);
   }
 
+  .inbox-drawer__inner .dm-page {
+    min-height: 0;
+    max-height: 100dvh;
+    height: 100dvh;
+  }
+
   .dm-main {
     display: none;
   }
 
-  .dm-page--thread .dm-main {
+  .dm-page--thread .dm-main,
+  .inbox-drawer__inner .dm-page--thread .dm-main {
     display: flex;
   }
 
@@ -880,6 +906,27 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+  }
+
+  .inbox-drawer .dm-compose {
+    padding-bottom: max(0.75rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .inbox-drawer .dm-compose__input,
+  .inbox-drawer .dm-share-search__input {
+    font-size: 16px;
+  }
+
+  .inbox-drawer .dm-share-tray.is-open {
+    max-height: min(46dvh, 300px);
+  }
+
+  .inbox-drawer .dm-share-tabs {
+    flex-shrink: 0;
+  }
+
+  .inbox-drawer .dm-chat__messages.dm-chat__messages--share-open {
+    scroll-padding-bottom: min(46dvh, 300px);
   }
 }
 

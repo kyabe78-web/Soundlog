@@ -1,21 +1,35 @@
-/* Soundlog — service worker (cache shell offline) */
-const CACHE = "soundlog-shell-v6";
+/* Soundlog — service worker (offline shell, network-first for app code) */
+const CACHE = "soundlog-shell-v7";
 const SHELL = [
   "/",
   "/index.html",
   "/manifest.webmanifest",
-  "/styles.css",
-  "/ui-premium.css",
-  "/theme-carnet.css",
-  "/app-shell.css",
-  "/home-carnet.css",
+  "/icons/icon.svg",
+];
+
+const NETWORK_FIRST = [
   "/app.js",
   "/cloud.js",
   "/music-search.js",
   "/log-listen.js",
   "/social-premium.js",
-  "/icons/icon.svg",
+  "/styles.css",
+  "/ui-premium.css",
+  "/theme-carnet.css",
+  "/libraries-carnet.css",
+  "/social-carnet.css",
+  "/dm-carnet.css",
+  "/app-shell.css",
+  "/home-carnet.css",
+  "/diary-carnet.css",
+  "/sonar-carnet.css",
+  "/mobile-shell.css",
+  "/log-listen-carnet.css",
 ];
+
+function isNetworkFirst(pathname) {
+  return NETWORK_FIRST.some((p) => pathname === p || pathname.endsWith(p));
+}
 
 self.addEventListener("install", (event) => {
   event.waitUntil(
@@ -32,12 +46,31 @@ self.addEventListener("activate", (event) => {
   );
 });
 
+self.addEventListener("message", (event) => {
+  if (event.data && event.data.type === "SKIP_WAITING") self.skipWaiting();
+});
+
 self.addEventListener("fetch", (event) => {
   const req = event.request;
   if (req.method !== "GET") return;
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith("/api/")) return;
+
+  if (isNetworkFirst(url.pathname)) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          if (res && res.status === 200 && res.type === "basic") {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy));
+          }
+          return res;
+        })
+        .catch(() => caches.match(req))
+    );
+    return;
+  }
 
   event.respondWith(
     caches.match(req).then((cached) => {

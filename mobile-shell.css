@@ -109,11 +109,6 @@
     scrollbar-width: none;
   }
 
-  .inbox-drawer {
-    width: 100vw;
-    max-width: 100vw;
-  }
-
   .icon-btn,
   .topbar-messages {
     min-width: 44px;

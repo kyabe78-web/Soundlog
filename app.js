@@ -157,6 +157,8 @@
       sentInvites: [],
       adaptive: defaultAdaptive(),
       previewByAlbumId: {},
+      eventInterestLocal: {},
+      upcomingTourPreview: [],
     };
   }
 
@@ -214,6 +216,9 @@
           }
           return cleaned;
         })(),
+        eventInterestLocal:
+          parsed.eventInterestLocal && typeof parsed.eventInterestLocal === "object" ? parsed.eventInterestLocal : base.eventInterestLocal,
+        upcomingTourPreview: Array.isArray(parsed.upcomingTourPreview) ? parsed.upcomingTourPreview : base.upcomingTourPreview,
       };
     } catch {
       return defaultState();
@@ -237,7 +242,7 @@
     if (typeof window.__slSchedulePushCloud === "function") window.__slSchedulePushCloud();
   }
 
-  const route = { view: "home", albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null };
+  const route = { view: "home", albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null, dmThreadId: null };
 
   /** Dernière « clé de route » déjà enregistrée par Sonar (évite les doublons entre deux rendus). */
   let adaptiveRouteKeySeen = "__init__";
@@ -1042,6 +1047,8 @@
     state.manualTourDates = state.manualTourDates || [];
     state.invitedPeers = state.invitedPeers || [];
     state.sentInvites = state.sentInvites || [];
+    state.eventInterestLocal = state.eventInterestLocal && typeof state.eventInterestLocal === "object" ? state.eventInterestLocal : {};
+    state.upcomingTourPreview = Array.isArray(state.upcomingTourPreview) ? state.upcomingTourPreview : [];
   }
 
   function ensureProfileExtras() {
@@ -1460,6 +1467,16 @@
     }
     const userCity = (state.settings && state.settings.alertCity) || "";
     const favs = [...new Set(state.favoriteArtists.map((a) => String(a).trim()).filter(Boolean))].slice(0, 14);
+    const preview = [];
+    const previewSeen = new Set();
+    function pushPreview(artist, datetime, venue, city, url, source) {
+      if (!datetime || !withinAlertWindow(datetime)) return;
+      const cityLine = [venue, city].filter(Boolean).join(" — ");
+      const key = tourSeenKey(artist, datetime, cityLine);
+      if (previewSeen.has(key)) return;
+      previewSeen.add(key);
+      preview.push({ key, artist, datetime, venue: venue || "", city: city || "", url: url || "", source });
+    }
 
     for (const row of state.manualTourDates) {
       if (!favs.some((f) => normalizeArtistKey(f) === normalizeArtistKey(row.artist))) continue;
@@ -1471,6 +1488,7 @@
       if (!withinAlertWindow(m.datetime)) continue;
       if (!eventMatchesUserCity({ city: m.city, region: m.region, country: m.country }, userCity)) continue;
       maybeNotifyTour(row.artist, m.datetime, m.venueName, m.city, m.url);
+      pushPreview(row.artist, m.datetime, m.venueName, m.city, m.url, "manual");
     }
 
     for (const artist of favs) {
@@ -1481,12 +1499,17 @@
           if (!m.datetime || !withinAlertWindow(m.datetime)) continue;
           if (!eventMatchesUserCity({ city: m.city, region: m.region, country: m.country }, userCity)) continue;
           const art = (ev.lineup && ev.lineup[0] && ev.lineup[0].name) || ev.artist_id || artist;
-          maybeNotifyTour(String(art || artist), m.datetime, m.venueName, m.city, m.url);
+          const name = String(art || artist);
+          maybeNotifyTour(name, m.datetime, m.venueName, m.city, m.url);
+          pushPreview(name, m.datetime, m.venueName, m.city, m.url, "bit");
         }
       } catch (_) {
         /* API souvent bloquée hors navigateur ou par rate-limit — dates manuelles restent disponibles */
       }
     }
+
+    preview.sort((a, b) => String(a.datetime).localeCompare(String(b.datetime)));
+    state.upcomingTourPreview = preview.slice(0, 48);
 
     state.lastTourSyncAt = new Date().toISOString();
     persist();
@@ -1784,11 +1807,15 @@
     list: "Liste",
     join: "Invitation",
     search: "Recherche",
+    inbox: "Messages",
   };
 
   function setNavActive() {
     document.querySelectorAll(".nav-link[data-view]").forEach((b) => {
-      b.classList.toggle("active", route.view !== "join" && b.dataset.view === route.view);
+      const active =
+        route.view !== "join" &&
+        (b.dataset.view === route.view || (route.view === "inbox" && b.dataset.view === "social"));
+      b.classList.toggle("active", active);
     });
     const titleEl = document.getElementById("topbar-title");
     if (titleEl) {
@@ -1796,6 +1823,7 @@
       else if (route.view === "album") titleEl.textContent = "Album";
       else if (route.view === "profile") titleEl.textContent = "Profil";
       else if (route.view === "list") titleEl.textContent = "Liste";
+      else if (route.view === "inbox") titleEl.textContent = "Messages";
       else titleEl.textContent = NAV_LABELS[route.view] || "Soundlog";
     }
   }
@@ -1849,7 +1877,7 @@
       pop.hidden = true;
       bell.setAttribute("aria-expanded", "false");
     }
-    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null }, extra || {});
+    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null }, extra || {});
     window.location.hash = buildHash();
     render();
   }
@@ -1858,6 +1886,8 @@
     if (route.view === "album" && route.albumId) return `#album/${route.albumId}`;
     if (route.view === "profile" && route.userId) return `#profil/${route.userId}`;
     if (route.view === "list" && route.listId) return `#liste/${route.listId}`;
+    if (route.view === "inbox" && route.dmThreadId) return `#messagerie/${route.dmThreadId}`;
+    if (route.view === "inbox") return "#messagerie";
     if (route.view === "discover" && route.discoverGenre) return `#decouvrir/${encodeURIComponent(route.discoverGenre)}`;
     const map = {
       home: "",
@@ -1877,6 +1907,7 @@
     route.userId = null;
     route.listId = null;
     route.discoverGenre = null;
+    route.dmThreadId = null;
     route.joinInviteRaw = null;
     const h = (window.location.hash || "#").slice(1);
     if (h.startsWith("album/")) {
@@ -1898,6 +1929,10 @@
     else if (h === "i-was-there") route.view = "iwas";
     else if (h === "a-ecouter") route.view = "wishlist";
     else if (h === "communaute") route.view = "social";
+    else if (h.startsWith("messagerie/")) {
+      route.view = "inbox";
+      route.dmThreadId = h.slice("messagerie/".length);
+    } else if (h === "messagerie") route.view = "inbox";
     else if (h.startsWith("rejoindre/")) {
       route.view = "join";
       route.joinInviteRaw = h.slice("rejoindre/".length);
@@ -1923,6 +1958,61 @@
     return (state.concertLogs || [])
       .filter((c) => ids.has(c.userId))
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  }
+
+  function collectMyTasteAlbumIds() {
+    const s = new Set();
+    state.listenings.filter((l) => l.userId === "me").forEach((l) => s.add(l.albumId));
+    (state.wishlist || []).forEach((id) => s.add(id));
+    state.lists.filter((l) => l.userId === "me").forEach((l) => (l.albumIds || []).forEach((id) => s.add(id)));
+    return s;
+  }
+
+  function collectLocalTasteAlbumIdsForUser(userId) {
+    const s = new Set();
+    state.listenings.filter((l) => l.userId === userId).forEach((l) => s.add(l.albumId));
+    state.lists.filter((l) => l.userId === userId).forEach((l) => (l.albumIds || []).forEach((id) => s.add(id)));
+    if (userId === "me") (state.wishlist || []).forEach((id) => s.add(id));
+    return s;
+  }
+
+  function tasteOverlapScore(setA, setB) {
+    if (!setA.size && !setB.size) return { score: 0, shared: 0, union: 0, j: 0 };
+    let inter = 0;
+    for (const x of setA) if (setB.has(x)) inter++;
+    const union = new Set([...setA, ...setB]).size;
+    const j = union ? inter / union : 0;
+    const denom = Math.max(setA.size, setB.size, 1);
+    const score = Math.min(100, Math.round(100 * (0.55 * j + 0.45 * (inter / denom))));
+    return { score, shared: inter, union, j };
+  }
+
+  async function computeMusicCompatibilityWith(uid) {
+    const mine = collectMyTasteAlbumIds();
+    const uuidPeer =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(uid));
+    if (!uuidPeer || !window.SLCloud || !SLCloud.ready || !SLCloud.client) {
+      const peerLocal = collectLocalTasteAlbumIdsForUser(uid);
+      return { ...tasteOverlapScore(mine, peerLocal), sharedAlbumIds: [...mine].filter((a) => peerLocal.has(a)).slice(0, 12) };
+    }
+    const peer = new Set();
+    try {
+      const [lis, listRows] = await Promise.all([SLCloud.listListeningsByUser(uid), SLCloud.listListsByUser(uid)]);
+      (lis || []).forEach((l) => peer.add(l.album_id));
+      (listRows || []).forEach((lst) => (lst.list_items || []).forEach((it) => peer.add(it.album_id)));
+    } catch (_) {}
+    const ov = tasteOverlapScore(mine, peer);
+    const sharedAlbumIds = [...mine].filter((a) => peer.has(a)).slice(0, 16);
+    return { ...ov, sharedAlbumIds };
+  }
+
+  function myEventInterestKeys() {
+    ensureSocialArrays();
+    const keys = new Set();
+    Object.keys(state.eventInterestLocal || {}).forEach((k) => {
+      if (state.eventInterestLocal[k]) keys.add(k);
+    });
+    return keys;
   }
 
   /**
@@ -2237,17 +2327,54 @@
     const manualRows = (state.manualTourDates || [])
       .slice()
       .sort((a, b) => (a.datetime < b.datetime ? -1 : 1))
-      .map(
-        (row) =>
-          `<tr>
+      .map((row) => {
+        const evKey = tourSeenKey(row.artist, row.datetime, [row.venue, row.city].filter(Boolean).join(" — "));
+        const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[evKey]);
+        return `<tr>
         <td>${escapeHtml(row.artist)}</td>
         <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
         <td>${escapeHtml(row.venue || "")}</td>
         <td>${escapeHtml(row.city || "")}</td>
+        <td>
+          <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
+            data-ev-key="${escapeHtml(evKey)}"
+            data-ev-artist="${escapeHtml(row.artist)}"
+            data-ev-dt="${escapeHtml(row.datetime || "")}"
+            data-ev-venue="${escapeHtml(row.venue || "")}"
+            data-ev-city="${escapeHtml(row.city || "")}"
+            data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
+          <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(evKey)}"></div>
+        </td>
         <td><button type="button" class="btn btn-ghost btn-sm" data-rm-manual-tour="${escapeHtml(row.id)}">Retirer</button></td>
-      </tr>`
-      )
+      </tr>`;
+      })
       .join("");
+
+    const previewRows =
+      (state.upcomingTourPreview || []).length === 0
+        ? `<tr><td colspan="6" class="empty">Rien pour l’instant — lance « Vérifier les dates maintenant ».</td></tr>`
+        : (state.upcomingTourPreview || [])
+            .map((row) => {
+              const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[row.key]);
+              return `<tr>
+            <td>${escapeHtml(row.artist)}</td>
+            <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
+            <td>${escapeHtml(row.venue || "")}</td>
+            <td>${escapeHtml(row.city || "")}</td>
+            <td><span class="feed-note">${row.source === "bit" ? "API" : "Manuel"}</span></td>
+            <td>
+              <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
+                data-ev-key="${escapeHtml(row.key)}"
+                data-ev-artist="${escapeHtml(row.artist)}"
+                data-ev-dt="${escapeHtml(row.datetime || "")}"
+                data-ev-venue="${escapeHtml(row.venue || "")}"
+                data-ev-city="${escapeHtml(row.city || "")}"
+                data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
+              <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(row.key)}"></div>
+            </td>
+          </tr>`;
+            })
+            .join("");
 
     const sentInv = (state.sentInvites || []).slice().reverse().slice(0, 12);
     const sentInvitesHtml =
@@ -2275,7 +2402,8 @@
         <div>
           <p class="social-kicker">Cercle &amp; alertes</p>
           <h1 class="page-title">Communauté</h1>
-          <p class="page-sub">Ami·es, murmures, commentaires sur le fil d’accueil, et <strong>alertes concerts</strong> pour les artistes que tu suis (ville + API Bandsintown quand le navigateur y accède, sinon dates saisies à la main).</p>
+          <p class="page-sub">Ami·es, <strong>messages privés</strong>, test de <strong>compatibilité musicale</strong>, murmures et <strong>alertes concerts</strong>. Dis si tu es intéressé·e par une date : tes ami·es connecté·es le verront.</p>
+          <p class="social-hero-tools"><button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messagerie (ami·es)</button></p>
         </div>
       </header>
 
@@ -2302,8 +2430,16 @@
         <p><button type="button" class="btn btn-primary" id="social-man-add">Ajouter cette date</button></p>
         <div class="table-wrap">
           <table class="data-table">
-            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th></th></tr></thead>
-            <tbody>${manualRows || `<tr><td colspan="5" class="empty">Aucune date manuelle.</td></tr>`}</tbody>
+            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Envies</th><th></th></tr></thead>
+            <tbody>${manualRows || `<tr><td colspan="6" class="empty">Aucune date manuelle.</td></tr>`}</tbody>
+          </table>
+        </div>
+        <h3 style="margin-top:1.5rem">Prochains concerts repérés</h3>
+        <p class="feed-note">Liste mise à jour quand tu cliques « Vérifier les dates maintenant » (même clé de lieu/date pour tout le monde : tes ami·es Soundlog voient qui est partant·e).</p>
+        <div class="table-wrap">
+          <table class="data-table">
+            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Source</th><th>Envies</th></tr></thead>
+            <tbody>${previewRows}</tbody>
           </table>
         </div>
       </section>
@@ -2324,6 +2460,37 @@
       </div>
 
       ${shoutForm}
+    </div>`;
+  }
+
+  function renderInbox() {
+    const signed = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
+    if (!signed) {
+      return `<div class="inbox-view view-themed">
+        <header class="discover-hero"><h1 class="page-title">Messages</h1>
+        <p class="page-sub">Connecte-toi avec ton compte Soundlog pour chater avec tes ami·es.</p>
+        <button type="button" class="btn btn-primary" id="inbox-open-account">Se connecter</button></header></div>`;
+    }
+    const threadPanel =
+      route.dmThreadId
+        ? `<div class="inbox-thread-panel" id="inbox-thread-panel" data-thread-id="${escapeHtml(route.dmThreadId)}">
+             <div class="inbox-thread-head"><button type="button" class="btn btn-ghost btn-sm" data-inbox-back>← Retour</button></div>
+             <div class="inbox-messages" id="inbox-messages"></div>
+             <form class="inbox-compose" id="inbox-compose">
+               <label class="visually-hidden" for="inbox-msg-input">Message</label>
+               <textarea id="inbox-msg-input" rows="2" maxlength="2000" placeholder="Écrire…"></textarea>
+               <button type="submit" class="btn btn-primary">Envoyer</button>
+             </form>
+           </div>`
+        : `<div class="inbox-list-panel" id="inbox-list-panel">
+             <p class="feed-note" id="inbox-list-here">Chargement…</p>
+           </div>`;
+    return `<div class="inbox-view view-themed inbox-split">
+      <header class="inbox-hero">
+        <h1 class="page-title">Messagerie</h1>
+        <p class="page-sub">Discute uniquement avec tes <strong>ami·es Soundlog</strong>. Les nouveaux messages arrivent en temps réel quand la migration SQL est appliquée.</p>
+      </header>
+      ${threadPanel}
     </div>`;
   }
 
@@ -2961,6 +3128,23 @@
           }</button>`
         : `<button type="button" class="btn btn-ghost" id="btn-edit-profile">Modifier le profil</button>`;
 
+    const uuidPeer =
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(String(uid));
+    const canDm =
+      !isMe && isFriend(uid) && uuidPeer && window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
+    const friendTools =
+      !isMe && isFriend(uid)
+        ? `<div class="profile-friend-tools">
+             <div class="compat-meter" aria-label="Compatibilité musicale">
+               <span class="compat-meter__label">Compat</span>
+               <div class="compat-meter__track"><span class="compat-meter__fill" data-compat-fill style="width:0%"></span></div>
+               <strong class="compat-meter__pct" data-compat-pct>…</strong>
+             </div>
+             <button type="button" class="btn btn-ghost btn-sm" data-compat-detail="${escapeHtml(uid)}">Test détaillé</button>
+             ${canDm ? `<button type="button" class="btn btn-primary btn-sm" data-open-dm="${escapeHtml(uid)}">Message</button>` : ""}
+           </div>`
+        : "";
+
     const profileActions = `<div class="profile-actions-row">${followBtn}${friendBlock ? ` <span class="profile-actions-gap"></span> ${friendBlock}` : ""}</div>`;
 
     const recent = listenings
@@ -3015,6 +3199,7 @@
           <p class="page-sub profile-head__handle" style="margin:0">@${escapeHtml(u.handle)}</p>
           <p class="profile-head__bio">${escapeHtml(u.bio)}</p>
           ${profileActions}
+          ${friendTools}
         </div>
       </div>
       <div class="stats stats-5 profile-stats">
@@ -3261,6 +3446,9 @@
         case "social":
           html = renderSocial();
           break;
+        case "inbox":
+          html = renderInbox();
+          break;
         case "join":
           html = renderJoin();
           break;
@@ -3304,6 +3492,9 @@
     injectCloudCommentsButtons();
     injectProfileImports();
     injectDiscoverRecos();
+    injectProfileCompatibility();
+    injectSocialEventInterests();
+    injectInboxHydration();
   }
 
   // ---------- Affichage des playlists importées sur le profil ----------
@@ -3475,6 +3666,155 @@
       } catch (e) { console.warn("[recos]", e); }
     })();
   }
+
+  async function injectProfileCompatibility() {
+    if (route.view !== "profile") return;
+    const uid = route.userId || "me";
+    if (uid === "me") return;
+    ensureSocialArrays();
+    if (!isFriend(uid)) return;
+    const wrap = document.querySelector(".profile-friend-tools");
+    if (!wrap) return;
+    const fill = wrap.querySelector("[data-compat-fill]");
+    const pct = wrap.querySelector("[data-compat-pct]");
+    if (!fill || !pct) return;
+    try {
+      const r = await computeMusicCompatibilityWith(uid);
+      fill.style.width = r.score + "%";
+      pct.textContent = r.score + "% · " + r.shared + " disques en commun";
+    } catch (_) {
+      pct.textContent = "—";
+    }
+  }
+
+  async function injectSocialEventInterests() {
+    if (route.view !== "social") return;
+    if (window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn()) {
+      try {
+        const cloudKeys = await SLCloud.listMyEventInterestKeys();
+        state.eventInterestLocal = state.eventInterestLocal || {};
+        cloudKeys.forEach((k) => {
+          state.eventInterestLocal[k] = true;
+        });
+        document.querySelectorAll(".event-interest-toggle").forEach((btn) => {
+          const k = btn.getAttribute("data-ev-key");
+          if (k && cloudKeys.includes(k)) btn.classList.add("is-on");
+        });
+      } catch (_) {}
+    }
+    if (!window.SLCloud || !SLCloud.isSignedIn || !SLCloud.isSignedIn()) return;
+    const friendIdSet = new Set();
+    try {
+      (await SLCloud.listFriends()).forEach((p) => friendIdSet.add(p.id));
+    } catch (_) {}
+    const els = document.querySelectorAll("[data-ev-friends]");
+    for (const el of els) {
+      const key = el.getAttribute("data-ev-friends");
+      if (!key) continue;
+      try {
+        const rows = await SLCloud.listEventInterestsForKey(key);
+        const names = rows
+          .filter((r) => r.user_id !== SLCloud.me.id && friendIdSet.has(r.user_id))
+          .map((r) => {
+            const p = r.profiles;
+            return p && (p.name || p.handle) ? p.name || "@" + p.handle : "";
+          })
+          .filter(Boolean);
+        el.textContent = names.length ? "Ami·es partant·es : " + names.join(", ") : "";
+      } catch (_) {
+        el.textContent = "";
+      }
+    }
+  }
+
+  function injectInboxHydration() {
+    if (route.view !== "inbox") return;
+    const acc = document.getElementById("inbox-open-account");
+    if (acc) acc.addEventListener("click", () => openAccountModal("signin"));
+    if (!window.SLCloud || !SLCloud.isSignedIn()) return;
+    if (route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
+    else void hydrateInboxList();
+  }
+
+  async function hydrateInboxList() {
+    const host = document.getElementById("inbox-list-panel");
+    if (!host) return;
+    try {
+      const threads = await SLCloud.listDmThreads();
+      if (!threads.length) {
+        host.innerHTML = `<p class="empty">Aucune conversation. Ouvre le profil d’une personne avec qui tu es ami·e et clique « Message ».</p>`;
+        return;
+      }
+      host.innerHTML = `<ul class="inbox-thread-list">${threads
+        .map(({ thread, other, lastMessage }) => {
+          const name = other ? escapeHtml(other.name) : "…";
+          const handle = other ? escapeHtml(other.handle) : "";
+          const preview = lastMessage ? escapeHtml(String(lastMessage.body || "").slice(0, 72)) : "…";
+          const hue = other && other.hue != null ? other.hue : 200;
+          const initial = other ? escapeHtml(String(other.name || "?").charAt(0).toUpperCase()) : "?";
+          return `<li><button type="button" class="inbox-thread-row" data-open-thread="${escapeHtml(thread.id)}">
+          <span class="inbox-thread-avatar" style="background:hsl(${hue},55%,42%)">${initial}</span>
+          <span class="inbox-thread-meta"><strong>${name}</strong><span class="feed-note">@${handle}</span><span class="inbox-thread-preview">${preview}</span></span>
+        </button></li>`;
+        })
+        .join("")}</ul>`;
+      host.querySelectorAll("[data-open-thread]").forEach((b) => {
+        b.addEventListener("click", () => {
+          route.dmThreadId = b.getAttribute("data-open-thread");
+          window.location.hash = "#messagerie/" + route.dmThreadId;
+          render();
+        });
+      });
+    } catch (e) {
+      host.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur")}</p>`;
+    }
+  }
+
+  async function hydrateInboxThread(threadId) {
+    const box = document.getElementById("inbox-messages");
+    const form = document.getElementById("inbox-compose");
+    const ta = document.getElementById("inbox-msg-input");
+    if (!box || !form || !ta) return;
+    const renderMsgs = (msgs) => {
+      const me = SLCloud.me.id;
+      box.innerHTML = msgs.length
+        ? msgs
+            .map(
+              (m) =>
+                `<div class="dm-bubble ${m.sender_id === me ? "dm-bubble--me" : "dm-bubble--them"}"><p>${escapeHtml(m.body)}</p><span class="feed-note">${escapeHtml(
+                  (m.created_at || "").slice(11, 16)
+                )}</span></div>`
+            )
+            .join("")
+        : `<p class="feed-note">Écris le premier message 💬</p>`;
+      box.scrollTop = box.scrollHeight;
+    };
+    try {
+      renderMsgs(await SLCloud.listDmMessages(threadId));
+    } catch (e) {
+      box.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "")}</p>`;
+    }
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+      const t = ta.value.trim();
+      if (!t) return;
+      try {
+        await SLCloud.sendDmMessage(threadId, t);
+        ta.value = "";
+        renderMsgs(await SLCloud.listDmMessages(threadId));
+      } catch (err) {
+        toast(err.message || "Envoi impossible");
+      }
+    };
+    document.querySelectorAll("[data-inbox-back]").forEach((b) => {
+      b.onclick = () => {
+        route.dmThreadId = null;
+        window.location.hash = "#messagerie";
+        render();
+      };
+    });
+  }
+
   // Reset cache après import
   function resetRecoCache() { discoverRecosCache = null; }
   window.__sl = window.__sl || {};
@@ -3773,6 +4113,87 @@
         e.stopPropagation();
         const v = b.getAttribute("data-nav-view");
         if (v) navigate(v);
+      });
+    });
+    document.querySelectorAll("[data-open-dm]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const uid = b.getAttribute("data-open-dm");
+        if (!window.SLCloud || !SLCloud.isSignedIn()) {
+          toast("Connecte-toi pour envoyer un message.");
+          return;
+        }
+        try {
+          const tid = await SLCloud.ensureDmThread(uid);
+          route.dmThreadId = tid;
+          window.location.hash = "#messagerie/" + tid;
+          render();
+        } catch (e) {
+          toast(e.message || "Impossible d’ouvrir la discussion.");
+        }
+      });
+    });
+    document.querySelectorAll("[data-compat-detail]").forEach((b) => {
+      b.addEventListener("click", async () => {
+        const uid = b.getAttribute("data-compat-detail");
+        try {
+          const r = await computeMusicCompatibilityWith(uid);
+          const albums = (r.sharedAlbumIds || []).map((id) => albumById(id)).filter(Boolean).slice(0, 12);
+          const grid = albums
+            .map(
+              (al) =>
+                `<div class="album-card" data-album="${al.id}">${coverHtml(al, true)}<div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div></div>`
+            )
+            .join("");
+          openModal(`<h2>Test de compatibilité</h2>
+            <p class="page-sub">Score <strong>${r.score}%</strong> — ${r.shared} albums en commun (${r.union} uniques au total dans nos goûts comparés).</p>
+            <p class="feed-note">Basé sur nos <strong>écoutes publiques</strong> et <strong>listes publiques</strong> Soundlog (ta pile « à écouter » côté toi uniquement).</p>
+            <div class="grid-albums" style="margin-top:1rem">${grid || `<p class="empty">Pas d’album en commun indexé pour l’instant.</p>`}</div>`);
+          document.querySelectorAll("#modal-bd [data-album]").forEach((el) => {
+            el.addEventListener("click", () => {
+              const id = el.getAttribute("data-album");
+              closeModal();
+              navigate("album", { albumId: id });
+            });
+          });
+        } catch (e) {
+          toast(e.message || "Impossible de calculer.");
+        }
+      });
+    });
+    document.querySelectorAll(".event-interest-toggle").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const key = btn.getAttribute("data-ev-key");
+        if (!key) return;
+        const on = !btn.classList.contains("is-on");
+        btn.classList.toggle("is-on", on);
+        state.eventInterestLocal = state.eventInterestLocal || {};
+        if (on) {
+          state.eventInterestLocal[key] = true;
+          if (window.SLCloud && SLCloud.isSignedIn()) {
+            try {
+              await SLCloud.upsertEventInterest({
+                eventKey: key,
+                artist: btn.getAttribute("data-ev-artist") || "",
+                datetimeIso: btn.getAttribute("data-ev-dt") || "",
+                venue: btn.getAttribute("data-ev-venue") || "",
+                city: btn.getAttribute("data-ev-city") || "",
+                eventUrl: btn.getAttribute("data-ev-url") || "",
+              });
+              toast("Marqué comme intéressé·e — tes ami·es le verront.");
+            } catch (e) {
+              toast(e.message || "Synchro impossible (migration SQL v3 appliquée ?)");
+            }
+          } else toast("Noté en local — connecte-toi pour partager avec tes ami·es.");
+        } else {
+          delete state.eventInterestLocal[key];
+          if (window.SLCloud && SLCloud.isSignedIn()) {
+            try {
+              await SLCloud.removeEventInterest(key);
+            } catch (_) {}
+          }
+        }
+        persist();
+        if (route.view === "social" && window.SLCloud && SLCloud.isSignedIn()) void injectSocialEventInterests();
       });
     });
     const btnEditProf = document.getElementById("btn-edit-profile");
@@ -5403,6 +5824,12 @@
           });
           updateHeaderNotifications();
         }
+      },
+      onDmMessage: () => {
+        if (route.view === "inbox" && route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
+      },
+      onEventInterest: () => {
+        if (route.view === "social") void injectSocialEventInterests();
       },
     });
   }

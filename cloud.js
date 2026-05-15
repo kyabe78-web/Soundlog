@@ -544,8 +544,117 @@
       await this.client.from("imported_tracks").delete().eq("playlist_id", id);
     },
 
+    // ---------- Intérêts concerts (dates à venir) ----------
+    async upsertEventInterest(payload) {
+      if (!this.me) throw new Error("Pas connecté");
+      const row = {
+        user_id: this.me.id,
+        event_key: payload.eventKey,
+        artist: payload.artist || "",
+        datetime_iso: payload.datetimeIso || "",
+        venue: payload.venue || "",
+        city: payload.city || "",
+        event_url: payload.eventUrl || "",
+      };
+      const { error } = await this.client.from("event_interests").upsert(row, { onConflict: "user_id,event_key" });
+      if (error) throw error;
+    },
+
+    async removeEventInterest(eventKey) {
+      if (!this.me) return;
+      await this.client.from("event_interests").delete().eq("user_id", this.me.id).eq("event_key", eventKey);
+    },
+
+    async listEventInterestsForKey(eventKey) {
+      const { data } = await this.client
+        .from("event_interests")
+        .select("user_id, created_at, profiles:user_id(id,handle,name,hue,avatar_url)")
+        .eq("event_key", eventKey);
+      return data || [];
+    },
+
+    async listMyEventInterestKeys() {
+      if (!this.me) return [];
+      const { data } = await this.client.from("event_interests").select("event_key").eq("user_id", this.me.id);
+      return (data || []).map((r) => r.event_key);
+    },
+
+    // ---------- Messages privés (ami·es uniquement) ----------
+    async areFriends(otherUserId) {
+      if (!this.me || !otherUserId) return false;
+      const a = this.me.id < otherUserId ? this.me.id : otherUserId;
+      const b = this.me.id < otherUserId ? otherUserId : this.me.id;
+      const { data } = await this.client.from("friends").select("a_id").eq("a_id", a).eq("b_id", b).maybeSingle();
+      return !!data;
+    },
+
+    async ensureDmThread(otherUserId) {
+      if (!this.me) throw new Error("Pas connecté");
+      if (otherUserId === this.me.id) throw new Error("Impossible d’écrire à soi-même");
+      const ok = await this.areFriends(otherUserId);
+      if (!ok) throw new Error("Tu ne peux écrire qu’à tes ami·es Soundlog.");
+      const a = this.me.id < otherUserId ? this.me.id : otherUserId;
+      const b = this.me.id < otherUserId ? otherUserId : this.me.id;
+      const { data: ex } = await this.client.from("dm_threads").select("id").eq("user_a", a).eq("user_b", b).maybeSingle();
+      if (ex) return ex.id;
+      const { data: ins, error } = await this.client.from("dm_threads").insert({ user_a: a, user_b: b }).select("id").maybeSingle();
+      if (error) throw error;
+      return ins.id;
+    },
+
+    async sendDmMessage(threadId, body) {
+      if (!this.me) throw new Error("Pas connecté");
+      const text = String(body || "").trim();
+      if (!text) throw new Error("Message vide");
+      const { data, error } = await this.client
+        .from("dm_messages")
+        .insert({ thread_id: threadId, sender_id: this.me.id, body: text.slice(0, 2000) })
+        .select("id,thread_id,sender_id,body,created_at")
+        .maybeSingle();
+      if (error) throw error;
+      await this.client.from("dm_threads").update({ updated_at: new Date().toISOString() }).eq("id", threadId);
+      return data;
+    },
+
+    async listDmThreads() {
+      if (!this.me) return [];
+      const uid = this.me.id;
+      const { data: threads } = await this.client
+        .from("dm_threads")
+        .select("id,user_a,user_b,updated_at")
+        .or(`user_a.eq.${uid},user_b.eq.${uid}`)
+        .order("updated_at", { ascending: false });
+      if (!threads || !threads.length) return [];
+      const otherIds = [...new Set(threads.map((t) => (t.user_a === uid ? t.user_b : t.user_a)))];
+      const { data: profs } = await this.client.from("profiles").select("*").in("id", otherIds);
+      const profById = new Map((profs || []).map((p) => [p.id, p]));
+      const out = [];
+      for (const th of threads) {
+        const oid = th.user_a === uid ? th.user_b : th.user_a;
+        const { data: last } = await this.client
+          .from("dm_messages")
+          .select("body,created_at,sender_id")
+          .eq("thread_id", th.id)
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        out.push({ thread: th, other: profById.get(oid), lastMessage: last || null });
+      }
+      return out;
+    },
+
+    async listDmMessages(threadId, limit = 100) {
+      const { data } = await this.client
+        .from("dm_messages")
+        .select("id,thread_id,sender_id,body,created_at")
+        .eq("thread_id", threadId)
+        .order("created_at", { ascending: true })
+        .limit(limit);
+      return data || [];
+    },
+
     // ---------- Realtime ----------
-    realtimeSubscribe({ onListening, onComment, onShoutout, onFriendRequest, onFollow }) {
+    realtimeSubscribe({ onListening, onComment, onShoutout, onFriendRequest, onFollow, onDmMessage, onEventInterest }) {
       if (!this.ready) return null;
       const ch = this.client.channel("soundlog-live");
       if (onListening) ch.on("postgres_changes", { event: "*", schema: "public", table: "listenings" }, (p) => onListening(p));
@@ -553,6 +662,8 @@
       if (onShoutout)  ch.on("postgres_changes", { event: "*", schema: "public", table: "shoutouts" }, (p) => onShoutout(p));
       if (onFriendRequest) ch.on("postgres_changes", { event: "*", schema: "public", table: "friend_requests" }, (p) => onFriendRequest(p));
       if (onFollow)    ch.on("postgres_changes", { event: "*", schema: "public", table: "follows" }, (p) => onFollow(p));
+      if (onDmMessage) ch.on("postgres_changes", { event: "*", schema: "public", table: "dm_messages" }, (p) => onDmMessage(p));
+      if (onEventInterest) ch.on("postgres_changes", { event: "*", schema: "public", table: "event_interests" }, (p) => onEventInterest(p));
       ch.subscribe();
       return ch;
     },

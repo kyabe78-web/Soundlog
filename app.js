@@ -3671,6 +3671,7 @@
         if (i >= 0) state.wishlist.splice(i, 1);
         else state.wishlist.push(al.id);
         persist();
+        if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
         toast(i >= 0 ? "Retiré de la pile." : "Ajouté à « À écouter ».");
         render();
       });
@@ -3685,6 +3686,7 @@
         if (lst && !lst.albumIds.includes(route.albumId)) {
           lst.albumIds.push(route.albumId);
           persist();
+          if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
           toast("Album ajouté à la liste.");
         } else toast("Déjà dans cette liste.");
       });
@@ -3704,6 +3706,7 @@
         const id = b.getAttribute("data-del-listen");
         state.listenings = state.listenings.filter((l) => l.id !== id);
         persist();
+        if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
         toast("Entrée supprimée.");
         render();
       });
@@ -3714,6 +3717,7 @@
         const id = b.getAttribute("data-rm-wish");
         state.wishlist = state.wishlist.filter((x) => x !== id);
         persist();
+        if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
         render();
       });
     });
@@ -3725,6 +3729,7 @@
         state.wishlist = state.wishlist || [];
         state.wishlist.push(id);
         persist();
+        if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
         toast("Ajouté à ta pile « à écouter ».");
         render();
       });
@@ -4221,6 +4226,7 @@
         notes,
       });
       persist();
+      if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
       closeModal();
       toast("Concert ajouté — I was there !");
       navigate("iwas");
@@ -4246,6 +4252,7 @@
         albumIds: [],
       });
       persist();
+      if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
       closeModal();
       toast("Liste créée.");
       navigate("list", { listId: id });
@@ -4324,6 +4331,7 @@
       ensureAdaptive();
       state.adaptive.listenLogs = (state.adaptive.listenLogs || 0) + 1;
       persist();
+      if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
       closeModal();
       toast("Journal mis à jour.");
       navigate("diary");
@@ -4889,7 +4897,7 @@
   function schedulePushCloud() {
     if (!SLCloud || !SLCloud.isSignedIn || !SLCloud.isSignedIn()) return;
     clearTimeout(cloudPushTimer);
-    cloudPushTimer = setTimeout(pushCloudFull, 800);
+    cloudPushTimer = setTimeout(pushCloudFull, 400);
   }
   window.__slSchedulePushCloud = schedulePushCloud;
   async function pushCloudFull() {
@@ -4905,15 +4913,16 @@
         const al = albumById(aid);
         if (al) await SLCloud.upsertAlbum(al);
       }
-      // 2. Écoutes
+      // 2. Écoutes (l'UI utilise `review`; la base utilise `comment`)
       for (const l of state.listenings.filter((l) => l.userId === "me")) {
+        const text = l.comment != null && l.comment !== "" ? l.comment : (l.review || "");
         await SLCloud.upsertListening({
           id: l.id,
           userId: cloudId,
           albumId: l.albumId,
           rating: l.rating,
-          comment: l.comment,
-          commentAt: l.commentAt,
+          comment: text,
+          commentAt: l.commentAt != null ? l.commentAt : null,
           date: l.date,
         });
       }
@@ -4951,10 +4960,66 @@
     }
   }
 
+  /** Fusionne deux listes d'ids en gardant l'ordre du serveur puis les ajouts locaux non présents. */
+  function mergeOrderedUnique(primary, secondary) {
+    const seen = new Set();
+    const out = [];
+    for (const id of primary || []) {
+      if (id == null || id === "") continue;
+      const k = String(id);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(id);
+    }
+    for (const id of secondary || []) {
+      if (id == null || id === "") continue;
+      const k = String(id);
+      if (seen.has(k)) continue;
+      seen.add(k);
+      out.push(id);
+    }
+    return out;
+  }
+
+  let cloudPushRunning = false;
+  async function flushCloudPush() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = null;
+    if (cloudPushRunning) return;
+    cloudPushRunning = true;
+    try {
+      await pushCloudFull();
+    } finally {
+      cloudPushRunning = false;
+    }
+  }
+  window.__slFlushCloudPush = flushCloudPush;
+
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState === "hidden" && typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
+  });
+  window.addEventListener("pagehide", () => {
+    if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
+  });
+
   // Initial pull au login
   async function pullCloudIntoState() {
     if (!SLCloud || !SLCloud.isSignedIn()) return;
     const cloudId = SLCloud.me.id;
+    // État local « moi » à fusionner (évite de perdre des ajouts pas encore poussés ou un refresh rapide)
+    const prevMineLists = (state.lists || [])
+      .filter((l) => l.userId === "me")
+      .map((l) => ({ ...l, albumIds: [...(l.albumIds || [])] }));
+    const prevMineListenings = (state.listenings || []).filter((l) => l.userId === "me").map((l) => ({ ...l }));
+    const prevWishlist = [...(state.wishlist || [])];
+    const prevMineConcerts = (state.concertLogs || [])
+      .filter((c) => c.userId === "me")
+      .map((c) => ({ ...c }));
+    const otherLists = (state.lists || []).filter((l) => l.userId !== "me");
+    const otherListenings = (state.listenings || []).filter((l) => l.userId !== "me");
+    const otherConcerts = (state.concertLogs || []).filter((c) => c.userId !== "me");
+
     const data = await SLCloud.pullEverything();
     if (!data) return;
     // Profil → state.profile
@@ -4964,20 +5029,26 @@
     state.profile.cloudId = cloudId;
     // Albums référencés : on les ajoute en cache local (importedAlbums) si pas déjà connus
     const knownIds = new Set();
-    state.listenings = [];
-    for (const l of data.listenings || []) {
-      knownIds.add(l.album_id);
-      state.listenings.push({
+
+    const remoteMineListenings = (data.listenings || []).map((l) => {
+      const text = l.comment != null ? l.comment : "";
+      return {
         id: l.id,
         userId: "me",
         albumId: l.album_id,
         rating: l.rating,
-        comment: l.comment,
+        review: text,
+        comment: text,
         commentAt: l.comment_at,
         date: l.date,
-      });
-    }
-    state.lists = (data.lists || []).map((lst) => ({
+      };
+    });
+    const remoteListeningIds = new Set(remoteMineListenings.map((l) => l.id));
+    const localOnlyListenings = prevMineListenings.filter((l) => !remoteListeningIds.has(l.id));
+    state.listenings = [...otherListenings, ...remoteMineListenings, ...localOnlyListenings];
+    state.listenings.forEach((l) => knownIds.add(l.albumId));
+
+    const remoteMineLists = (data.lists || []).map((lst) => ({
       id: lst.id,
       userId: "me",
       title: lst.title,
@@ -4985,7 +5056,19 @@
       isPublic: lst.is_public,
       albumIds: ((lst.list_items || []).sort((a, b) => (a.position || 0) - (b.position || 0)).map((it) => it.album_id)),
     }));
-    state.concertLogs = (data.concerts || []).map((c) => ({
+    const localMineById = new Map(prevMineLists.map((l) => [l.id, l]));
+    const mergedMineLists = remoteMineLists.map((rl) => {
+      const loc = localMineById.get(rl.id);
+      if (!loc) return rl;
+      return { ...rl, albumIds: mergeOrderedUnique(rl.albumIds, loc.albumIds) };
+    });
+    for (const loc of prevMineLists) {
+      if (!mergedMineLists.some((m) => m.id === loc.id)) mergedMineLists.push(loc);
+    }
+    state.lists = [...mergedMineLists, ...otherLists];
+    mergedMineLists.forEach((lst) => (lst.albumIds || []).forEach((aid) => knownIds.add(aid)));
+
+    const remoteMineConcerts = (data.concerts || []).map((c) => ({
       id: c.id,
       userId: "me",
       artist: c.artist,
@@ -4995,7 +5078,13 @@
       eventTitle: c.event_title,
       notes: c.notes,
     }));
-    state.wishlist = data.wishlist || [];
+    const remoteConcertIds = new Set(remoteMineConcerts.map((c) => c.id));
+    const localOnlyConcerts = prevMineConcerts.filter((c) => !remoteConcertIds.has(c.id));
+    state.concertLogs = [...otherConcerts, ...remoteMineConcerts, ...localOnlyConcerts];
+
+    state.wishlist = mergeOrderedUnique(data.wishlist || [], prevWishlist);
+    (state.wishlist || []).forEach((aid) => knownIds.add(aid));
+
     state.follows = data.following || [];
     state.cloudImportedPlaylists = data.importedPlaylists || [];
     state.cloudImportedTracks = data.importedTracks || [];
@@ -5022,6 +5111,7 @@
     updateHeaderUser();
     updateSidebarAccount();
     render();
+    void flushCloudPush();
   }
 
   function updateSidebarAccount() {

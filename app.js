@@ -244,6 +244,106 @@
     if (typeof window.__slSchedulePushCloud === "function") window.__slSchedulePushCloud();
   }
 
+  const THEME_KEY = "sl-theme";
+
+  function getTheme() {
+    const t = localStorage.getItem(THEME_KEY);
+    return t === "light" ? "light" : "dark";
+  }
+
+  function applyTheme(theme) {
+    const t = theme === "light" ? "light" : "dark";
+    localStorage.setItem(THEME_KEY, t);
+    document.documentElement.dataset.theme = t;
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", t === "light" ? "#f4f4f5" : "#09090b");
+    const btn = document.getElementById("theme-toggle");
+    if (btn) {
+      const light = t === "light";
+      btn.setAttribute("aria-pressed", light ? "true" : "false");
+      btn.title = light ? "Passer en mode sombre" : "Passer en mode clair";
+      const label = btn.querySelector(".theme-toggle__label");
+      if (label) label.textContent = light ? "Mode sombre" : "Mode clair";
+    }
+  }
+
+  function toggleTheme() {
+    applyTheme(getTheme() === "light" ? "dark" : "light");
+  }
+
+  function hexToRgb(hex) {
+    const h = String(hex || "").replace("#", "").trim();
+    if (h.length !== 6) return null;
+    const n = parseInt(h, 16);
+    if (Number.isNaN(n)) return null;
+    return { r: (n >> 16) & 255, g: (n >> 8) & 255, b: n & 255 };
+  }
+
+  function applyAlbumBackdropTint() {
+    const view = document.querySelector(".album-detail-view");
+    if (!view || route.view !== "album") return;
+    const backdrop = view.querySelector(".album-detail-backdrop");
+    if (!backdrop) return;
+    const al = albumById(route.albumId);
+    const paint = (r, g, b) => {
+      backdrop.style.setProperty("--album-tint-r", String(r));
+      backdrop.style.setProperty("--album-tint-g", String(g));
+      backdrop.style.setProperty("--album-tint-b", String(b));
+      view.classList.add("has-artwork-tint");
+    };
+    const gradientFallback = () => {
+      if (!al) return;
+      const a = hexToRgb(al.from) || { r: 36, g: 36, b: 44 };
+      const b = hexToRgb(al.to) || { r: 72, g: 56, b: 88 };
+      paint(Math.round((a.r + b.r) / 2), Math.round((a.g + b.g) / 2), Math.round((a.b + b.b) / 2));
+    };
+    const sampleImg = (img) => {
+      try {
+        const canvas = document.createElement("canvas");
+        const s = 28;
+        canvas.width = s;
+        canvas.height = s;
+        const ctx = canvas.getContext("2d");
+        if (!ctx) return false;
+        ctx.drawImage(img, 0, 0, s, s);
+        const d = ctx.getImageData(0, 0, s, s).data;
+        let r = 0,
+          g = 0,
+          b = 0,
+          n = 0;
+        for (let i = 0; i < d.length; i += 4) {
+          if (d[i + 3] < 48) continue;
+          r += d[i];
+          g += d[i + 1];
+          b += d[i + 2];
+          n++;
+        }
+        if (!n) return false;
+        paint(Math.round(r / n), Math.round(g / n), Math.round(b / n));
+        return true;
+      } catch (_) {
+        return false;
+      }
+    };
+    const img = view.querySelector(".album-hero .cover-img");
+    if (!img) {
+      gradientFallback();
+      return;
+    }
+    if (img.complete && img.naturalWidth) {
+      if (!sampleImg(img)) gradientFallback();
+    } else {
+      gradientFallback();
+      img.addEventListener(
+        "load",
+        () => {
+          if (!sampleImg(img)) gradientFallback();
+        },
+        { once: true }
+      );
+    }
+  }
+
   const route = { view: "home", albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null, dmThreadId: null };
 
   /** Dernière « clé de route » déjà enregistrée par Sonar (évite les doublons entre deux rendus). */
@@ -2725,7 +2825,7 @@
       }</p>
     </section>`;
 
-    return `<div class="social-hub view-social-themed">
+    return `<div class="view-page social-hub view-social-themed">
       <header class="social-hero">
         <div>
           <p class="social-kicker">Cercle &amp; alertes</p>
@@ -2797,8 +2897,8 @@
   function renderInbox() {
     const signed = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
     if (!signed) {
-      return `<div class="inbox-view view-themed">
-        <header class="discover-hero"><h1 class="page-title">Messages</h1>
+      return `<div class="view-page inbox-view view-themed">
+        <header class="inbox-hero discover-hero"><h1 class="page-title">Messages</h1>
         <p class="page-sub">Connecte-toi avec ton compte Soundlog pour chater avec tes ami·es.</p>
         <button type="button" class="btn btn-primary" id="inbox-open-account">Se connecter</button></header></div>`;
     }
@@ -2816,7 +2916,7 @@
         : `<div class="inbox-list-panel" id="inbox-list-panel">
              <p class="feed-note" id="inbox-list-here">Chargement…</p>
            </div>`;
-    return `<div class="inbox-view view-themed inbox-split">
+    return `<div class="view-page inbox-view view-themed inbox-split">
       <header class="inbox-hero">
         <h1 class="page-title">Messagerie</h1>
         <p class="page-sub">Discute uniquement avec tes <strong>ami·es Soundlog</strong>. Les nouveaux messages arrivent en temps réel quand la migration SQL est appliquée.</p>
@@ -3048,7 +3148,7 @@
         </article>`;
             })
             .join("");
-    return `<div class="diary-view view-themed">
+    return `<div class="view-page diary-view view-themed">
       <div class="diary-hero">
         <p class="diary-hero__kicker">Carnet daté</p>
         <h1 class="page-title diary-hero__title">Journal d’écoute</h1>
@@ -3355,7 +3455,7 @@
         ${listenLinksHtml(streamingLinksForAlbum(al))}
       </div>`;
 
-    return `<div class="album-detail-view view-themed">
+    return `<div class="album-detail-view view-themed view-page">
       <div class="album-detail-backdrop" aria-hidden="true"></div>
       <div class="two-col album-detail-grid">
       <div>
@@ -3834,6 +3934,9 @@
     injectProfileCompatibility();
     injectSocialEventInterests();
     injectInboxHydration();
+    if (route.view === "album") {
+      requestAnimationFrame(() => applyAlbumBackdropTint());
+    }
   }
 
   // ---------- Affichage des playlists importées sur le profil ----------
@@ -5611,6 +5714,8 @@
     true
   );
 
+  applyTheme(getTheme());
+
   bindNotifHub();
   render();
   void syncTourAlerts({}).then(() => updateHeaderNotifications());
@@ -6269,6 +6374,12 @@
 
   // Brancher le bouton "Compte" de la sidebar
   const sidebarAccount = document.getElementById("sidebar-account");
+  const themeToggleSidebar = document.getElementById("theme-toggle");
+  if (themeToggleSidebar && !themeToggleSidebar.dataset.bound) {
+    themeToggleSidebar.dataset.bound = "1";
+    themeToggleSidebar.addEventListener("click", () => toggleTheme());
+  }
+
   if (sidebarAccount) {
     sidebarAccount.addEventListener("click", async (e) => {
       e.preventDefault();

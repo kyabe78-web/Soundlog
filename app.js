@@ -108,6 +108,57 @@
     return changed;
   }
 
+
+  const PREVIEW_CIRCLE_KEY = "soundlog.previewCircleInstalled";
+
+  function shouldInstallPreviewCircle() {
+    if (cloudSignedIn && cloudSignedIn()) return false;
+    try {
+      if (localStorage.getItem(PREVIEW_CIRCLE_KEY)) return false;
+    } catch (_) {}
+    const hasData =
+      (state.listenings && state.listenings.length) ||
+      (state.follows && state.follows.length) ||
+      (state.invitedPeers && state.invitedPeers.length) ||
+      (state.friends && state.friends.length);
+    return !hasData;
+  }
+
+  function installLocalPreviewCircle() {
+    if (!shouldInstallPreviewCircle()) return false;
+    const peers = [
+      { id: "sl-prev-maya", name: "Maya Chen", handle: "mayamix", bio: "Playlists, radio et R&B.", hue: 278 },
+      { id: "sl-prev-noah", name: "Noah Mercier", handle: "nightwax", bio: "Électronique après minuit.", hue: 198 },
+      { id: "sl-prev-ines", name: "Inès Duval", handle: "inesvinyl", bio: "Carnets rock & pop.", hue: 32 },
+    ];
+    state.invitedPeers = peers;
+    state.follows = peers.map((p) => p.id);
+    const ago = (days) => new Date(Date.now() - days * 86400000).toISOString();
+    state.listenings = [
+      { id: "sl-pl1", userId: "sl-prev-maya", albumId: "a3", rating: 5, review: "Une claque douce — chaque transition compte.", date: ago(1) },
+      { id: "sl-pl2", userId: "sl-prev-noah", albumId: "a4", rating: 4.5, review: "Psyché moderne, parfait pour la nuit.", date: ago(2) },
+      { id: "sl-pl3", userId: "sl-prev-ines", albumId: "a6", rating: 4, review: "Radiohead au sommet de leur art.", date: ago(3) },
+      { id: "sl-pl4", userId: "sl-prev-maya", albumId: "a13", rating: 4.5, review: "Le chef-d'œuvre de Kendrick.", date: ago(4) },
+      { id: "sl-pl5", userId: "sl-prev-noah", albumId: "a9", rating: 5, review: "Discovery en boucle depuis 2001.", date: ago(5) },
+      { id: "sl-pl6", userId: "sl-prev-ines", albumId: "a12", rating: 4, review: "Soul intemporel.", date: ago(6) },
+      { id: "sl-pl7", userId: "sl-prev-maya", albumId: "a22", rating: 4.5, review: "Indie fragile et lumineux.", date: ago(7) },
+    ];
+    state.shoutouts = [
+      { id: "sl-sh1", userId: "sl-prev-noah", text: "Quelqu'un pour un live Tame Impala cet été ?", at: ago(0.3) },
+      { id: "sl-sh2", userId: "sl-prev-ines", text: "Je redécouvre Björk — Vespertine ce soir.", at: ago(1.2) },
+    ];
+    state.feedComments = [
+      { id: "sl-fc1", listeningId: "sl-pl1", userId: "sl-prev-ines", text: "Blonde est imbattable.", at: ago(0.8) },
+    ];
+    state.settings = state.settings || {};
+    state.settings.previewCircle = true;
+    try {
+      localStorage.setItem(PREVIEW_CIRCLE_KEY, "1");
+    } catch (_) {}
+    persist();
+    return true;
+  }
+
   function defaultAdaptive() {
     return { v: 1, nav: {}, genreInterest: {}, listenLogs: 0 };
   }
@@ -233,6 +284,7 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_) {}
   }
+  installLocalPreviewCircle();
   let previewAudio = null;
   let previewAlbumId = null;
 
@@ -2570,7 +2622,10 @@
       backdrop.hidden = false;
       backdrop.setAttribute("aria-hidden", "false");
     }
-    if (drawer) drawer.hidden = false;
+    if (drawer) {
+      drawer.hidden = false;
+      drawer.setAttribute("aria-hidden", "false");
+    }
     const mount = document.getElementById("inbox-drawer-mount");
     if (mount) {
       mount.innerHTML = renderInbox();
@@ -2578,6 +2633,8 @@
     }
     const btn = document.getElementById("topbar-messages");
     if (btn) btn.setAttribute("aria-expanded", "true");
+    const closeBtn = document.getElementById("inbox-drawer-close");
+    if (closeBtn) setTimeout(() => closeBtn.focus(), 80);
   }
 
   function closeInboxDrawer() {
@@ -2590,11 +2647,17 @@
       backdrop.hidden = true;
       backdrop.setAttribute("aria-hidden", "true");
     }
-    if (drawer) drawer.hidden = true;
+    if (drawer) {
+      drawer.hidden = true;
+      drawer.setAttribute("aria-hidden", "true");
+    }
     const mount = document.getElementById("inbox-drawer-mount");
     if (mount) mount.innerHTML = "";
     const btn = document.getElementById("topbar-messages");
-    if (btn) btn.setAttribute("aria-expanded", "false");
+    if (btn) {
+      btn.setAttribute("aria-expanded", "false");
+      btn.focus();
+    }
     if ((window.location.hash || "").includes("messagerie")) {
       navigate(route.view === "inbox" ? "home" : route.view);
     }
@@ -3592,24 +3655,71 @@
     return "";
   }
 
-  function dmMessageBubbleHtml(m, meId) {
+
+  const DM_REACTION_EMOJIS = ["🔥", "💿", "🎧"];
+
+  function groupDmReactions(rows) {
+    const byMsg = new Map();
+    for (const r of rows || []) {
+      if (!r || !r.message_id) continue;
+      if (!byMsg.has(r.message_id)) byMsg.set(r.message_id, []);
+      byMsg.get(r.message_id).push(r);
+    }
+    return byMsg;
+  }
+
+  function dmReactionChipsHtml(messageId, reactions) {
+    const list = reactions || [];
+    if (!list.length) return "";
+    const counts = new Map();
+    for (const r of list) counts.set(r.emoji, (counts.get(r.emoji) || 0) + 1);
+    const chips = [...counts.entries()]
+      .map(
+        ([em, n]) =>
+          `<span class="dm-react-chip" title="${n} réaction${n > 1 ? "s" : ""}">${escapeHtml(em)}${
+            n > 1 ? `<span class="dm-react-chip__n">${n}</span>` : ""
+          }</span>`
+      )
+      .join("");
+    return `<span class="dm-bubble__react-chips" aria-label="Réactions">${chips}</span>`;
+  }
+
+  function dmReactionPickerHtml(messageId, reactions, meId) {
+    const mine = (reactions || []).find((r) => r.user_id === meId);
+    return `<div class="dm-bubble__reacts" role="group" aria-label="Réagir au message">
+      ${DM_REACTION_EMOJIS.map(
+        (em) =>
+          `<button type="button" class="dm-react${mine && mine.emoji === em ? " is-on" : ""}" data-dm-react="${escapeHtml(
+            messageId
+          )}" data-emoji="${escapeHtml(em)}" title="Réagir ${escapeHtml(em)}" aria-pressed="${
+            mine && mine.emoji === em ? "true" : "false"
+          }">${em}</button>`
+      ).join("")}
+    </div>`;
+  }
+
+  function dmMessageBubbleHtml(m, meId, reactionsByMsg) {
     const isMe = m.sender_id === meId;
     const p = parseDmPayload(m.body);
     const time = escapeHtml((m.created_at || "").slice(11, 16));
-    const reactions = `<div class="dm-bubble__reacts">
-      <button type="button" class="dm-react" data-dm-react="${escapeHtml(m.id)}" data-emoji="🔥" title="Feu">🔥</button>
-      <button type="button" class="dm-react" data-dm-react="${escapeHtml(m.id)}" data-emoji="💿" title="Disque">💿</button>
-      <button type="button" class="dm-react" data-dm-react="${escapeHtml(m.id)}" data-emoji="🎧" title="Écoute">🎧</button>
-    </div>`;
+    const reactions =
+      reactionsByMsg instanceof Map
+        ? reactionsByMsg.get(m.id) || []
+        : reactionsByMsg && reactionsByMsg[m.id]
+          ? reactionsByMsg[m.id]
+          : [];
+    const chips = dmReactionChipsHtml(m.id, reactions);
+    const picker = !isMe ? dmReactionPickerHtml(m.id, reactions, meId) : "";
+    const foot = `<div class="dm-bubble__foot"><span class="dm-bubble__time">${time}</span>${chips}${picker}</div>`;
     if (p) {
       return `<div class="dm-bubble dm-bubble--card ${isMe ? "dm-bubble--me" : "dm-bubble--them"}" data-msg-id="${escapeHtml(m.id)}">
         ${dmShareCardHtml(p)}
-        <div class="dm-bubble__foot"><span class="dm-bubble__time">${time}</span>${isMe ? reactions : ""}</div>
+        ${foot}
       </div>`;
     }
     return `<div class="dm-bubble ${isMe ? "dm-bubble--me" : "dm-bubble--them"}" data-msg-id="${escapeHtml(m.id)}">
         <p class="dm-bubble__text">${escapeHtml(m.body)}</p>
-        <div class="dm-bubble__foot"><span class="dm-bubble__time">${time}</span>${isMe ? reactions : ""}</div>
+        ${foot}
       </div>`;
   }
 
@@ -3653,7 +3763,7 @@
 
   function dmShareSkeletonHtml(count) {
     return Array.from({ length: count }, () =>
-      `<div class="dm-share-skeleton" aria-hidden="true"><div class="dm-share-skeleton__art"></motion><motion class="dm-share-skeleton__lines"><span></span><span></span></div></div>`
+      `<div class="dm-share-skeleton" aria-hidden="true"><div class="dm-share-skeleton__art"></div><div class="dm-share-skeleton__lines"><span></span><span></span></div></div>`
     ).join("");
   }
 
@@ -3862,79 +3972,25 @@
   }
 
   function dmShareTrayHtml() {
-    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="region" aria-label="Partager un extrait">
-      <p class="dm-share-tray__title">▶ Partager un extrait (30 s)</p>
-      <p class="feed-note dm-share-tray__hint">Choisis un album dans ton carnet</p>
-      <div class="dm-pick-inline" id="dm-pick-inline"><p class="feed-note">Chargement…</p></div>
+    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="dialog" aria-label="Partager de la musique" aria-hidden="true">
+      <div class="dm-share-tabs" role="tablist">
+        <button type="button" class="dm-share-tab is-active" data-dm-share-tab="track" role="tab" aria-selected="true">Titre</button>
+        <button type="button" class="dm-share-tab" data-dm-share-tab="album" role="tab" aria-selected="false">Album</button>
+      </div>
+      <label class="visually-hidden" for="dm-share-search-input">Rechercher de la musique</label>
+      <div class="dm-share-search">
+        <span class="dm-share-search__icon" aria-hidden="true">⌕</span>
+        <input type="search" id="dm-share-search-input" class="dm-share-search__input" placeholder="Artiste, titre, album…" autocomplete="off" enterkeyhint="search" />
+      </div>
+      <p class="dm-share-tray__hint feed-note" id="dm-share-hint">Recherche globale — Spotify, Apple Music, Deezer…</p>
+      <div class="dm-share-results" id="dm-share-results" role="listbox" aria-live="polite">
+        <p class="dm-share-empty">Tape au moins 2 caractères.</p>
+      </div>
     </div>`;
   }
 
-  async function renderDmSharePickerInTray(root, threadId) {
-    const host = root.querySelector("#dm-pick-inline");
-    if (!host) return;
-    host.innerHTML = `<p class="feed-note">Chargement de ton carnet…</p>`;
-    try {
-      if (typeof ensureCloudReady === "function") await ensureCloudReady();
-    } catch (_) {}
-    const candidates = await dmShareCandidates();
-    const rows = candidates
-      .filter((c) => c.al)
-      .map(
-        (c) =>
-          `<button type="button" class="dm-pick-row dm-pick-row--inline" data-dm-pick-album="${escapeHtml(c.albumId)}" data-dm-pick-rating="${c.rating || ""}">
-          ${coverHtml(c.al, true, "sm")}
-          <span><strong>${escapeHtml(c.al.title)}</strong><span class="feed-note">${escapeHtml(c.al.artist)}</span></span>
-        </button>`
-      )
-      .join("");
-    host.innerHTML =
-      rows || `<p class="empty">Logue une écoute dans ton Journal, puis réessaie.</p>`;
-  }
-
-  async function sendDmPreviewFromPick(root, threadId, btn) {
-    const albumId = btn.getAttribute("data-dm-pick-album");
-    let al = albumById(albumId);
-    if (!al) al = await hydrateAlbumById(albumId);
-    if (!al) return toast("Album introuvable — synchronise ton compte.");
-    const rating = btn.getAttribute("data-dm-pick-rating");
-    const payload = {
-      v: 1,
-      type: "preview",
-      albumId: al.id,
-      title: al.title,
-      artist: al.artist,
-      year: al.year,
-      genre: al.genre,
-      artworkUrl: bestArtworkUrl(al),
-      rating: rating ? Number(rating) : null,
-    };
-    btn.disabled = true;
-    toast("Préparation de l'extrait…");
-    try {
-      const preview = await resolveAlbumPreview(al);
-      if (!preview || !preview.url) {
-        toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
-        return;
-      }
-      payload.previewUrl = preview.url;
-      payload.trackName = preview.trackName;
-      payload.previewSource = preview.source;
-      await sendDmPayload(threadId, payload);
-      toast("Extrait envoyé.");
-      const tray = root.querySelector("[data-dm-share-tray], #dm-share-tray");
-      const toggle = root.querySelector("[data-dm-toggle-share]");
-      if (tray) tray.classList.remove("is-open");
-      if (toggle) toggle.setAttribute("aria-expanded", "false");
-      if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
-    } catch (e) {
-      toast(e.message || "Envoi impossible");
-    } finally {
-      btn.disabled = false;
-    }
-  }
-
   function dmThreadPanelShell(threadId) {
-    return `<div class="dm-chat" id="inbox-thread-panel" data-thread-id="${escapeHtml(threadId)}">
+    return `<div class="dm-chat" id="inbox-thread-panel" data-thread-id="${escapeHtml(threadId)}" data-dm-share-mode="track">
         <header class="dm-chat__head">
           <button type="button" class="dm-chat__back" data-inbox-back aria-label="Retour">←</button>
           <div class="dm-chat__peer" id="dm-chat-peer">
@@ -3946,10 +4002,12 @@
           </div>
           <button type="button" class="dm-chat__pin" id="dm-pin-thread" data-thread-pin="${escapeHtml(threadId)}" title="Épingler">📌</button>
         </header>
-        <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
-        ${dmShareTrayHtml()}
+        <div class="dm-chat__body">
+          <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
+          ${dmShareTrayHtml()}
+        </div>
         <form class="dm-compose" id="inbox-compose">
-          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager un extrait 30 s">+</button>
+          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager un titre ou un album">+</button>
           <label class="visually-hidden" for="inbox-msg-input">Message</label>
           <input type="text" id="inbox-msg-input" class="dm-compose__input" maxlength="2000" placeholder="Message ou partage un son…" autocomplete="off" />
           <button type="submit" class="dm-compose__send" aria-label="Envoyer">↑</button>
@@ -3985,117 +4043,6 @@
     }
   }
 
-  async function dmShareCandidates() {
-    const seen = new Set();
-    const items = [];
-    const mine = state.listenings
-      .filter((l) => l.userId === "me" && l.albumId)
-      .sort((a, b) => (a.date < b.date ? 1 : -1));
-    for (const l of mine) {
-      if (seen.has(l.albumId)) continue;
-      seen.add(l.albumId);
-      let al = albumById(l.albumId);
-      if (!al) al = await hydrateAlbumById(l.albumId);
-      items.push({ albumId: l.albumId, al, rating: l.rating });
-      if (items.length >= 12) break;
-    }
-    return items;
-  }
-
-  function openDmShareModal(threadId, kind) {
-    void openDmShareModalWork(threadId, kind);
-  }
-
-  async function openDmShareModalWork(threadId, kind) {
-    if (kind === "moment" || kind === "discovery") {
-      openModal(`<h2>${kind === "moment" ? "Moment musical" : "Découverte"}</h2>
-        <label>Message</label>
-        <input type="text" id="dm-share-text" maxlength="200" placeholder="Ce morceau me fait penser à…" />
-        <p style="margin-top:0.85rem">
-          <button type="button" class="btn btn-primary" id="dm-share-send">Envoyer</button>
-          <button type="button" class="btn btn-ghost" id="dm-share-cancel">Annuler</button>
-        </p>`);
-      document.getElementById("dm-share-cancel").onclick = closeModal;
-      document.getElementById("dm-share-send").onclick = async () => {
-        const text = (document.getElementById("dm-share-text") && document.getElementById("dm-share-text").value.trim()) || "";
-        if (!text) return toast("Écris quelques mots.");
-        try {
-          await sendDmPayload(threadId, { v: 1, type: kind, text });
-          closeModal();
-          toast("Envoyé.");
-          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
-        } catch (e) {
-          toast(e.message || "Erreur");
-        }
-      };
-      return;
-    }
-    openModal(`<h2>Partager ${kind === "preview" ? "un extrait" : kind === "listening" ? "une écoute" : "un album"}</h2>
-      <p class="feed-note">Chargement de ton carnet…</p>
-      <div class="dm-pick-list" id="dm-pick-host"><p class="empty">…</p></div>
-      <p style="margin-top:0.85rem"><button type="button" class="btn btn-ghost" id="dm-share-cancel">Fermer</button></p>`);
-    document.getElementById("dm-share-cancel").onclick = closeModal;
-    const host = document.getElementById("dm-pick-host");
-    try {
-      if (typeof ensureCloudReady === "function") await ensureCloudReady();
-    } catch (_) {}
-    const candidates = await dmShareCandidates();
-    const rows = candidates
-      .filter((c) => c.al)
-      .map(
-        (c) =>
-          `<button type="button" class="dm-pick-row" data-dm-pick-album="${escapeHtml(c.albumId)}" data-dm-pick-rating="${c.rating || ""}">
-          ${coverHtml(c.al, true, "sm")}
-          <span><strong>${escapeHtml(c.al.title)}</strong><span class="feed-note">${escapeHtml(c.al.artist)}</span></span>
-        </button>`
-      )
-      .join("");
-    if (host) {
-      host.innerHTML =
-        rows ||
-        `<p class="empty">Logue une écoute dans ton Journal d'abord, ou synchronise ton compte.</p>`;
-    }
-    document.querySelectorAll("[data-dm-pick-album]").forEach((btn) => {
-      btn.onclick = async () => {
-        const albumId = btn.getAttribute("data-dm-pick-album");
-        let al = albumById(albumId);
-        if (!al) al = await hydrateAlbumById(albumId);
-        if (!al) return toast("Album introuvable — réessaie après sync.");
-        const rating = btn.getAttribute("data-dm-pick-rating");
-        const payload = {
-          v: 1,
-          type: kind === "preview" ? "preview" : kind === "listening" ? "listening" : "album",
-          albumId: al.id,
-          title: al.title,
-          artist: al.artist,
-          year: al.year,
-          genre: al.genre,
-          artworkUrl: bestArtworkUrl(al),
-          rating: rating ? Number(rating) : null,
-        };
-        try {
-          if (kind === "preview") {
-            toast("Préparation de l'extrait…");
-            const preview = await resolveAlbumPreview(al);
-            if (!preview || !preview.url) {
-              toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
-              return;
-            }
-            payload.previewUrl = preview.url;
-            payload.trackName = preview.trackName;
-            payload.previewSource = preview.source;
-          }
-          await sendDmPayload(threadId, payload);
-          closeModal();
-          toast(kind === "preview" ? "Extrait envoyé." : "Partagé dans la conversation.");
-          if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
-        } catch (e) {
-          toast(e.message || "Erreur");
-        }
-      };
-    });
-  }
-
   function dmSortThreads(items) {
     const pins = getDmPinned();
     return [...items].sort((a, b) => {
@@ -4129,7 +4076,7 @@
     </li>`;
   }
 
-  function wireDmChatActions(root) {
+  function wireDmChatActions(root, threadId) {
     if (!root) return;
     root.querySelectorAll("[data-preview-play]").forEach((b) => {
       if (b.dataset.dmWired) return;
@@ -4155,7 +4102,32 @@
     root.querySelectorAll("[data-dm-react]").forEach((b) => {
       if (b.dataset.dmWired) return;
       b.dataset.dmWired = "1";
-      b.addEventListener("click", () => toast(b.getAttribute("data-emoji") + " — réaction enregistrée"));
+      b.addEventListener("click", async () => {
+        const msgId = b.getAttribute("data-dm-react");
+        const emoji = b.getAttribute("data-emoji");
+        const tid = threadId || route.dmThreadId;
+        if (!msgId || !emoji) return;
+        if (!SLCloud || !SLCloud.isSignedIn || !SLCloud.isSignedIn()) {
+          toast("Connecte-toi pour réagir.");
+          return;
+        }
+        if (!SLCloud.toggleDmReaction) {
+          toast("Réactions indisponibles — migration v8 requise.");
+          return;
+        }
+        b.disabled = true;
+        try {
+          await SLCloud.toggleDmReaction(msgId, emoji);
+          if (tid) void hydrateInboxThread(tid);
+        } catch (e) {
+          const msg = e && e.message ? e.message : "Réaction impossible";
+          if (/dm_message_reactions|schema cache|relation/i.test(msg)) {
+            toast("Applique MIGRATION_v8.sql sur Supabase pour activer les réactions.");
+          } else toast(msg);
+        } finally {
+          b.disabled = false;
+        }
+      });
     });
   }
 
@@ -4166,7 +4138,7 @@
         <div class="dm-gate">
           <p class="dm-gate__kicker">Messages privés</p>
           <h1 class="dm-gate__title">Tes conversations musicales</h1>
-          <p class="dm-gate__text">Connecte-toi pour échanger des albums, des extraits et des découvertes avec tes ami·es.</p>
+          <p class="dm-gate__text">Connecte-toi pour échanger titres, albums et extraits avec tes ami·es — comme un fil musical privé.</p>
           <button type="button" class="btn btn-primary" id="inbox-open-account">Se connecter</button>
         </div>
       </div>`;
@@ -4177,7 +4149,7 @@
       : `<div class="dm-chat dm-chat--empty" id="dm-empty-state">
           <div class="dm-empty-state__icon" aria-hidden="true">♫</div>
           <h2 class="dm-empty-state__title">Choisis une conversation</h2>
-          <p class="dm-empty-state__text">Partage un album, un extrait de 30 secondes ou un moment musical — comme un message vocal, mais pour la musique.</p>
+          <p class="dm-empty-state__text">Partage un titre, un album ou un extrait — recherche Spotify, Apple Music, Deezer depuis le bouton +.</p>
         </div>`;
     return `<div class="dm-page view-themed${threadId ? " dm-page--thread" : ""}">
       <aside class="dm-sidebar" id="dm-sidebar">
@@ -4328,6 +4300,11 @@
     }
   }
 
+  function renderHomePreviewNote() {
+    if (!state.settings || !state.settings.previewCircle || cloudSignedIn()) return "";
+    return `<p class="home-preview-note" role="note">Aperçu local — connecte-toi pour synchroniser ton vrai carnet. Les profils ci-dessous sont une démo sur cet appareil.</p>`;
+  }
+
   function renderHome() {
     const tab = state.feedHomeTab === "discover" ? "discover" : "following";
     const allItems = tab === "following" ? feedItems() : [];
@@ -4336,7 +4313,7 @@
     const hasMore = tab === "following" && allItems.length > shownLimit;
     const followingBody =
       allItems.length === 0 && tab === "following"
-        ? `<div class="feed-empty-card"><p class="feed-empty-card__title">Ton fil est tout calme</p><p class="feed-empty-card__text">Ajoute des <strong>ami·es</strong>, suis des profils dans <strong>Communauté</strong>, ou logue une écoute dans le <strong>Journal</strong>.</p></div>`
+        ? `<div class="feed-empty-card"><p class="feed-empty-card__title">Ton fil est tout calme</p><p class="feed-empty-card__text">Le réseau s’anime quand tu logues, suis et partages — comme un carnet qui respire.</p><p class="feed-empty-card__actions"><button type="button" class="btn btn-primary btn-sm" data-nav-view="carnet">Logger une écoute</button><button type="button" class="btn btn-ghost btn-sm" data-nav-view="social">Communauté</button></p></div>`
         : items
             .map((l) => {
               const al = albumById(l.albumId);
@@ -4433,6 +4410,7 @@
           <p class="feed-page__lead">Écoutes de ton cercle, tendances et murmures — tout au même endroit.</p>
         </div>
       </header>
+      ${renderHomePreviewNote()}
       ${renderHomeQuickStrip()}
       <div class="feed-home-tabs" role="tablist" aria-label="Fil d'accueil">
         <button type="button" role="tab" class="feed-home-tab${tabFollowingActive}" aria-selected="${tab === "following"}" data-feed-tab="following">Suivis &amp; ami·es</button>
@@ -5979,21 +5957,28 @@
 
     closeDmShareTray(root);
 
-    const renderMsgs = (msgs) => {
+    const renderMsgs = async (msgs) => {
       if (!SLCloud.me || !SLCloud.me.id) {
         box.innerHTML = `<p class="dm-chat__empty">Connexion en cours…</p>`;
         return;
       }
       const me = SLCloud.me.id;
+      let reactionsByMsg = new Map();
+      try {
+        if (SLCloud.listDmReactionsForThread) {
+          const rows = await SLCloud.listDmReactionsForThread(threadId);
+          reactionsByMsg = groupDmReactions(rows);
+        }
+      } catch (_) {}
       box.innerHTML = msgs.length
-        ? msgs.map((m) => dmMessageBubbleHtml(m, me)).join("")
-        : `<p class="dm-chat__empty">Écris le premier message — ou partage un album 🎧</p>`;
+        ? msgs.map((m) => dmMessageBubbleHtml(m, me, reactionsByMsg)).join("")
+        : `<p class="dm-chat__empty">Écris le premier message — ou partage un titre / album via +</p>`;
       box.scrollTop = box.scrollHeight;
-      wireDmChatActions(box);
+      wireDmChatActions(box, threadId);
     };
 
     try {
-      renderMsgs(await SLCloud.listDmMessages(threadId));
+      await await renderMsgs(await SLCloud.listDmMessages(threadId));
     } catch (e) {
       box.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "")}</p>`;
     }
@@ -6005,7 +5990,7 @@
       try {
         await SLCloud.sendDmMessage(threadId, t);
         ta.value = "";
-        renderMsgs(await SLCloud.listDmMessages(threadId));
+        await renderMsgs(await SLCloud.listDmMessages(threadId));
         void hydrateInboxList();
       } catch (err) {
         toast(err.message || "Envoi impossible");
@@ -7661,7 +7646,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=8")
+        .register("/sw.js?v=9")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();
@@ -8634,6 +8619,10 @@
       onDmMessage: () => {
         if (route.view !== "inbox" && !document.body.classList.contains("inbox-drawer-open")) return;
         void hydrateInboxList();
+        if (route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
+      },
+      onDmReaction: () => {
+        if (route.view !== "inbox" && !document.body.classList.contains("inbox-drawer-open")) return;
         if (route.dmThreadId) void hydrateInboxThread(route.dmThreadId);
       },
       onEventInterest: () => {

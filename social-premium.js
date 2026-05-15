@@ -194,7 +194,7 @@
     const signed = d.cloudSignedIn && d.cloudSignedIn();
     const localStream =
       items.length === 0
-        ? '<div class="soc-empty soc-empty--inline"><p class="soc-empty__title">Ton cercle se réveille</p><p>Suis des profils ou invite des ami·es pour remplir le fil.</p><p><button type="button" class="btn btn-primary" data-social-circle-tab="discover">Découvrir</button></p></div>'
+        ? '<div class="soc-empty soc-empty--inline"><p class="soc-empty__title">Ton cercle se réveille</p><p class="feed-note">Suis des profils, invite des ami·es ou logue une écoute.</p><p><button type="button" class="btn btn-primary btn-sm" data-nav-view="carnet">Logger</button> <button type="button" class="btn btn-ghost btn-sm" data-social-circle-tab="discover">Découvrir</button></p></div>'
         : items
             .slice(0, 24)
             .map((l) => feedCardFromListening(l))

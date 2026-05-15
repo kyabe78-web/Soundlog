@@ -395,6 +395,43 @@
   transform: scale(1.15);
 }
 
+.dm-react.is-on {
+  opacity: 1;
+  background: rgba(232, 168, 107, 0.2);
+  border-radius: 8px;
+}
+
+.dm-bubble__react-chips {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  margin-right: 0.35rem;
+}
+
+.dm-react-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.08rem 0.35rem;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.dm-react-chip__n {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+
+.dm-bubble__foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25rem;
+}
+
 /* Music cards in chat */
 .dm-music-card {
   display: flex;
@@ -556,6 +593,12 @@
   transform: translateY(0);
   opacity: 1;
   pointer-events: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dm-share-tray {
+    transition: none;
+  }
 }
 
 .dm-share-tabs {
@@ -803,6 +846,14 @@
 .dm-compose__attach[aria-expanded="true"] {
   background: var(--accent);
   color: #fff;
+}
+
+.dm-compose__attach:focus-visible,
+.dm-share-tab:focus-visible,
+.inbox-drawer__close:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
 .dm-compose__input {

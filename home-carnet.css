@@ -22,6 +22,17 @@
   color: var(--brand, var(--accent));
 }
 
+.home-preview-note {
+  margin: 0 0 1rem;
+  padding: 0.65rem 0.9rem;
+  border-radius: var(--radius-md, 12px);
+  border: 1px solid rgba(232, 168, 107, 0.22);
+  background: linear-gradient(135deg, rgba(232, 168, 107, 0.08), rgba(255, 255, 255, 0.03));
+  font-size: 0.82rem;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
 .home-quick-strip {
   display: flex;
   flex-wrap: wrap;

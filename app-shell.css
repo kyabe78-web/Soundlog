@@ -177,6 +177,15 @@ body.inbox-drawer-open {
   overflow: hidden;
 }
 
+@media (prefers-reduced-motion: reduce) {
+  .inbox-drawer {
+    transition: none;
+  }
+  .inbox-drawer-backdrop {
+    transition: none;
+  }
+}
+
 body.inbox-drawer-open .modal-backdrop {
   z-index: 1000;
 }

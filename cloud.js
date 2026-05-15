@@ -1177,6 +1177,51 @@
       return data || [];
     },
 
+    async listDmReactionsForThread(threadId) {
+      if (!this.me) return [];
+      const { data: msgs, error: mErr } = await this.client.from("dm_messages").select("id").eq("thread_id", threadId);
+      if (mErr) throw mErr;
+      const ids = (msgs || []).map((m) => m.id);
+      if (!ids.length) return [];
+      const { data, error } = await this.client
+        .from("dm_message_reactions")
+        .select("message_id,user_id,emoji,created_at")
+        .in("message_id", ids);
+      if (error) throw error;
+      return data || [];
+    },
+
+    async toggleDmReaction(messageId, emoji) {
+      if (!this.me) throw new Error("Pas connecté");
+      const em = String(emoji || "").trim();
+      if (!["🔥", "💿", "🎧"].includes(em)) throw new Error("Réaction invalide");
+      const { data: existing, error: exErr } = await this.client
+        .from("dm_message_reactions")
+        .select("id,emoji")
+        .eq("message_id", messageId)
+        .eq("user_id", this.me.id)
+        .maybeSingle();
+      if (exErr) throw exErr;
+      if (existing) {
+        if (existing.emoji === em) {
+          const { error } = await this.client.from("dm_message_reactions").delete().eq("id", existing.id);
+          if (error) throw error;
+          return { removed: true, emoji: em };
+        }
+        const { error } = await this.client
+          .from("dm_message_reactions")
+          .update({ emoji: em })
+          .eq("id", existing.id);
+        if (error) throw error;
+        return { updated: true, emoji: em };
+      }
+      const { error } = await this.client
+        .from("dm_message_reactions")
+        .insert({ message_id: messageId, user_id: this.me.id, emoji: em });
+      if (error) throw error;
+      return { added: true, emoji: em };
+    },
+
     // ---------- Realtime ----------
     realtimeSubscribe({
       onListening,
@@ -1185,6 +1230,7 @@
       onFriendRequest,
       onFollow,
       onDmMessage,
+      onDmReaction,
       onEventInterest,
       onNotification,
       onLike,
@@ -1197,6 +1243,7 @@
       if (onFriendRequest) ch.on("postgres_changes", { event: "*", schema: "public", table: "friend_requests" }, (p) => onFriendRequest(p));
       if (onFollow)    ch.on("postgres_changes", { event: "*", schema: "public", table: "follows" }, (p) => onFollow(p));
       if (onDmMessage) ch.on("postgres_changes", { event: "*", schema: "public", table: "dm_messages" }, (p) => onDmMessage(p));
+      if (onDmReaction) ch.on("postgres_changes", { event: "*", schema: "public", table: "dm_message_reactions" }, (p) => onDmReaction(p));
       if (onEventInterest) ch.on("postgres_changes", { event: "*", schema: "public", table: "event_interests" }, (p) => onEventInterest(p));
       if (onNotification && this.me) {
         ch.on(

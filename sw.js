@@ -1,5 +1,5 @@
 /* Soundlog — service worker (cache shell offline) */
-const CACHE = "soundlog-shell-v4";
+const CACHE = "soundlog-shell-v5";
 const SHELL = [
   "/",
   "/index.html",

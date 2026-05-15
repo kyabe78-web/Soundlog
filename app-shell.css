@@ -162,6 +162,10 @@ body.inbox-drawer-open .inbox-drawer__inner .dm-sidebar {
   display: flex;
 }
 
+body.inbox-drawer-open .modal-backdrop {
+  z-index: 1000;
+}
+
 .inbox-drawer__close {
   position: absolute;
   top: 0.65rem;

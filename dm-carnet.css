@@ -485,7 +485,34 @@
 
 .dm-share-tray.is-open {
   display: flex;
+  flex-direction: column;
   animation: dmTrayIn 0.3s var(--dm-ease) both;
+}
+
+.dm-share-tray__title {
+  margin: 0;
+  width: 100%;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+.dm-share-tray__hint {
+  margin: 0 0 0.35rem;
+  width: 100%;
+}
+
+.dm-pick-inline {
+  width: 100%;
+  max-height: min(42vh, 280px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.dm-pick-row--inline {
+  width: 100%;
+  text-align: left;
 }
 
 @keyframes dmTrayIn {

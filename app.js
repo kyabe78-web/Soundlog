@@ -2635,14 +2635,14 @@
             toggleDmShareTray(root);
             return;
           }
-          const chip = e.target.closest("[data-dm-share-kind]");
-          if (chip && root.contains(chip)) {
+          const pickBtn = e.target.closest("[data-dm-pick-album]");
+          if (pickBtn && root.contains(pickBtn)) {
             e.preventDefault();
             e.stopImmediatePropagation();
             const panel = root.querySelector("#inbox-thread-panel, [data-thread-id]");
             const tid =
               (panel && panel.getAttribute("data-thread-id")) || route.dmThreadId;
-            if (tid) openDmShareModal(tid, chip.getAttribute("data-dm-share-kind"));
+            if (tid) void sendDmPreviewFromPick(root, tid, pickBtn);
             return;
           }
         },
@@ -3568,17 +3568,84 @@
     const open = !tray.classList.contains("is-open");
     tray.classList.toggle("is-open", open);
     toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    if (open) {
+      const panel = root.querySelector("#inbox-thread-panel");
+      const tid = (panel && panel.getAttribute("data-thread-id")) || route.dmThreadId;
+      if (tid) void renderDmSharePickerInTray(root, tid);
+    }
     return open;
   }
 
   function dmShareTrayHtml() {
-    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="region" aria-label="Partager de la musique">
-      <button type="button" class="dm-share-chip" data-dm-share-kind="listening">🎧 Écoute</button>
-      <button type="button" class="dm-share-chip" data-dm-share-kind="album">💿 Album</button>
-      <button type="button" class="dm-share-chip" data-dm-share-kind="preview">▶ Extrait</button>
-      <button type="button" class="dm-share-chip" data-dm-share-kind="moment">🌙 Moment</button>
-      <button type="button" class="dm-share-chip" data-dm-share-kind="discovery">✨ Découverte</button>
+    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="region" aria-label="Partager un extrait">
+      <p class="dm-share-tray__title">▶ Partager un extrait (30 s)</p>
+      <p class="feed-note dm-share-tray__hint">Choisis un album dans ton carnet</p>
+      <div class="dm-pick-inline" id="dm-pick-inline"><p class="feed-note">Chargement…</p></div>
     </div>`;
+  }
+
+  async function renderDmSharePickerInTray(root, threadId) {
+    const host = root.querySelector("#dm-pick-inline");
+    if (!host) return;
+    host.innerHTML = `<p class="feed-note">Chargement de ton carnet…</p>`;
+    try {
+      if (typeof ensureCloudReady === "function") await ensureCloudReady();
+    } catch (_) {}
+    const candidates = await dmShareCandidates();
+    const rows = candidates
+      .filter((c) => c.al)
+      .map(
+        (c) =>
+          `<button type="button" class="dm-pick-row dm-pick-row--inline" data-dm-pick-album="${escapeHtml(c.albumId)}" data-dm-pick-rating="${c.rating || ""}">
+          ${coverHtml(c.al, true, "sm")}
+          <span><strong>${escapeHtml(c.al.title)}</strong><span class="feed-note">${escapeHtml(c.al.artist)}</span></span>
+        </button>`
+      )
+      .join("");
+    host.innerHTML =
+      rows || `<p class="empty">Logue une écoute dans ton Journal, puis réessaie.</p>`;
+  }
+
+  async function sendDmPreviewFromPick(root, threadId, btn) {
+    const albumId = btn.getAttribute("data-dm-pick-album");
+    let al = albumById(albumId);
+    if (!al) al = await hydrateAlbumById(albumId);
+    if (!al) return toast("Album introuvable — synchronise ton compte.");
+    const rating = btn.getAttribute("data-dm-pick-rating");
+    const payload = {
+      v: 1,
+      type: "preview",
+      albumId: al.id,
+      title: al.title,
+      artist: al.artist,
+      year: al.year,
+      genre: al.genre,
+      artworkUrl: bestArtworkUrl(al),
+      rating: rating ? Number(rating) : null,
+    };
+    btn.disabled = true;
+    toast("Préparation de l'extrait…");
+    try {
+      const preview = await resolveAlbumPreview(al);
+      if (!preview || !preview.url) {
+        toast("Extrait indisponible pour cet album (Apple Music / Deezer).");
+        return;
+      }
+      payload.previewUrl = preview.url;
+      payload.trackName = preview.trackName;
+      payload.previewSource = preview.source;
+      await sendDmPayload(threadId, payload);
+      toast("Extrait envoyé.");
+      const tray = root.querySelector("[data-dm-share-tray], #dm-share-tray");
+      const toggle = root.querySelector("[data-dm-toggle-share]");
+      if (tray) tray.classList.remove("is-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+      if (route.dmThreadId === threadId) void hydrateInboxThread(threadId);
+    } catch (e) {
+      toast(e.message || "Envoi impossible");
+    } finally {
+      btn.disabled = false;
+    }
   }
 
   function dmThreadPanelShell(threadId) {
@@ -3597,7 +3664,7 @@
         <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
         ${dmShareTrayHtml()}
         <form class="dm-compose" id="inbox-compose">
-          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager de la musique">+</button>
+          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager un extrait 30 s">+</button>
           <label class="visually-hidden" for="inbox-msg-input">Message</label>
           <input type="text" id="inbox-msg-input" class="dm-compose__input" maxlength="2000" placeholder="Message ou partage un son…" autocomplete="off" />
           <button type="submit" class="dm-compose__send" aria-label="Envoyer">↑</button>

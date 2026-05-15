@@ -283,6 +283,21 @@
       return data || [];
     },
 
+    async listListeningsForAlbum(albumId, limit = 40) {
+      if (!albumId) return [];
+      const { data, error } = await this.client
+        .from("listenings")
+        .select("id,user_id,album_id,rating,comment,comment_at,date,created_at, profiles(id,name,handle)")
+        .eq("album_id", albumId)
+        .order("date", { ascending: false })
+        .limit(limit);
+      if (error) {
+        console.warn("[SLCloud] listListeningsForAlbum", error);
+        return [];
+      }
+      return data || [];
+    },
+
     async upsertListening(l) {
       const row = {
         id: l.id,

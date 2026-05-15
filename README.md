@@ -60,7 +60,8 @@ soundlog/
 ## Navigation
 
 - **Accueil** — fil Suivis / Tendances, murmures, activité du cercle
-- **Explorer** — genres + import bibliothèques (Apple / Deezer)
+- **Explorer** — genres, recos communauté, import bibliothèques (Apple / Deezer / MusicBrainz)
+- **Fiche album** — tracklist MusicBrainz, partage `#album/…`, écoutes cloud
 - **Carnet** — journal, à écouter, listes
 - **Social** — cercle (fil, personnes, concerts), I was there !
 

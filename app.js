@@ -2785,13 +2785,25 @@
     const h = (window.location.hash || "#").slice(1);
     if (h.startsWith("album/")) {
       route.view = "album";
-      route.albumId = h.slice(6);
+      try {
+        route.albumId = decodeURIComponent(h.slice(6));
+      } catch (_) {
+        route.albumId = h.slice(6);
+      }
     } else if (h.startsWith("profil/")) {
       route.view = "profile";
-      route.userId = h.slice(7);
+      try {
+        route.userId = decodeURIComponent(h.slice(7));
+      } catch (_) {
+        route.userId = h.slice(7);
+      }
     } else if (h.startsWith("liste/")) {
       route.view = "list";
-      route.listId = h.slice(6);
+      try {
+        route.listId = decodeURIComponent(h.slice(6));
+      } catch (_) {
+        route.listId = h.slice(6);
+      }
     } else if (h.startsWith("decouvrir/")) {
       route.view = "discover";
       route.discoverGenre = decodeURIComponent(h.slice(10));
@@ -4374,9 +4386,71 @@
     </div>`;
   }
 
+  async function ensureAlbumRouteLoaded() {
+    const id = route.albumId;
+    if (!id || albumById(id)) return true;
+    if (window.SLCloud && SLCloud.getAlbumById) {
+      try {
+        const row = await SLCloud.getAlbumById(id);
+        if (row && mergeCloudAlbumFromRow(row)) {
+          render();
+          return true;
+        }
+      } catch (e) {
+        console.warn("[album-route]", e);
+      }
+    }
+    const msg = document.getElementById("album-resolve-msg");
+    if (msg) msg.textContent = "Album introuvable.";
+    return false;
+  }
+
+  async function hydrateAlbumCommunityReviews(al) {
+    const panel = document.getElementById("album-cloud-reviews");
+    if (!panel || !al) return;
+    const body = panel.querySelector(".album-cloud-reviews__body");
+    if (!body) return;
+    if (!window.SLCloud || !SLCloud.isSignedIn || !SLCloud.isSignedIn()) {
+      body.innerHTML = `<p class="feed-note">Connecte-toi pour voir les écoutes publiques de la communauté sur cet album.</p>`;
+      return;
+    }
+    try {
+      await SLCloud.ensureReady();
+      const rows = await SLCloud.listListeningsForAlbum(al.id, 32);
+      if (!rows.length) {
+        body.innerHTML = `<p class="empty">Personne n'a encore noté cet album dans le cloud.</p>`;
+        return;
+      }
+      body.innerHTML = rows
+        .map((row) => {
+          const p = row.profiles || {};
+          const name = p.name || p.handle || "Auditeur·rice";
+          const uid = row.user_id;
+          registerPeerFromPublicRow({ user_id: uid, name: p.name || name, handle: p.handle, hue: 200 });
+          const review = row.comment && String(row.comment).trim();
+          const rating = row.rating ? starString(row.rating) : "—";
+          const date = row.date || (row.created_at && String(row.created_at).slice(0, 10)) || "";
+          return `<div class="review-row review-row--cloud">
+            <button type="button" class="link" data-profile="${escapeHtml(uid)}">${escapeHtml(name)}</button>
+            <span class="stars">${rating}</span>
+            <div class="feed-note">${escapeHtml(date)}</div>
+            ${review ? `<p>${escapeHtml(review)}</p>` : ""}
+          </div>`;
+        })
+        .join("");
+    } catch (e) {
+      body.innerHTML = `<p class="feed-note">Impossible de charger les écoutes cloud.</p>`;
+      console.warn("[album-reviews]", e);
+    }
+  }
+
   function renderAlbum() {
     const al = albumById(route.albumId);
-    if (!al) return `<p class="empty">Album introuvable.</p>`;
+    if (!al) {
+      return `<div class="album-detail-view view-themed view-page">
+        <p class="empty" id="album-resolve-msg">Chargement de la fiche album…</p>
+      </div>`;
+    }
     const avg = avgAlbumRating(al.id);
     const reviews = state.listenings
       .filter((l) => l.albumId === al.id && (l.review || l.rating))
@@ -4464,8 +4538,12 @@
         </div>
         ${streamPanel}
         <div class="panel">
-          <h3>Critiques & écoutes</h3>
+          <h3>Critiques & écoutes (local)</h3>
           ${revHtml}
+        </div>
+        <div class="panel album-cloud-reviews" id="album-cloud-reviews">
+          <h3>Écoutes communauté</h3>
+          <div class="album-cloud-reviews__body"><p class="feed-note">Chargement…</p></div>
         </div>
       </div>
       <div>${side}</div>
@@ -4952,6 +5030,7 @@
     injectCloudCommentsButtons();
     injectProfileImports();
     injectDiscoverRecos();
+    injectHomeRecos();
     injectProfileCompatibility();
     injectSocialEventInterests();
     if (window.SLSocial && window.SLSocial.inject) void window.SLSocial.inject();
@@ -4959,10 +5038,14 @@
     injectHomeFeedExtras();
     injectInboxHydration();
     if (route.view === "album") {
+      if (!albumById(route.albumId)) void ensureAlbumRouteLoaded();
       requestAnimationFrame(() => {
         applyAlbumBackdropTint();
         const al = albumById(route.albumId);
-        if (al) void hydrateAlbumMusicBrainz(al);
+        if (al) {
+          void hydrateAlbumMusicBrainz(al);
+          void hydrateAlbumCommunityReviews(al);
+        }
       });
     }
     bindRecoCardEvents($main);
@@ -5141,6 +5224,37 @@
         bindRecoCardEvents(listNode);
       } catch (e) {
         console.warn("[recos]", e);
+      }
+    })();
+  }
+
+  function injectHomeRecos() {
+    if (route.view !== "home") return;
+    if (!window.SLCloud || !window.SLCloud.isSignedIn()) return;
+    if (document.getElementById("home-cloud-recos")) return;
+    const stream = document.querySelector(".feed-stream--main");
+    if (!stream) return;
+    const wrap = document.createElement("section");
+    wrap.id = "home-cloud-recos";
+    wrap.className = "panel discover-cloud-recos home-cloud-recos";
+    wrap.innerHTML = `<h2 class="kicker" style="margin:0 0 0.5rem">Pour toi</h2>
+      <p class="feed-note" style="margin:0 0 0.75rem">Albums que la communauté écoute et qui collent à tes goûts.</p>
+      <div id="home-cloud-recos-list"><p class="feed-note">Calcul…</p></div>`;
+    stream.insertBefore(wrap, stream.firstChild);
+
+    (async () => {
+      try {
+        if (!discoverRecosCache && !discoverRecosFetching) {
+          discoverRecosFetching = true;
+          discoverRecosCache = await window.SLCloud.getRecommendations(window.SLCloud.me.id, 8);
+          discoverRecosFetching = false;
+        }
+        const listNode = document.getElementById("home-cloud-recos-list");
+        if (!listNode) return;
+        listNode.innerHTML = renderRecoCardsHtml(discoverRecosCache || [], { compact: true });
+        bindRecoCardEvents(listNode);
+      } catch (e) {
+        console.warn("[home-recos]", e);
       }
     })();
   }

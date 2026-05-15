@@ -839,6 +839,17 @@ body.sidebar-open .sidebar-backdrop { display: block; }
   vertical-align: middle;
   animation: spPulse 1.2s ease-in-out infinite;
 }
+.sp-row--remote .sp-row__kind {
+  color: var(--accent);
+  max-width: 5.5rem;
+  text-align: right;
+  line-height: 1.2;
+}
+.search-remote-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
 @keyframes spPulse {
   0%, 100% { opacity: 0.4; transform: scale(0.85); }
   50% { opacity: 1; transform: scale(1.1); }

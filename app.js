@@ -5326,23 +5326,14 @@
         (t.track_name || "").toLowerCase().includes(qq) ||
         (t.artist_name || "").toLowerCase().includes(qq) ||
         (t.album_name || "").toLowerCase().includes(qq));
-      const users = [];
-      const me = state.profile || {};
-      if ((me.displayName && me.displayName.toLowerCase().includes(qq)) ||
-          (me.handle && me.handle.toLowerCase().includes(qq))) {
-        users.push({ id: "me", name: me.displayName, handle: me.handle, hue: 152, self: true });
-      }
-      (state.invitedPeers || []).forEach((p) => {
-        if ((p.name || "").toLowerCase().includes(qq) || (p.handle || "").toLowerCase().includes(qq)) {
-          users.push({ id: p.id, name: p.name, handle: p.handle, hue: p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x") });
-        }
-      });
+      const users = collectLocalProfileMatches(qq);
       // Merge cloud users (excluding "me" doublons)
       const meCloudId = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
       const knownIds = new Set(users.map((u) => u.id));
       cloudUsers.forEach((cu) => {
         if (cu.id === meCloudId && knownIds.has("me")) return;
         if (!knownIds.has(cu.id)) {
+          knownIds.add(cu.id);
           users.push({
             id: cu.id,
             name: cu.name,
@@ -7345,6 +7336,95 @@
   function loadRecents() {
     try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]"); } catch (_) { return []; }
   }
+
+  /** Profils connus localement (moi, démo, cache cloud, cercle) — pour la recherche hors API. */
+  function collectLocalProfileMatches(qq) {
+    const users = [];
+    const seen = new Set();
+    const meCloudId = window.SLCloud && SLCloud.me && SLCloud.me.id;
+    const push = (row) => {
+      if (!row || row.id == null || seen.has(row.id)) return;
+      seen.add(row.id);
+      users.push(row);
+    };
+    const matches = (u) => {
+      const name = (u.name || "").toLowerCase();
+      const handle = (u.handle || "").toLowerCase();
+      const bio = (u.bio || "").toLowerCase();
+      return name.includes(qq) || handle.includes(qq) || bio.includes(qq);
+    };
+
+    const me = state.profile || {};
+    if (
+      (me.displayName && me.displayName.toLowerCase().includes(qq)) ||
+      (me.handle && me.handle.toLowerCase().includes(qq)) ||
+      (me.bio && me.bio.toLowerCase().includes(qq))
+    ) {
+      push({
+        id: "me",
+        name: me.displayName,
+        handle: me.handle,
+        bio: me.bio || "",
+        hue: 152,
+        local: true,
+        self: true,
+      });
+    }
+
+    (state.invitedPeers || []).forEach((p) => {
+      if (!matches(p)) return;
+      push({
+        id: p.id,
+        name: p.name,
+        handle: p.handle,
+        bio: p.bio || "",
+        hue: p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x"),
+        local: true,
+      });
+    });
+
+    cloudPeers.forEach((p, id) => {
+      if (!p || id === meCloudId || id === "me") return;
+      if (!matches(p)) return;
+      push({
+        id,
+        name: p.name,
+        handle: p.handle,
+        bio: p.bio || "",
+        hue: p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x"),
+        avatar_url: p.avatar_url || "",
+        local: true,
+      });
+    });
+
+    const graphIds = new Set([...(state.follows || []), ...(state.friends || [])]);
+    (state.listenings || []).forEach((l) => {
+      if (l.userId) graphIds.add(l.userId);
+    });
+    (state.shoutouts || []).forEach((s) => {
+      if (s.userId) graphIds.add(s.userId);
+    });
+    (state.feedComments || []).forEach((c) => {
+      if (c.userId) graphIds.add(c.userId);
+    });
+    graphIds.forEach((uid) => {
+      if (!uid || uid === "me" || uid === meCloudId) return;
+      const u = userById(uid);
+      if (!u || !matches(u)) return;
+      push({
+        id: u.id,
+        name: u.name,
+        handle: u.handle,
+        bio: u.bio || "",
+        hue: u.hue != null ? u.hue : hueFromHandle(u.handle || u.name || "x"),
+        avatar_url: u.avatar_url || "",
+        local: true,
+      });
+    });
+
+    return users;
+  }
+
   function pushRecent(q) {
     if (!q || q.length < 2) return;
     let arr = loadRecents().filter((x) => x.toLowerCase() !== q.toLowerCase());
@@ -7398,20 +7478,7 @@
       )
       .slice(0, 24);
 
-    // Users locaux : me + invitedPeers
-    const users = [];
-    const me = state.profile || {};
-    if (
-      (me.displayName && me.displayName.toLowerCase().includes(qq)) ||
-      (me.handle && me.handle.toLowerCase().includes(qq))
-    ) {
-      users.push({ id: "me", name: me.displayName, handle: me.handle, bio: me.bio || "", hue: 152, local: true, self: true });
-    }
-    (state.invitedPeers || []).forEach((p) => {
-      if ((p.name || "").toLowerCase().includes(qq) || (p.handle || "").toLowerCase().includes(qq)) {
-        users.push({ id: p.id, name: p.name, handle: p.handle, bio: p.bio || "", hue: p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x"), local: true });
-      }
-    });
+    const users = collectLocalProfileMatches(qq);
 
     return { users, artists, albums, tracks };
   }
@@ -7535,7 +7602,7 @@
     if (!total && !opts.loadingCloud && !opts.loadingRemote) {
       return `<div class="sp-empty">
         <p class="sp-empty__title">Aucun résultat pour « ${escapeHtmlS(q)} »</p>
-        <p class="sp-empty__sub">Essaie un autre orthographe. Connecte-toi pour retrouver les profils de la communauté.</p>
+        <p class="sp-empty__sub">Essaie un autre orthographe — ou parcours les profils de ton cercle (suivis, fil, communauté). Connecte-toi pour interroger toute la base.</p>
       </div>`;
     }
     const section = (title, rows, kind) => {

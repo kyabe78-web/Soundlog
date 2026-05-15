@@ -1728,6 +1728,22 @@
     update();
   }
 
+  function userInitial(name) {
+    return String(name || "?").trim().charAt(0).toUpperCase() || "?";
+  }
+
+  function userAvatarHtml(u, extraClass) {
+    if (!u) return "";
+    const hue = u.hue != null ? u.hue : hueFromHandle(u.handle || u.name || "x");
+    const cls = ["avatar", extraClass].filter(Boolean).join(" ");
+    const alt = escapeHtml(String(u.name || u.handle || "Profil"));
+    const url = String(u.avatar_url || "").trim();
+    if (url) {
+      return `<div class="${cls} profile-head__avatar--has-img" style="background:hsl(${hue},55%,42%)"><img src="${escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async" onerror="this.remove();this.closest('.profile-head__avatar')&&this.closest('.profile-head__avatar').classList.remove('profile-head__avatar--has-img');" /></div>`;
+    }
+    return `<div class="${cls}" style="background:hsl(${hue},55%,42%)">${escapeHtml(userInitial(u.name))}</div>`;
+  }
+
   function userById(id) {
     if (id === "me") {
       const cloudMe = window.SLCloud && window.SLCloud.me;
@@ -1739,6 +1755,7 @@
           handle: cloudMe.handle,
           bio: cloudMe.bio || "",
           hue: cloudMe.hue != null ? cloudMe.hue : 152,
+          avatar_url: cloudMe.avatar_url || "",
         };
       }
       return {
@@ -1747,6 +1764,7 @@
         handle: state.profile.handle,
         bio: state.profile.bio,
         hue: 152,
+        avatar_url: "",
       };
     }
     const peer = (state.invitedPeers || []).find((p) => p.id === id);
@@ -1757,6 +1775,7 @@
         handle: peer.handle,
         bio: peer.bio || "",
         hue: peer.hue != null ? peer.hue : hueFromHandle(peer.handle || peer.name || "x"),
+        avatar_url: peer.avatar_url || "",
       };
     }
     const cloudPeer = window.__slCloudPeers && window.__slCloudPeers.get && window.__slCloudPeers.get(id);
@@ -1768,9 +1787,17 @@
         handle: cloudPeer.handle,
         bio: cloudPeer.bio || "",
         hue: cloudPeer.hue != null ? cloudPeer.hue : hueFromHandle(cloudPeer.handle || cloudPeer.name || "x"),
+        avatar_url: cloudPeer.avatar_url || "",
       };
     }
-    return USERS.find((u) => u.id === id);
+    const demo = USERS.find((u) => u.id === id);
+    if (demo) {
+      return {
+        ...demo,
+        avatar_url: demo.avatar_url || "",
+      };
+    }
+    return null;
   }
 
   function inviteBaseUrl() {
@@ -3642,11 +3669,15 @@
       perfVideosBlock += `<p class="perf-video-add-wrap"><button type="button" class="btn btn-primary btn-sm" id="btn-add-perf-video">+ Ajouter une vidéo YouTube</button></p>`;
     }
 
+    const coverClass = u.avatar_url ? "profile-cover profile-cover--photo" : "profile-cover";
+    const coverStyle = u.avatar_url
+      ? `--ph:${u.hue};--profile-photo:url('${escapeHtml(String(u.avatar_url).replace(/'/g, "%27"))}')`
+      : `--ph:${u.hue}`;
     return `<div class="profile-view view-themed">
-      <div class="profile-cover" style="--ph:${u.hue}"></div>
+      <div class="${coverClass}" style="${coverStyle}"></div>
       <div class="profile-sheet">
       <div class="profile-head">
-        <div class="avatar profile-head__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
+        <div class="profile-head__avatar-slot">${userAvatarHtml(u, "profile-head__avatar")}</div>
         <div>
           <h1 class="page-title profile-head__title">${escapeHtml(u.name)}</h1>
           <p class="page-sub profile-head__handle" style="margin:0">@${escapeHtml(u.handle)}</p>
@@ -3948,6 +3979,7 @@
     injectProfileCompatibility();
     injectSocialEventInterests();
     injectInboxHydration();
+    void injectProfileCloudHydration();
     if (route.view === "album") {
       requestAnimationFrame(() => applyAlbumBackdropTint());
     }
@@ -4126,6 +4158,41 @@
           : `<p class="empty">Pas assez de données pour reco. Importe une playlist + invite des ami·es.</p>`;
       } catch (e) { console.warn("[recos]", e); }
     })();
+  }
+
+
+  async function injectProfileCloudHydration() {
+    if (route.view !== "profile") return;
+    if (!window.SLCloud || !SLCloud.ready) return;
+    const uid = route.userId || "me";
+    let cloudId = null;
+    if (uid === "me") {
+      if (!SLCloud.isSignedIn || !SLCloud.isSignedIn()) return;
+      if (typeof SLCloud.refreshProfile === "function") await SLCloud.refreshProfile();
+      cloudId = SLCloud.me && SLCloud.me.id;
+    } else if (isCloudUuid(uid)) {
+      cloudId = uid;
+    } else {
+      return;
+    }
+    if (!cloudId) return;
+    try {
+      let prof = cloudPeers.get(cloudId) || (uid === "me" ? SLCloud.me : null);
+      if (!prof || prof.avatar_url === undefined) {
+        prof = await SLCloud.getProfileById(cloudId);
+        if (prof) registerCloudPeerProfiles([prof]);
+      }
+      if (route.view !== "profile" || (route.userId || "me") !== uid) return;
+      const u = userById(uid);
+      if (!u) return;
+      const slot = document.querySelector(".profile-head__avatar-slot");
+      if (slot) slot.innerHTML = userAvatarHtml(u, "profile-head__avatar");
+      const cover = document.querySelector(".profile-cover");
+      if (cover && u.avatar_url) {
+        cover.classList.add("profile-cover--photo");
+        cover.style.setProperty("--profile-photo", `url('${String(u.avatar_url).replace(/'/g, "%27")}')`);
+      }
+    } catch (_) {}
   }
 
   async function injectProfileCompatibility() {
@@ -5359,11 +5426,22 @@
     // Users locaux : me + invitedPeers
     const users = [];
     const me = state.profile || {};
+const cloudMe = window.SLCloud && SLCloud.me;
     if (
       (me.displayName && me.displayName.toLowerCase().includes(qq)) ||
-      (me.handle && me.handle.toLowerCase().includes(qq))
+      (me.handle && me.handle.toLowerCase().includes(qq)) ||
+      (cloudMe && ((cloudMe.name || "").toLowerCase().includes(qq) || (cloudMe.handle || "").toLowerCase().includes(qq)))
     ) {
-      users.push({ id: "me", name: me.displayName, handle: me.handle, bio: me.bio || "", hue: 152, local: true, self: true });
+      users.push({
+        id: "me",
+        name: cloudMe ? cloudMe.name : me.displayName,
+        handle: cloudMe ? cloudMe.handle : me.handle,
+        bio: (cloudMe && cloudMe.bio) || me.bio || "",
+        hue: cloudMe && cloudMe.hue != null ? cloudMe.hue : 152,
+        avatar_url: (cloudMe && cloudMe.avatar_url) || "",
+        local: true,
+        self: true,
+      });
     }
     (state.invitedPeers || []).forEach((p) => {
       if ((p.name || "").toLowerCase().includes(qq) || (p.handle || "").toLowerCase().includes(qq)) {
@@ -5383,8 +5461,7 @@
     return escapeHtmlS(t.slice(0, idx)) + `<mark>${escapeHtmlS(t.slice(idx, idx + q.length))}</mark>` + escapeHtmlS(t.slice(idx + q.length));
   }
 
-  function userInitial(name) { return String(name || "?").trim().charAt(0).toUpperCase() || "?"; }
-
+  
   function renderUserRow(u, q) {
     const hue = u.hue != null ? u.hue : hueFromHandle(u.handle || u.name);
     const avatarHtml = u.avatar_url
@@ -5597,6 +5674,7 @@
       try {
         const cloudUsers = await window.SLCloud.searchProfiles(q, 20);
         if (reqId !== searchCloudReqId) return;
+        registerCloudPeerProfiles(cloudUsers || []);
         __slSearchCache = { q: qq, users: cloudUsers };
         if ($main.getAttribute("data-route") === "search" && $search.value.trim().toLowerCase() === qq) {
           render();

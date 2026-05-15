@@ -200,14 +200,14 @@
       if (!q) {
         const { data } = await this.client
           .from("profiles")
-          .select("id,handle,name,bio,hue,city")
+          .select("id,handle,name,bio,hue,city,avatar_url")
           .order("created_at", { ascending: false })
           .limit(limit);
         return data || [];
       }
       const { data } = await this.client
         .from("profiles")
-        .select("id,handle,name,bio,hue,city")
+        .select("id,handle,name,bio,hue,city,avatar_url")
         .or(`handle.ilike.%${q}%,name.ilike.%${q}%`)
         .limit(limit);
       return data || [];

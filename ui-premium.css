@@ -565,6 +565,15 @@ main.app-content {
   border: 1px solid var(--border);
 }
 
+.profile-head__avatar--has-img img {
+  border-radius: 50%;
+}
+
+.profile-cover--photo::before {
+  opacity: 0.38;
+  filter: blur(26px) saturate(1.05) sepia(0.12);
+}
+
 .profile-head__avatar {
   background: var(--bg-elevated);
   border-color: var(--bg-card);

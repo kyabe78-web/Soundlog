@@ -113,6 +113,7 @@
         },
       ],
       wishlist: ["a15", "a31", "a28"],
+      artworkCache: {},
       importedAlbums: [],
       settings: { youtubeApiKey: "", alertCity: "Paris", desktopAlerts: false, musicCountry: "FR" },
       profile: {
@@ -191,6 +192,8 @@
         lists: Array.isArray(parsed.lists) ? parsed.lists : base.lists,
         wishlist: Array.isArray(parsed.wishlist) ? parsed.wishlist : base.wishlist,
         importedAlbums: Array.isArray(parsed.importedAlbums) ? parsed.importedAlbums : base.importedAlbums,
+        artworkCache:
+          parsed.artworkCache && typeof parsed.artworkCache === "object" ? parsed.artworkCache : base.artworkCache,
         settings: { ...base.settings, ...(parsed.settings || {}) },
         profile: (() => {
           const prof = { ...base.profile, ...(parsed.profile || {}) };
@@ -599,7 +602,7 @@
       title: x.title,
       artist: x.artist.name,
       year: (x.release_date || "").slice(0, 4) || "—",
-      artworkUrl: x.cover_medium || x.cover || "",
+      artworkUrl: x.cover_xl || x.cover_big || x.cover_medium || x.cover || "",
       deezer: x.link,
       deezerAlbumId: x.id ? String(x.id) : null,
       fromDeezer: true,
@@ -2016,13 +2019,175 @@
   const COVER_FALLBACK_SVG =
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
 
+  function ensureArtworkCache() {
+    if (!state.artworkCache || typeof state.artworkCache !== "object") state.artworkCache = {};
+  }
+
+  function artworkCacheKey(album) {
+    if (!album) return "";
+    return normalizeKey(album.artist, album.title);
+  }
+
   function bestArtworkUrl(album) {
-    let url = String((album && album.artworkUrl) || "").trim();
+    if (!album) return "";
+    let url = String(album.artworkUrl || "").trim();
+    if (!url) {
+      ensureArtworkCache();
+      const cached = state.artworkCache[artworkCacheKey(album)];
+      if (cached) url = String(cached).trim();
+    }
     if (!url) return "";
     return url
       .replace(/100x100bb/gi, "600x600bb")
       .replace(/\/100x100-/gi, "/600x600-")
-      .replace(/cover_medium/gi, "cover_big");
+      .replace(/cover_medium/gi, "cover_xl")
+      .replace(/cover_big/gi, "cover_xl");
+  }
+
+  async function fetchArtworkFromItunes(artist, title) {
+    const q = `${artist || ""} ${title || ""}`.trim();
+    if (q.length < 2) return "";
+    try {
+      const rows = await fetchItunesAlbums(q);
+      const want = normalizeKey(artist, title);
+      const hit =
+        rows.find((r) => normalizeKey(r.artist, r.title) === want) ||
+        rows.find((r) => softMatch(normalizeText(r.artist), normalizeText(artist))) ||
+        rows[0];
+      return (hit && hit.artworkUrl) || "";
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function fetchArtworkFromDeezer(artist, title) {
+    const q = `${artist || ""} ${title || ""}`.trim();
+    if (q.length < 2) return "";
+    try {
+      const rows = await fetchDeezerAlbums(q);
+      const want = normalizeKey(artist, title);
+      const hit = rows.find((r) => normalizeKey(r.artist, r.title) === want) || rows[0];
+      let url = (hit && hit.artworkUrl) || "";
+      if (url) url = url.replace(/cover_medium/gi, "cover_xl").replace(/cover_big/gi, "cover_xl");
+      return url;
+    } catch (_) {
+      return "";
+    }
+  }
+
+  async function resolveAlbumArtworkUrl(al) {
+    if (!al) return "";
+    const existing = bestArtworkUrl(al);
+    if (existing) return existing;
+    let url = await fetchArtworkFromItunes(al.artist, al.title);
+    if (!url) url = await fetchArtworkFromDeezer(al.artist, al.title);
+    if (!url) return "";
+    ensureArtworkCache();
+    state.artworkCache[artworkCacheKey(al)] = url;
+    const imp = (state.importedAlbums || []).find((a) => a.id === al.id);
+    if (imp) imp.artworkUrl = url;
+    return url;
+  }
+
+  function patchCoverFramesForAlbum(albumId) {
+    const al = albumById(albumId);
+    if (!al) return;
+    const url = bestArtworkUrl(al);
+    if (!url) return;
+    const sel = `.cover-frame[data-album="${albumId.replace(/"/g, '\"')}"]`;
+    document.querySelectorAll(sel).forEach((frame) => {
+      if (frame.classList.contains("has-art") && frame.querySelector(".cover-img")) return;
+      const cover = frame.querySelector(".cover");
+      if (!cover) return;
+      frame.classList.add("has-art");
+      cover.classList.remove("is-fallback");
+      cover.classList.add("has-img");
+      let img = cover.querySelector(".cover-img");
+      if (!img) {
+        img = document.createElement("img");
+        img.className = "cover-img";
+        img.loading = "lazy";
+        img.decoding = "async";
+        img.width = 600;
+        img.height = 600;
+        cover.insertBefore(img, cover.firstChild);
+      }
+      img.src = url;
+      img.alt = `${al.title} — ${al.artist}`;
+      img.onerror = () => {
+        frame.classList.remove("has-art");
+        cover.classList.add("is-fallback");
+        cover.classList.remove("has-img");
+        img.remove();
+      };
+    });
+  }
+
+  async function hydrateAlbumArtworks(albums, limit) {
+    const max = limit == null ? 20 : limit;
+    const need = [];
+    const seen = new Set();
+    for (const al of albums || []) {
+      if (!al || bestArtworkUrl(al)) continue;
+      const key = artworkCacheKey(al);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      need.push(al);
+      if (need.length >= max) break;
+    }
+    if (!need.length) return false;
+    let changed = false;
+    await Promise.all(
+      need.map(async (al) => {
+        const url = await resolveAlbumArtworkUrl(al);
+        if (url) changed = true;
+      })
+    );
+    if (changed) persist();
+    return changed;
+  }
+
+  async function injectLibraryArtworkHydration() {
+    if (route.view !== "libraries") return;
+    const shelf = libraryShelfAlbums();
+    const featured = libFeaturedAlbums();
+    const unique = [];
+    const ids = new Set();
+    for (const al of shelf.concat(featured)) {
+      if (!al || ids.has(al.id)) continue;
+      ids.add(al.id);
+      unique.push(al);
+    }
+    const hitsNeeding = (libraryRemoteHits || []).filter((h) => !String(h.artworkUrl || "").trim());
+    for (const h of hitsNeeding.slice(0, 12)) {
+      unique.push({ id: "", title: h.title, artist: h.artist, artworkUrl: "" });
+    }
+    await hydrateAlbumArtworks(unique, 24);
+    if (route.view !== "libraries") return;
+    unique.forEach((al) => {
+      if (al.id) patchCoverFramesForAlbum(al.id);
+    });
+    document.querySelectorAll(".cover-frame[data-art-key]").forEach((frame) => {
+      const key = frame.getAttribute("data-art-key");
+      if (!key) return;
+      ensureArtworkCache();
+      const url = state.artworkCache[key];
+      if (!url) return;
+      const cover = frame.querySelector(".cover");
+      if (!cover) return;
+      frame.classList.add("has-art");
+      cover.classList.remove("is-fallback");
+      cover.classList.add("has-img");
+      let img = cover.querySelector(".cover-img");
+      if (!img) {
+        img = document.createElement("img");
+        img.className = "cover-img";
+        img.loading = "lazy";
+        img.decoding = "async";
+        cover.insertBefore(img, cover.firstChild);
+      }
+      img.src = url;
+    });
   }
 
   function coverHtml(album, small, sizeHint) {
@@ -2037,7 +2202,8 @@
     const img = artUrl
       ? `<img class="cover-img" src="${escapeHtml(artUrl)}" alt="${label}" loading="lazy" decoding="async" width="600" height="600" />`
       : "";
-    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}" style="${albumTintStyle(album)}">
+    const artKey = artworkCacheKey(album);
+    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}"${artKey ? ` data-art-key="${escapeHtml(artKey)}"` : ""} style="${albumTintStyle(album)}">
       <div class="cover-glow" style="${grad}" aria-hidden="true"></div>
       <div class="${coverCls}" style="${grad}" role="img" aria-label="${label}">
         ${img}
@@ -4157,6 +4323,7 @@
     injectProfileCompatibility();
     injectSocialEventInterests();
     injectInboxHydration();
+    void injectLibraryArtworkHydration();
     if (route.view === "album") {
       requestAnimationFrame(() => applyAlbumBackdropTint());
     }
@@ -5171,7 +5338,10 @@
     const h = (window.location.hash || "#").slice(1);
     if (h !== "bibliotheques") return;
     const still = document.getElementById("lib-q");
-    if (still && still.value.trim() === qq) render();
+    if (still && still.value.trim() === qq) {
+      render();
+      void injectLibraryArtworkHydration();
+    }
   }
 
   function wireLibrarySearch() {

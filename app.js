@@ -3079,29 +3079,155 @@
   function renderSearchResults(q) {
     const qq = q.trim().toLowerCase();
     if (!qq) return "";
-    const res = allAlbums().filter(
-      (a) =>
-        a.title.toLowerCase().includes(qq) ||
-        a.artist.toLowerCase().includes(qq) ||
-        (a.genre && a.genre.toLowerCase().includes(qq))
-    );
-    if (!res.length)
-      return `<div class="search-view"><p class="empty">Aucun résultat local pour « ${escapeHtml(q)} ». Essaie l’onglet <strong>Bibliothèques</strong> pour interroger Apple Music et Deezer.</p></div>`;
+    // Cache pour les cloud users
+    const cache = __slSearchCache;
+    const cloudUsers = (cache && cache.q === qq) ? (cache.users || []) : [];
+    const local = (function () {
+      // Reuse buildSearchEntities via the same engine (mais search page = sans limite)
+      const albumsAll = allAlbums();
+      const importedTracks = state.cloudImportedTracks || [];
+      const albums = albumsAll.filter((a) =>
+        (a.title || "").toLowerCase().includes(qq) ||
+        (a.artist || "").toLowerCase().includes(qq) ||
+        (a.genre || "").toLowerCase().includes(qq));
+      const artistMap = new Map();
+      albumsAll.forEach((a) => {
+        const k = (a.artist || "").toLowerCase().trim();
+        if (!k) return;
+        if (!artistMap.has(k)) artistMap.set(k, { name: a.artist, count: 0, albumIds: [] });
+        const e = artistMap.get(k); e.count++; e.albumIds.push(a.id);
+      });
+      importedTracks.forEach((t) => {
+        const k = (t.artist_name || "").toLowerCase().trim();
+        if (!k) return;
+        if (!artistMap.has(k)) artistMap.set(k, { name: t.artist_name, count: 0, albumIds: [], imported: true });
+        else artistMap.get(k).count++;
+      });
+      const artists = Array.from(artistMap.values())
+        .filter((a) => a.name.toLowerCase().includes(qq))
+        .sort((a, b) => b.count - a.count);
+      const tracks = importedTracks.filter((t) =>
+        (t.track_name || "").toLowerCase().includes(qq) ||
+        (t.artist_name || "").toLowerCase().includes(qq) ||
+        (t.album_name || "").toLowerCase().includes(qq));
+      const users = [];
+      const me = state.profile || {};
+      if ((me.displayName && me.displayName.toLowerCase().includes(qq)) ||
+          (me.handle && me.handle.toLowerCase().includes(qq))) {
+        users.push({ id: "me", name: me.displayName, handle: me.handle, hue: 152, self: true });
+      }
+      (state.invitedPeers || []).forEach((p) => {
+        if ((p.name || "").toLowerCase().includes(qq) || (p.handle || "").toLowerCase().includes(qq)) {
+          users.push({ id: p.id, name: p.name, handle: p.handle, hue: p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x") });
+        }
+      });
+      // Merge cloud users (excluding "me" doublons)
+      const meCloudId = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
+      const knownIds = new Set(users.map((u) => u.id));
+      cloudUsers.forEach((cu) => {
+        if (cu.id === meCloudId && knownIds.has("me")) return;
+        if (!knownIds.has(cu.id)) users.push({ ...cu, cloud: true });
+      });
+      return { users, artists, albums, tracks };
+    })();
+
+    const tab = route.searchTab || "all";
+    const total = local.users.length + local.artists.length + local.albums.length + local.tracks.length;
+    const cloudPending = !cache || cache.q !== qq;
+    const noResults = !total;
+
+    const tabBtn = (key, label, count) =>
+      `<button type="button" class="search-tab ${tab === key ? "is-active" : ""}" data-search-tab="${key}">
+        <span>${label}</span>${count != null ? `<span class="search-tab__count">${count}</span>` : ""}
+      </button>`;
+
+    const tabs = `<nav class="search-tabs" role="tablist">
+      ${tabBtn("all", "Tout", total)}
+      ${tabBtn("users", "Profils", local.users.length)}
+      ${tabBtn("artists", "Artistes", local.artists.length)}
+      ${tabBtn("albums", "Albums", local.albums.length)}
+      ${tabBtn("tracks", "Titres", local.tracks.length)}
+    </nav>`;
+
+    const sectionUsers = (rows) => rows.length ? `<section class="search-section">
+      <h3 class="search-section__title">Profils <small>${rows.length}</small></h3>
+      <div class="search-users-grid">${rows.map((u) => {
+        const hue = u.hue != null ? u.hue : hueFromHandle(u.handle || u.name);
+        const avatar = u.avatar_url
+          ? `<img src="${escapeHtml(u.avatar_url)}" alt="" loading="lazy" />`
+          : escapeHtml(userInitial(u.name));
+        return `<button type="button" class="search-user-card" data-search-user="${escapeHtml(u.id)}">
+          <span class="search-user-card__avatar" style="background:hsl(${hue},55%,42%)">${avatar}</span>
+          <span class="search-user-card__name">${escapeHtml(u.name || u.handle || "—")}${u.self ? ` <em>Toi</em>` : ""}</span>
+          <span class="search-user-card__handle">@${escapeHtml(u.handle || "")}</span>
+          ${u.bio ? `<span class="search-user-card__bio">${escapeHtml(u.bio).slice(0, 80)}</span>` : ""}
+        </button>`;
+      }).join("")}</div>
+    </section>` : "";
+
+    const sectionArtists = (rows) => rows.length ? `<section class="search-section">
+      <h3 class="search-section__title">Artistes <small>${rows.length}</small></h3>
+      <div class="search-artists-grid">${rows.map((a) => `<button type="button" class="search-artist-card" data-search-artist="${escapeHtml(a.name)}">
+        <span class="search-artist-card__art">${escapeHtml(userInitial(a.name))}</span>
+        <span class="search-artist-card__name">${escapeHtml(a.name)}</span>
+        <span class="search-artist-card__meta">${a.albumIds && a.albumIds.length ? a.albumIds.length + " album" + (a.albumIds.length > 1 ? "s" : "") : "Artiste"}</span>
+      </button>`).join("")}</div>
+    </section>` : "";
+
+    const sectionAlbums = (rows) => rows.length ? `<section class="search-section">
+      <h3 class="search-section__title">Albums <small>${rows.length}</small></h3>
+      <div class="grid-albums">${rows.map((al) => `<div class="album-card" data-album="${al.id}">
+        ${coverHtml(al, true)}
+        <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist || "")}</span></div>
+      </div>`).join("")}</div>
+    </section>` : "";
+
+    const sectionTracks = (rows) => rows.length ? `<section class="search-section">
+      <h3 class="search-section__title">Titres <small>${rows.length}</small></h3>
+      <ol class="search-tracks-list">${rows.slice(0, 80).map((t) => {
+        const cover = t.album_artwork_url
+          ? `<img src="${escapeHtml(t.album_artwork_url)}" alt="" loading="lazy" />`
+          : `<span class="search-tracks-list__ph">♪</span>`;
+        return `<li>
+          <span class="search-tracks-list__cover">${cover}</span>
+          <span class="search-tracks-list__txt">
+            <strong>${escapeHtml(t.track_name)}</strong>
+            <span class="feed-note">${escapeHtml(t.artist_name)}${t.album_name ? " — " + escapeHtml(t.album_name) : ""}</span>
+          </span>
+          ${t.source ? `<span class="search-tracks-list__src" data-src="${escapeHtml(t.source)}">${escapeHtml(t.source)}</span>` : ""}
+        </li>`;
+      }).join("")}</ol>${rows.length > 80 ? `<p class="feed-note">Affiche les 80 premiers titres sur ${rows.length}.</p>` : ""}
+    </section>` : "";
+
+    let body = "";
+    if (noResults && !cloudPending) {
+      body = `<div class="empty" style="padding:2rem">
+        Aucun résultat pour « ${escapeHtml(q)} ».<br>
+        <small>Essaie l'onglet <strong>Bibliothèques</strong> pour explorer Apple Music et Deezer.</small>
+      </div>`;
+    } else if (tab === "all") {
+      body = sectionUsers(local.users.slice(0, 12))
+           + sectionArtists(local.artists.slice(0, 16))
+           + sectionAlbums(local.albums.slice(0, 24))
+           + sectionTracks(local.tracks.slice(0, 30));
+    } else if (tab === "users") body = sectionUsers(local.users);
+    else if (tab === "artists") body = sectionArtists(local.artists);
+    else if (tab === "albums") body = sectionAlbums(local.albums);
+    else if (tab === "tracks") body = sectionTracks(local.tracks);
+
     return `<div class="search-view view-themed">
       <div class="search-hero">
-        <p class="search-hero__kicker">Recherche locale</p>
-        <h2 class="page-title search-hero__title">Résultats</h2>
-        <p class="page-sub search-hero__sub">Pour « <strong>${escapeHtml(q)}</strong> » — ${res.length} album${res.length > 1 ? "s" : ""}</p>
+        <p class="kicker search-hero__kicker">Recherche</p>
+        <h2 class="page-title search-hero__title">${total ? total + " résultat" + (total > 1 ? "s" : "") : "Aucun résultat"}</h2>
+        <p class="page-sub search-hero__sub">Pour « <strong>${escapeHtml(q)}</strong> »${cloudPending ? ` <span class="search-cloud-pending">· cherche dans le cloud…</span>` : ""}</p>
+        ${tabs}
       </div>
-      <div class="grid-albums search-grid">${res
-        .map(
-          (al) => `<div class="album-card" data-album="${al.id}">
-        ${coverHtml(al)}
-        <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div>
-      </div>`
-        )
-        .join("")}</div></div>`;
+      <div class="search-body" data-search-body>${body || `<p class="empty" style="padding:2rem">Pas de contenu pour cet onglet.</p>`}</div>
+    </div>`;
   }
+
+  // Cache simple pour la recherche cloud (partagée entre popover et page)
+  let __slSearchCache = null;
 
   function render() {
     stopAlbumPreview();
@@ -3157,6 +3283,10 @@
     void $main.offsetWidth;
     $main.classList.add("view-enter");
     bindMainEvents();
+    // Déclenche la recherche cloud quand on est sur la page search (si pas en cache)
+    if ($search.value.trim() && window.__sl && window.__sl.ensureSearchCloudFor) {
+      window.__sl.ensureSearchCloudFor($search.value.trim());
+    }
     if (route.view === "libraries") {
       const lq = document.getElementById("lib-q");
       if (lq) {
@@ -3506,6 +3636,28 @@
     $main.querySelectorAll("[data-profile]").forEach((el) => {
       el.addEventListener("click", () => {
         navigate("profile", { userId: el.getAttribute("data-profile") });
+      });
+    });
+    // ---- Recherche : onglets, profils, artistes ----
+    $main.querySelectorAll("[data-search-tab]").forEach((el) => {
+      el.addEventListener("click", () => {
+        route.searchTab = el.getAttribute("data-search-tab");
+        render();
+      });
+    });
+    $main.querySelectorAll("[data-search-user]").forEach((el) => {
+      el.addEventListener("click", () => {
+        const id = el.getAttribute("data-search-user");
+        $search.value = "";
+        navigate("profile", { userId: id });
+      });
+    });
+    $main.querySelectorAll("[data-search-artist]").forEach((el) => {
+      el.addEventListener("click", () => {
+        const name = el.getAttribute("data-search-artist");
+        $search.value = name;
+        route.searchTab = "albums";
+        render();
       });
     });
     $main.querySelectorAll("[data-list]").forEach((el) => {
@@ -4221,16 +4373,424 @@
       navigate("profile", { userId: "me" });
     }
   });
-  $search.addEventListener("input", () => render());
+  // =======================================================================
+  // Recherche unifiée — popover live multi-entités (users / artists / albums / tracks)
+  // =======================================================================
+  const $searchWrap = document.getElementById("search-wrap");
+  const $popover = document.getElementById("search-popover");
+  const RECENTS_KEY = "soundlog.searchRecents";
+  const MAX_RECENTS = 6;
+  let searchDebounceTimer = null;
+  let searchCloudReqId = 0;
+  let searchActiveIndex = -1;
+  let searchLastQuery = "";
+
+  function loadRecents() {
+    try { return JSON.parse(localStorage.getItem(RECENTS_KEY) || "[]"); } catch (_) { return []; }
+  }
+  function pushRecent(q) {
+    if (!q || q.length < 2) return;
+    let arr = loadRecents().filter((x) => x.toLowerCase() !== q.toLowerCase());
+    arr.unshift(q);
+    arr = arr.slice(0, MAX_RECENTS);
+    try { localStorage.setItem(RECENTS_KEY, JSON.stringify(arr)); } catch (_) {}
+  }
+  function clearRecents() {
+    try { localStorage.removeItem(RECENTS_KEY); } catch (_) {}
+  }
+
+  // Construit l'index de recherche local à la volée
+  function searchLocalEntities(qq) {
+    const albumsAll = allAlbums();
+    const importedTracks = state.cloudImportedTracks || [];
+
+    // Albums
+    const albums = albumsAll
+      .filter((a) =>
+        (a.title || "").toLowerCase().includes(qq) ||
+        (a.artist || "").toLowerCase().includes(qq) ||
+        (a.genre || "").toLowerCase().includes(qq)
+      )
+      .slice(0, 24);
+
+    // Artists (dédup catalog + imports)
+    const artistMap = new Map();
+    albumsAll.forEach((a) => {
+      const k = (a.artist || "").toLowerCase().trim();
+      if (!k) return;
+      if (!artistMap.has(k)) artistMap.set(k, { name: a.artist, count: 0, albumIds: [] });
+      const e = artistMap.get(k); e.count++; e.albumIds.push(a.id);
+    });
+    importedTracks.forEach((t) => {
+      const k = (t.artist_name || "").toLowerCase().trim();
+      if (!k) return;
+      if (!artistMap.has(k)) artistMap.set(k, { name: t.artist_name, count: 0, albumIds: [], imported: true });
+      else artistMap.get(k).count++;
+    });
+    const artists = Array.from(artistMap.values())
+      .filter((a) => a.name.toLowerCase().includes(qq))
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 16);
+
+    // Tracks (imports cloud)
+    const tracks = importedTracks
+      .filter((t) =>
+        (t.track_name || "").toLowerCase().includes(qq) ||
+        (t.artist_name || "").toLowerCase().includes(qq) ||
+        (t.album_name || "").toLowerCase().includes(qq)
+      )
+      .slice(0, 24);
+
+    // Users locaux : me + invitedPeers
+    const users = [];
+    const me = state.profile || {};
+    if (
+      (me.displayName && me.displayName.toLowerCase().includes(qq)) ||
+      (me.handle && me.handle.toLowerCase().includes(qq))
+    ) {
+      users.push({ id: "me", name: me.displayName, handle: me.handle, bio: me.bio || "", hue: 152, local: true, self: true });
+    }
+    (state.invitedPeers || []).forEach((p) => {
+      if ((p.name || "").toLowerCase().includes(qq) || (p.handle || "").toLowerCase().includes(qq)) {
+        users.push({ id: p.id, name: p.name, handle: p.handle, bio: p.bio || "", hue: p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x"), local: true });
+      }
+    });
+
+    return { users, artists, albums, tracks };
+  }
+
+  function escapeHtmlS(s) { return escapeHtml(String(s || "")); }
+  function highlight(text, q) {
+    const t = String(text || "");
+    if (!q) return escapeHtmlS(t);
+    const idx = t.toLowerCase().indexOf(q.toLowerCase());
+    if (idx === -1) return escapeHtmlS(t);
+    return escapeHtmlS(t.slice(0, idx)) + `<mark>${escapeHtmlS(t.slice(idx, idx + q.length))}</mark>` + escapeHtmlS(t.slice(idx + q.length));
+  }
+
+  function userInitial(name) { return String(name || "?").trim().charAt(0).toUpperCase() || "?"; }
+
+  function renderUserRow(u, q) {
+    const hue = u.hue != null ? u.hue : hueFromHandle(u.handle || u.name);
+    const avatarHtml = u.avatar_url
+      ? `<img src="${escapeHtmlS(u.avatar_url)}" alt="" loading="lazy" />`
+      : escapeHtmlS(userInitial(u.name));
+    const handleTxt = u.handle ? "@" + u.handle : "";
+    return `<button type="button" class="sp-row" role="option" data-type="user" data-id="${escapeHtmlS(u.id)}">
+      <span class="sp-row__avatar" style="background:hsl(${hue},55%,42%)">${avatarHtml}</span>
+      <span class="sp-row__main">
+        <span class="sp-row__title">${highlight(u.name || u.handle || "Sans nom", q)}${u.self ? ` <span class="sp-row__self">Toi</span>` : ""}</span>
+        <span class="sp-row__sub">${highlight(handleTxt, q)}${u.city ? ` · ${escapeHtmlS(u.city)}` : ""}</span>
+      </span>
+      <span class="sp-row__kind">Profil</span>
+    </button>`;
+  }
+
+  function renderArtistRow(a, q) {
+    return `<button type="button" class="sp-row" role="option" data-type="artist" data-name="${escapeHtmlS(a.name)}">
+      <span class="sp-row__art sp-row__art--artist" aria-hidden="true">${escapeHtmlS(userInitial(a.name))}</span>
+      <span class="sp-row__main">
+        <span class="sp-row__title">${highlight(a.name, q)}</span>
+        <span class="sp-row__sub">${a.albumIds && a.albumIds.length ? a.albumIds.length + " album" + (a.albumIds.length > 1 ? "s" : "") + " dans le catalogue" : "Artiste"}${a.imported ? " · vu dans tes imports" : ""}</span>
+      </span>
+      <span class="sp-row__kind">Artiste</span>
+    </button>`;
+  }
+
+  function renderAlbumRow(al, q) {
+    const cover = al.artworkUrl
+      ? `<img src="${escapeHtmlS(al.artworkUrl)}" alt="" loading="lazy" />`
+      : `<span style="background:linear-gradient(135deg,${escapeHtmlS(al.from || "#444")},${escapeHtmlS(al.to || "#222")});width:100%;height:100%;display:block"></span>`;
+    return `<button type="button" class="sp-row" role="option" data-type="album" data-id="${escapeHtmlS(al.id)}">
+      <span class="sp-row__art">${cover}</span>
+      <span class="sp-row__main">
+        <span class="sp-row__title">${highlight(al.title, q)}</span>
+        <span class="sp-row__sub">${highlight(al.artist || "", q)}${al.year ? " · " + al.year : ""}${al.genre ? " · " + escapeHtmlS(al.genre) : ""}</span>
+      </span>
+      <span class="sp-row__kind">Album</span>
+    </button>`;
+  }
+
+  function renderTrackRow(t, q) {
+    const cover = t.album_artwork_url
+      ? `<img src="${escapeHtmlS(t.album_artwork_url)}" alt="" loading="lazy" />`
+      : `<span class="sp-row__art--track-ph" aria-hidden="true">♪</span>`;
+    return `<button type="button" class="sp-row" role="option" data-type="track" data-artist="${escapeHtmlS(t.artist_name)}" data-album="${escapeHtmlS(t.album_name)}">
+      <span class="sp-row__art">${cover}</span>
+      <span class="sp-row__main">
+        <span class="sp-row__title">${highlight(t.track_name, q)}</span>
+        <span class="sp-row__sub">${highlight(t.artist_name, q)}${t.album_name ? ` — ${highlight(t.album_name, q)}` : ""}</span>
+      </span>
+      <span class="sp-row__kind">Titre</span>
+    </button>`;
+  }
+
+  function renderRecents() {
+    const recents = loadRecents();
+    if (!recents.length) {
+      return `<div class="sp-empty">
+        <p class="sp-empty__title">Commence à taper pour trouver…</p>
+        <p class="sp-empty__sub">Profils, artistes, albums, ou titres dans tes playlists importées.</p>
+      </div>`;
+    }
+    return `<div class="sp-section sp-section--recents">
+      <header class="sp-section__head">
+        <span>Recherches récentes</span>
+        <button type="button" class="sp-clear" data-clear-recents>Effacer</button>
+      </header>
+      <div class="sp-rows">
+        ${recents.map((r) => `<button type="button" class="sp-row sp-row--recent" role="option" data-type="recent" data-q="${escapeHtmlS(r)}">
+          <span class="sp-row__art sp-row__art--ic" aria-hidden="true">↺</span>
+          <span class="sp-row__main"><span class="sp-row__title">${escapeHtmlS(r)}</span></span>
+        </button>`).join("")}
+      </div>
+    </div>`;
+  }
+
+  function renderPopoverBody(results, q, opts) {
+    opts = opts || {};
+    const total = results.users.length + results.artists.length + results.albums.length + results.tracks.length;
+    if (!total && !opts.loadingCloud) {
+      return `<div class="sp-empty">
+        <p class="sp-empty__title">Aucun résultat pour « ${escapeHtmlS(q)} »</p>
+        <p class="sp-empty__sub">Essaie l'onglet <strong>Bibliothèques</strong> pour explorer Apple Music et Deezer.</p>
+      </div>`;
+    }
+    const section = (title, rows, kind) => {
+      if (!rows.length) return "";
+      const limited = rows.slice(0, 4);
+      return `<div class="sp-section">
+        <header class="sp-section__head"><span>${title}</span>${rows.length > limited.length ? `<button type="button" class="sp-clear" data-see-all="${kind}">Tout voir (${rows.length})</button>` : ""}</header>
+        <div class="sp-rows">${limited.join("")}</div>
+      </div>`;
+    };
+    return [
+      section("Profils", results.users.map((u) => renderUserRow(u, q)), "users"),
+      section("Artistes", results.artists.map((a) => renderArtistRow(a, q)), "artists"),
+      section("Albums", results.albums.map((al) => renderAlbumRow(al, q)), "albums"),
+      section("Titres", results.tracks.map((t) => renderTrackRow(t, q)), "tracks"),
+      opts.loadingCloud ? `<p class="sp-loading">Recherche dans les profils du cloud…</p>` : "",
+      total > 0 ? `<button type="button" class="sp-see-all" data-search-go>Voir tous les résultats pour « ${escapeHtmlS(q)} » <span aria-hidden="true">↵</span></button>` : "",
+    ].filter(Boolean).join("");
+  }
+
+  function openPopover() {
+    if (!$popover) return;
+    $popover.hidden = false;
+    $search.setAttribute("aria-expanded", "true");
+  }
+  function closePopover() {
+    if (!$popover) return;
+    $popover.hidden = true;
+    $search.setAttribute("aria-expanded", "false");
+    searchActiveIndex = -1;
+  }
+
+  function rebuildPopoverActiveItems() {
+    return Array.from($popover.querySelectorAll(".sp-row"));
+  }
+  function setActive(index) {
+    const items = rebuildPopoverActiveItems();
+    if (!items.length) { searchActiveIndex = -1; return; }
+    items.forEach((it) => it.classList.remove("is-active"));
+    const i = ((index % items.length) + items.length) % items.length;
+    items[i].classList.add("is-active");
+    items[i].scrollIntoView({ block: "nearest" });
+    searchActiveIndex = i;
+  }
+
+  function activateRow(row) {
+    if (!row) return;
+    const type = row.getAttribute("data-type");
+    const q = $search.value.trim();
+    if (q) pushRecent(q);
+    closePopover();
+    if (type === "user") {
+      const id = row.getAttribute("data-id");
+      $search.value = "";
+      navigate("profile", { userId: id });
+    } else if (type === "artist") {
+      const name = row.getAttribute("data-name");
+      $search.value = name;
+      render();
+    } else if (type === "album") {
+      const id = row.getAttribute("data-id");
+      $search.value = "";
+      navigate("album", { albumId: id });
+    } else if (type === "track") {
+      const artist = row.getAttribute("data-artist");
+      const album = row.getAttribute("data-album");
+      $search.value = album || artist || "";
+      render();
+    } else if (type === "recent") {
+      const r = row.getAttribute("data-q");
+      $search.value = r;
+      runSearch();
+      render();
+    }
+  }
+
+  async function runSearch() {
+    const q = $search.value.trim();
+    searchLastQuery = q;
+    if (!q) {
+      $popover.innerHTML = renderRecents();
+      openPopover();
+      return;
+    }
+    const local = searchLocalEntities(q.toLowerCase());
+    // 1er rendu instantané + indicateur "recherche cloud" si configuré
+    const willQueryCloud = !!(window.SLCloud && window.SLCloud.ready);
+    $popover.innerHTML = renderPopoverBody(local, q, { loadingCloud: willQueryCloud });
+    openPopover();
+
+    if (willQueryCloud) {
+      const reqId = ++searchCloudReqId;
+      try {
+        const cloudUsers = await window.SLCloud.searchProfiles(q, 20);
+        if (reqId !== searchCloudReqId || $search.value.trim() !== q) return;
+        // Cache global pour la page search
+        __slSearchCache = { q: q.toLowerCase(), users: cloudUsers };
+        // Merge (dédup par id) + filter les "me"
+        const meCloudId = window.SLCloud.me && window.SLCloud.me.id;
+        const localIds = new Set(local.users.map((u) => u.id));
+        const mergedUsers = local.users.slice();
+        cloudUsers.forEach((cu) => {
+          if (cu.id === meCloudId && localIds.has("me")) return;
+          if (!localIds.has(cu.id)) mergedUsers.push({ ...cu, cloud: true });
+        });
+        local.users = mergedUsers;
+        if (!$popover.hidden) $popover.innerHTML = renderPopoverBody(local, q, { loadingCloud: false });
+        // Si la page search est actuellement affichée pour cette query, on rerend pour intégrer les cloud users
+        if ($main.getAttribute("data-route") === "search" && searchLastQuery === q) {
+          render();
+        }
+      } catch (_) { /* silently ignore */ }
+    }
+  }
+
+  // Permet au render() de la page search de déclencher une recherche cloud si pas en cache
+  function ensureSearchCloudFor(q) {
+    if (!window.SLCloud || !window.SLCloud.ready) return;
+    const qq = q.toLowerCase();
+    if (__slSearchCache && __slSearchCache.q === qq) return;
+    // Lance asynchroniquement
+    (async () => {
+      const reqId = ++searchCloudReqId;
+      try {
+        const cloudUsers = await window.SLCloud.searchProfiles(q, 20);
+        if (reqId !== searchCloudReqId) return;
+        __slSearchCache = { q: qq, users: cloudUsers };
+        if ($main.getAttribute("data-route") === "search" && $search.value.trim().toLowerCase() === qq) {
+          render();
+        }
+      } catch (_) {}
+    })();
+  }
+  window.__sl = window.__sl || {};
+  window.__sl.ensureSearchCloudFor = ensureSearchCloudFor;
+
+  function debouncedSearch() {
+    clearTimeout(searchDebounceTimer);
+    searchDebounceTimer = setTimeout(runSearch, 160);
+  }
+
+  // ---- Bindings ----
+  $search.addEventListener("focus", () => {
+    if (!$search.value.trim()) {
+      $popover.innerHTML = renderRecents();
+      openPopover();
+    } else {
+      runSearch();
+    }
+  });
+
+  $search.addEventListener("input", () => {
+    debouncedSearch();
+    // Pas de full render() à chaque frappe : le popover suffit
+  });
+
   $search.addEventListener("keydown", (e) => {
     if (e.key === "Escape") {
-      $search.value = "";
+      if (!$popover.hidden) {
+        closePopover();
+        $search.blur();
+      } else if ($search.value) {
+        $search.value = "";
+        render();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      if ($popover.hidden) { runSearch(); return; }
+      setActive(searchActiveIndex + 1);
+      return;
+    }
+    if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActive(searchActiveIndex - 1);
+      return;
+    }
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const items = rebuildPopoverActiveItems();
+      if (searchActiveIndex >= 0 && items[searchActiveIndex]) {
+        activateRow(items[searchActiveIndex]);
+      } else if ($search.value.trim()) {
+        pushRecent($search.value.trim());
+        closePopover();
+        render();
+      }
+    }
+  });
+
+  $popover.addEventListener("click", (e) => {
+    const row = e.target.closest(".sp-row");
+    if (row) { activateRow(row); return; }
+    if (e.target.closest("[data-clear-recents]")) {
+      clearRecents();
+      $popover.innerHTML = renderRecents();
+      return;
+    }
+    const seeAllBtn = e.target.closest("[data-see-all]");
+    if (seeAllBtn) {
+      const tab = seeAllBtn.getAttribute("data-see-all");
+      pushRecent($search.value.trim());
+      closePopover();
+      route.searchTab = tab;
       render();
+      return;
+    }
+    if (e.target.closest("[data-search-go]")) {
+      pushRecent($search.value.trim());
+      closePopover();
+      route.searchTab = "all";
+      render();
+    }
+  });
+
+  // Click outside → close
+  document.addEventListener("click", (e) => {
+    if (!$searchWrap.contains(e.target)) closePopover();
+  });
+
+  // ⌘K / Ctrl+K → focus la barre
+  document.addEventListener("keydown", (e) => {
+    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      e.preventDefault();
+      $search.focus();
+      $search.select();
+    }
+    if (e.key === "/" && document.activeElement && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+      e.preventDefault();
+      $search.focus();
     }
   });
 
   window.addEventListener("hashchange", () => {
     $search.value = "";
+    closePopover();
     render();
   });
 

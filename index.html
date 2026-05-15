@@ -112,13 +112,21 @@
 
           <div class="topbar-row topbar-row--search topbar-search">
             <label class="visually-hidden" for="global-search">Rechercher</label>
-            <input
-              type="search"
-              id="global-search"
-              placeholder="Album, artiste, genre…"
-              autocomplete="off"
-              enterkeyhint="search"
-            />
+            <div class="search-wrap" id="search-wrap">
+              <input
+                type="search"
+                id="global-search"
+                placeholder="Rechercher profils, artistes, albums, titres…"
+                autocomplete="off"
+                spellcheck="false"
+                enterkeyhint="search"
+                aria-autocomplete="list"
+                aria-controls="search-popover"
+                aria-expanded="false"
+              />
+              <kbd class="search-kbd" aria-hidden="true">⌘K</kbd>
+              <div class="search-popover" id="search-popover" role="listbox" aria-label="Suggestions de recherche" hidden></div>
+            </div>
           </div>
         </header>
 

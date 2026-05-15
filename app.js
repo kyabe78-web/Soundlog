@@ -226,6 +226,7 @@
 
   function persist() {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    if (typeof window.__slSchedulePushCloud === "function") window.__slSchedulePushCloud();
   }
 
   const route = { view: "home", albumId: null, userId: null, listId: null, discoverGenre: null, joinInviteRaw: null };
@@ -244,8 +245,8 @@
   let libraryRemoteError = null;
   let libSearchTimer = null;
 
-  const PREVIEW_CACHE_V = 2;
-  const MIN_ALBUM_MATCH_SCORE = 58;
+  const PREVIEW_CACHE_V = 3;
+  const MIN_ALBUM_MATCH_SCORE = 70;
 
   function normalizeText(s) {
     return normalizeArtistKey(
@@ -273,20 +274,38 @@
     return /^[A-Z]{2}$/i.test(c) ? c.toUpperCase() : "FR";
   }
 
+  function softMatch(a, b) {
+    if (!a || !b) return false;
+    if (a === b) return true;
+    if (a.includes(b) || b.includes(a)) return true;
+    return false;
+  }
+
   function scoreAlbumCandidate(al, candidateArtist, candidateTitle, candidateYear) {
-    const wantKey = normalizeAlbumKey(al.artist, al.title);
-    const gotKey = normalizeAlbumKey(candidateArtist, candidateTitle);
+    const wantArtist = normalizeText(al.artist);
+    const wantTitle = normalizeAlbumKey(al.artist, al.title).split("|")[1];
+    const gotArtist = normalizeText(candidateArtist);
+    const gotTitle = normalizeAlbumKey(candidateArtist, candidateTitle).split("|")[1];
+
+    const artistExact = wantArtist && gotArtist && wantArtist === gotArtist;
+    const artistSoft = artistExact || softMatch(wantArtist, gotArtist);
+    const titleExact = wantTitle && gotTitle && wantTitle === gotTitle;
+    const titleSoft = titleExact || softMatch(wantTitle, gotTitle);
+
+    if (!artistSoft || !titleSoft) return 0;
+
     let score = 0;
-    if (wantKey === gotKey) score += 100;
-    else {
-      const [wa, wt] = wantKey.split("|");
-      const [ga, gt] = gotKey.split("|");
-      if (wa && ga && (wa === ga || wa.includes(ga) || ga.includes(wa))) score += 38;
-      if (wt && gt && (wt === gt || wt.includes(gt) || gt.includes(wt))) score += 38;
-    }
+    score += artistExact ? 45 : 25;
+    score += titleExact ? 45 : 25;
+
     const y = parseInt(String(al.year).replace(/\D/g, ""), 10);
     const cy = parseInt(String(candidateYear || "").replace(/\D/g, ""), 10);
-    if (Number.isFinite(y) && Number.isFinite(cy) && Math.abs(y - cy) <= 1) score += 12;
+    if (Number.isFinite(y) && Number.isFinite(cy)) {
+      const diff = Math.abs(y - cy);
+      if (diff === 0) score += 12;
+      else if (diff <= 1) score += 8;
+      else if (diff > 5) score -= 20;
+    }
     return score;
   }
 
@@ -348,15 +367,31 @@
 
   function pickLeadItunesTrack(results) {
     const tracks = (results || [])
-      .filter((x) => x.wrapperType === "track" && x.previewUrl && x.trackName)
-      .sort((a, b) => (a.trackNumber || 999) - (b.trackNumber || 999));
+      .filter(
+        (x) =>
+          x.wrapperType === "track" &&
+          (!x.kind || x.kind === "song") &&
+          x.previewUrl &&
+          x.trackName
+      )
+      .sort((a, b) => {
+        const da = a.discNumber || 1;
+        const db = b.discNumber || 1;
+        if (da !== db) return da - db;
+        return (a.trackNumber || 999) - (b.trackNumber || 999);
+      });
     return tracks[0] || null;
   }
 
   function pickLeadDeezerTrack(tracks) {
     const sorted = (tracks || [])
       .filter((t) => t.preview && t.title)
-      .sort((a, b) => (a.track_position || 999) - (b.track_position || 999));
+      .sort((a, b) => {
+        const da = a.disk_number || 1;
+        const db = b.disk_number || 1;
+        if (da !== db) return da - db;
+        return (a.track_position || 999) - (b.track_position || 999);
+      });
     return sorted[0] || null;
   }
 
@@ -469,11 +504,28 @@
   async function fetchItunesPreviewByCollectionId(collectionId, al) {
     const country = musicCountry();
     const lr = await fetch(
-      `https://itunes.apple.com/lookup?id=${encodeURIComponent(collectionId)}&entity=song&limit=50&country=${country}`
+      `https://itunes.apple.com/lookup?id=${encodeURIComponent(collectionId)}&entity=song&limit=100&country=${country}`
     );
     if (!lr.ok) throw new Error("iTunes lookup");
     const lj = await lr.json();
-    const pick = pickLeadItunesTrack(lj.results);
+    const results = lj.results || [];
+    if (al && al.artist) {
+      const collection = results.find((x) => x.wrapperType === "collection");
+      if (collection) {
+        const wantArtist = normalizeText(al.artist);
+        const gotArtist = normalizeText(collection.artistName || "");
+        if (!softMatch(wantArtist, gotArtist)) return null;
+        const wantTitle = normalizeAlbumKey(al.artist, al.title).split("|")[1];
+        const gotTitle = normalizeAlbumKey(collection.artistName || "", collection.collectionName || "").split("|")[1];
+        if (!softMatch(wantTitle, gotTitle)) return null;
+      }
+    }
+    const cidStr = String(collectionId);
+    const tracksOnly = results.filter(
+      (x) => x.wrapperType === "track" && String(x.collectionId) === cidStr
+    );
+    const pool = tracksOnly.length ? tracksOnly : results;
+    const pick = pickLeadItunesTrack(pool);
     if (!pick) return null;
     return {
       preview: {
@@ -482,11 +534,25 @@
         trackNumber: pick.trackNumber || 1,
         source: "apple",
       },
-      appleCollectionId: String(collectionId),
+      appleCollectionId: cidStr,
     };
   }
 
   async function fetchDeezerPreviewByAlbumId(albumId, al) {
+    const meta = await fetch(`https://api.deezer.com/album/${encodeURIComponent(albumId)}`);
+    if (meta.ok && al && al.artist) {
+      try {
+        const mj = await meta.json();
+        if (mj && mj.artist && mj.title) {
+          const wantArtist = normalizeText(al.artist);
+          const gotArtist = normalizeText(mj.artist.name || "");
+          if (!softMatch(wantArtist, gotArtist)) return null;
+          const wantTitle = normalizeAlbumKey(al.artist, al.title).split("|")[1];
+          const gotTitle = normalizeAlbumKey(mj.artist.name || "", mj.title || "").split("|")[1];
+          if (!softMatch(wantTitle, gotTitle)) return null;
+        }
+      } catch (_) {}
+    }
     const tr = await fetch(`https://api.deezer.com/album/${encodeURIComponent(albumId)}/tracks`);
     if (!tr.ok) throw new Error("Deezer tracks");
     const tj = await tr.json();
@@ -619,6 +685,14 @@
       previewAudio.preload = "none";
       previewAudio.addEventListener("ended", () => stopAlbumPreview());
       previewAudio.addEventListener("timeupdate", () => syncPreviewProgress());
+      previewAudio.addEventListener("error", () => {
+        const id = previewAlbumId;
+        stopAlbumPreview();
+        if (id) {
+          invalidateAlbumPreview(id);
+          toast("Extrait introuvable — clique à nouveau pour réessayer.");
+        }
+      });
     }
     return previewAudio;
   }
@@ -705,11 +779,12 @@
   function feedPreviewSectionHtml(al) {
     const cached = getCachedAlbumPreview(al.id, al);
     const src = cached && cached.source === "deezer" ? "Deezer" : "Apple";
-    return `<div class="feed-preview" data-preview-panel="${escapeHtml(al.id)}" hidden>
+    return `<div class="feed-preview" hidden>
       <div class="feed-preview__bar">
         <button type="button" class="feed-preview__stop" data-preview-stop="${escapeHtml(al.id)}" aria-label="Arrêter l’extrait">×</button>
         <div class="feed-preview__progress-wrap" aria-hidden="true"><div class="feed-preview__progress" style="width:0%"></div></div>
         <span class="feed-preview__track">${cached ? escapeHtml(cached.trackName) : ""}</span>
+        <button type="button" class="feed-preview__swap" data-preview-swap="${escapeHtml(al.id)}" title="Pas le bon morceau ? Réessayer">↺</button>
         <span class="feed-preview__badge">30 s · ${src}</span>
       </div>
     </div>`;
@@ -1232,6 +1307,18 @@
       toast("Demande déjà envoyée.");
       return;
     }
+    // Si target est un profil cloud (UUID dans cloudPeers Map), route via Supabase
+    const cloudPeer = window.__slCloudPeers && window.__slCloudPeers.get && window.__slCloudPeers.get(uid);
+    if (cloudPeer && window.SLCloud && window.SLCloud.isSignedIn && window.SLCloud.isSignedIn()) {
+      window.SLCloud.sendFriendRequest(uid).then(() => {
+        const id = "fr-cloud-" + Date.now().toString(36);
+        state.outgoingFriendRequests.push({ id, toUserId: uid, createdAt: new Date().toISOString(), cloudId: id });
+        persist();
+        toast("Demande envoyée.");
+        render();
+      }).catch((e) => { toast("Erreur cloud : " + (e.message || "inconnue")); });
+      return;
+    }
     const demoIds = new Set(["u1", "u2", "u3"]);
     if (demoIds.has(uid)) {
       state.outgoingFriendRequests = (state.outgoingFriendRequests || []).filter((r) => r.toUserId !== uid);
@@ -1389,6 +1476,17 @@
 
   function userById(id) {
     if (id === "me") {
+      const cloudMe = window.SLCloud && window.SLCloud.me;
+      if (cloudMe) {
+        return {
+          id: "me",
+          cloudId: cloudMe.id,
+          name: cloudMe.name,
+          handle: cloudMe.handle,
+          bio: cloudMe.bio || "",
+          hue: cloudMe.hue != null ? cloudMe.hue : 152,
+        };
+      }
       return {
         id: "me",
         name: state.profile.displayName,
@@ -1405,6 +1503,17 @@
         handle: peer.handle,
         bio: peer.bio || "",
         hue: peer.hue != null ? peer.hue : hueFromHandle(peer.handle || peer.name || "x"),
+      };
+    }
+    const cloudPeer = window.__slCloudPeers && window.__slCloudPeers.get && window.__slCloudPeers.get(id);
+    if (cloudPeer) {
+      return {
+        id: cloudPeer.id,
+        cloudId: cloudPeer.id,
+        name: cloudPeer.name,
+        handle: cloudPeer.handle,
+        bio: cloudPeer.bio || "",
+        hue: cloudPeer.hue != null ? cloudPeer.hue : hueFromHandle(cloudPeer.handle || cloudPeer.name || "x"),
       };
     }
     return USERS.find((u) => u.id === id);
@@ -3292,6 +3401,26 @@
         void playAlbumPreview(b.getAttribute("data-preview-play"));
       });
     });
+    document.querySelectorAll("[data-preview-swap]").forEach((b) => {
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const id = b.getAttribute("data-preview-swap");
+        if (!id) return;
+        const al = albumById(id);
+        if (!al) return;
+        invalidateAlbumPreview(id);
+        if (String(al.id).startsWith("ext-")) {
+          const imp = (state.importedAlbums || []).find((a) => a.id === al.id);
+          if (imp) {
+            delete imp.appleCollectionId;
+            delete imp.deezerAlbumId;
+            persist();
+          }
+        }
+        toast("Recherche d’un autre extrait pour cet album…");
+        void playAlbumPreview(id, { force: true });
+      });
+    });
     document.querySelectorAll("[data-preview-stop]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -3839,4 +3968,385 @@
   bindNotifHub();
   render();
   void syncTourAlerts({}).then(() => updateHeaderNotifications());
+
+  // =======================================================================
+  // Intégration cloud (Supabase) — non-invasive
+  // =======================================================================
+  const SLCloud = window.SLCloud;
+  const cloudPeers = new Map();
+  window.__slCloudPeers = cloudPeers;
+
+  function syncMeFromCloud() {
+    if (!SLCloud || !SLCloud.me) return;
+    state.profile = {
+      ...state.profile,
+      displayName: SLCloud.me.name,
+      handle: SLCloud.me.handle,
+      bio: SLCloud.me.bio || "",
+      cloudId: SLCloud.me.id,
+    };
+    persistLocalOnly();
+    updateHeaderUser();
+    updateSidebarAccount();
+  }
+
+  function persistLocalOnly() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (_) {}
+  }
+
+  // Debounced cloud push (exposé pour persist())
+  let cloudPushTimer = null;
+  function schedulePushCloud() {
+    if (!SLCloud || !SLCloud.isSignedIn || !SLCloud.isSignedIn()) return;
+    clearTimeout(cloudPushTimer);
+    cloudPushTimer = setTimeout(pushCloudFull, 800);
+  }
+  window.__slSchedulePushCloud = schedulePushCloud;
+  async function pushCloudFull() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    const cloudId = SLCloud.me.id;
+    try {
+      // 1. Albums référencés par les écoutes/listes/wishlist : upsert dans le catalogue partagé
+      const referencedAlbumIds = new Set();
+      state.listenings.filter((l) => l.userId === "me").forEach((l) => referencedAlbumIds.add(l.albumId));
+      state.lists.filter((l) => l.userId === "me").forEach((l) => (l.albumIds || []).forEach((a) => referencedAlbumIds.add(a)));
+      (state.wishlist || []).forEach((a) => referencedAlbumIds.add(a));
+      for (const aid of referencedAlbumIds) {
+        const al = albumById(aid);
+        if (al) await SLCloud.upsertAlbum(al);
+      }
+      // 2. Écoutes
+      for (const l of state.listenings.filter((l) => l.userId === "me")) {
+        await SLCloud.upsertListening({
+          id: l.id,
+          userId: cloudId,
+          albumId: l.albumId,
+          rating: l.rating,
+          comment: l.comment,
+          commentAt: l.commentAt,
+          date: l.date,
+        });
+      }
+      // 3. Listes
+      for (const lst of state.lists.filter((l) => l.userId === "me")) {
+        await SLCloud.upsertList({
+          id: lst.id,
+          userId: cloudId,
+          title: lst.title,
+          description: lst.description,
+          isPublic: lst.isPublic !== false,
+          albumIds: lst.albumIds || [],
+        });
+      }
+      // 4. Concerts
+      for (const c of (state.concertLogs || []).filter((c) => c.userId === "me")) {
+        await SLCloud.upsertConcert({
+          id: c.id,
+          userId: cloudId,
+          artist: c.artist,
+          date: c.date,
+          venue: c.venue,
+          city: c.city,
+          eventTitle: c.eventTitle,
+          notes: c.notes,
+        });
+      }
+      // 5. Wishlist : reset+insert
+      const remoteWishlist = new Set(await SLCloud.listWishlist(cloudId));
+      const localWishlist = new Set(state.wishlist || []);
+      for (const aid of localWishlist) if (!remoteWishlist.has(aid)) await SLCloud.addToWishlist(aid);
+      for (const aid of remoteWishlist) if (!localWishlist.has(aid)) await SLCloud.removeFromWishlist(aid);
+    } catch (e) {
+      console.warn("[cloud push] failed", e);
+    }
+  }
+
+  // Initial pull au login
+  async function pullCloudIntoState() {
+    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    const cloudId = SLCloud.me.id;
+    const data = await SLCloud.pullEverything();
+    if (!data) return;
+    // Profil → state.profile
+    state.profile.displayName = SLCloud.me.name;
+    state.profile.handle = SLCloud.me.handle;
+    state.profile.bio = SLCloud.me.bio || "";
+    state.profile.cloudId = cloudId;
+    // Albums référencés : on les ajoute en cache local (importedAlbums) si pas déjà connus
+    const knownIds = new Set();
+    state.listenings = [];
+    for (const l of data.listenings || []) {
+      knownIds.add(l.album_id);
+      state.listenings.push({
+        id: l.id,
+        userId: "me",
+        albumId: l.album_id,
+        rating: l.rating,
+        comment: l.comment,
+        commentAt: l.comment_at,
+        date: l.date,
+      });
+    }
+    state.lists = (data.lists || []).map((lst) => ({
+      id: lst.id,
+      userId: "me",
+      title: lst.title,
+      description: lst.description,
+      isPublic: lst.is_public,
+      albumIds: ((lst.list_items || []).sort((a, b) => (a.position || 0) - (b.position || 0)).map((it) => it.album_id)),
+    }));
+    state.concertLogs = (data.concerts || []).map((c) => ({
+      id: c.id,
+      userId: "me",
+      artist: c.artist,
+      date: c.date,
+      venue: c.venue,
+      city: c.city,
+      eventTitle: c.event_title,
+      notes: c.notes,
+    }));
+    state.wishlist = data.wishlist || [];
+    state.follows = data.following || [];
+    // Pull metadata for unknown albums
+    for (const aid of knownIds) {
+      if (!albumById(aid)) {
+        const remote = await SLCloud.getAlbumById(aid);
+        if (remote) {
+          state.importedAlbums = state.importedAlbums || [];
+          state.importedAlbums.push({
+            id: remote.id,
+            title: remote.title,
+            artist: remote.artist,
+            year: remote.year,
+            genre: remote.genre,
+            artworkUrl: remote.artwork_url,
+            appleCollectionId: remote.apple_collection_id,
+            deezerAlbumId: remote.deezer_album_id,
+          });
+        }
+      }
+    }
+    persistLocalOnly();
+    updateHeaderUser();
+    updateSidebarAccount();
+    render();
+  }
+
+  function updateSidebarAccount() {
+    const btn = document.getElementById("sidebar-account");
+    const label = document.getElementById("sidebar-account-label");
+    const note = document.getElementById("sidebar-note");
+    if (!btn) return;
+    if (!SLCloud || !SLCloud.available) {
+      btn.style.display = "none";
+      if (note) note.textContent = "Mode invité — données locales sur cet appareil.";
+      return;
+    }
+    btn.style.display = "";
+    if (SLCloud.isSignedIn() && SLCloud.me) {
+      btn.classList.add("is-signed-in");
+      label.innerHTML = `<span>${escapeHtml(SLCloud.me.name)}</span><small>@${escapeHtml(SLCloud.me.handle)} · gérer</small>`;
+      if (note) note.textContent = "Synchronisé · accessible sur tous tes appareils.";
+    } else {
+      btn.classList.remove("is-signed-in");
+      label.innerHTML = `<span>Se connecter</span><small>ou créer un compte</small>`;
+      if (note) note.textContent = "Mode invité — clique « Se connecter » pour synchroniser.";
+    }
+  }
+
+  function openAccountModal(initialTab) {
+    const signedIn = SLCloud && SLCloud.isSignedIn() && SLCloud.me;
+    const tab = initialTab || (signedIn ? "profile" : "signin");
+    const tabsHtml = signedIn
+      ? `<div class="auth-tabs"><button type="button" class="auth-tab is-active" data-auth-tab="profile">Mon profil</button><button type="button" class="auth-tab" data-auth-tab="signout">Déconnexion</button></div>`
+      : `<div class="auth-tabs"><button type="button" class="auth-tab ${tab === "signin" ? "is-active" : ""}" data-auth-tab="signin">Connexion</button><button type="button" class="auth-tab ${tab === "signup" ? "is-active" : ""}" data-auth-tab="signup">Inscription</button></div>`;
+
+    openModal(`<h2>Compte Soundlog</h2>
+      <p class="feed-note">${
+        signedIn
+          ? "Tu es connecté·e — tes écoutes, listes et concerts sont sauvegardés sur tous tes appareils."
+          : "Crée un compte pour retrouver ton carnet sur tous tes appareils et rencontrer la communauté."
+      }</p>
+      ${tabsHtml}
+      <div id="auth-panel"></div>`);
+
+    function renderPanel(which) {
+      const panel = document.getElementById("auth-panel");
+      if (!panel) return;
+      if (which === "signin") {
+        panel.innerHTML = `
+          <label>Email <input type="email" id="auth-email" autocomplete="email" /></label>
+          <label>Mot de passe <input type="password" id="auth-pw" autocomplete="current-password" /></label>
+          <p class="auth-error" id="auth-err" hidden></p>
+          <p class="modal-actions">
+            <button type="button" class="btn btn-primary" id="auth-do-signin">Se connecter</button>
+            <button type="button" class="btn btn-ghost" id="auth-do-magic">Recevoir un lien magique</button>
+            <button type="button" class="btn btn-ghost" id="auth-cancel">Fermer</button>
+          </p>`;
+        document.getElementById("auth-cancel").addEventListener("click", closeModal);
+        document.getElementById("auth-do-signin").addEventListener("click", async () => {
+          const email = document.getElementById("auth-email").value.trim();
+          const pw = document.getElementById("auth-pw").value;
+          if (!email || !pw) return showAuthErr("Email + mot de passe requis.");
+          try {
+            await SLCloud.signIn({ email, password: pw });
+            toast("Connecté·e !");
+            closeModal();
+            await pullCloudIntoState();
+            updateSidebarAccount();
+          } catch (e) {
+            showAuthErr(e.message || "Connexion impossible.");
+          }
+        });
+        document.getElementById("auth-do-magic").addEventListener("click", async () => {
+          const email = document.getElementById("auth-email").value.trim();
+          if (!email) return showAuthErr("Email requis.");
+          try {
+            await SLCloud.signInWithMagicLink({ email });
+            toast("Lien envoyé — clique-le dans ta boîte mail.");
+          } catch (e) {
+            showAuthErr(e.message || "Envoi impossible.");
+          }
+        });
+      } else if (which === "signup") {
+        panel.innerHTML = `
+          <label>Handle (a-z, 0-9, _, -, .) <input type="text" id="auth-handle" autocomplete="username" /></label>
+          <label>Nom affiché <input type="text" id="auth-name" /></label>
+          <label>Email <input type="email" id="auth-email" autocomplete="email" /></label>
+          <label>Mot de passe (8+ caractères) <input type="password" id="auth-pw" autocomplete="new-password" /></label>
+          <p class="auth-error" id="auth-err" hidden></p>
+          <p class="modal-actions">
+            <button type="button" class="btn btn-primary" id="auth-do-signup">Créer le compte</button>
+            <button type="button" class="btn btn-ghost" id="auth-cancel">Fermer</button>
+          </p>`;
+        document.getElementById("auth-cancel").addEventListener("click", closeModal);
+        document.getElementById("auth-do-signup").addEventListener("click", async () => {
+          const handle = document.getElementById("auth-handle").value.trim().toLowerCase();
+          const name = document.getElementById("auth-name").value.trim();
+          const email = document.getElementById("auth-email").value.trim();
+          const pw = document.getElementById("auth-pw").value;
+          if (!handle || !name || !email || !pw) return showAuthErr("Tous les champs sont requis.");
+          if (pw.length < 8) return showAuthErr("Le mot de passe doit faire 8 caractères ou plus.");
+          if (!/^[a-z0-9_.\-]{2,32}$/.test(handle)) return showAuthErr("Handle invalide.");
+          try {
+            await SLCloud.signUp({ email, password: pw, handle, name, hue: state.profile && hueFromHandle(handle) });
+            toast("Compte créé !");
+            closeModal();
+            await pushCloudFull(); // pousse l'état local existant vers le nouveau compte
+            await pullCloudIntoState();
+            updateSidebarAccount();
+          } catch (e) {
+            showAuthErr(e.message || "Inscription impossible.");
+          }
+        });
+      } else if (which === "profile") {
+        const me = SLCloud.me;
+        panel.innerHTML = `
+          <label>Nom affiché <input type="text" id="auth-name" value="${escapeHtml(me.name)}" /></label>
+          <label>Handle <input type="text" id="auth-handle" value="${escapeHtml(me.handle)}" /></label>
+          <label>Bio <textarea id="auth-bio">${escapeHtml(me.bio || "")}</textarea></label>
+          <label>Ville / région <input type="text" id="auth-city" value="${escapeHtml(me.city || "")}" /></label>
+          <p class="feed-note">Email : <strong>${escapeHtml((SLCloud.session && SLCloud.session.user && SLCloud.session.user.email) || "—")}</strong></p>
+          <p class="auth-error" id="auth-err" hidden></p>
+          <p class="modal-actions">
+            <button type="button" class="btn btn-primary" id="auth-save">Enregistrer</button>
+            <button type="button" class="btn btn-ghost" id="auth-cancel">Fermer</button>
+          </p>`;
+        document.getElementById("auth-cancel").addEventListener("click", closeModal);
+        document.getElementById("auth-save").addEventListener("click", async () => {
+          const patch = {
+            name: document.getElementById("auth-name").value.trim(),
+            handle: document.getElementById("auth-handle").value.trim().toLowerCase(),
+            bio: document.getElementById("auth-bio").value.trim(),
+            city: document.getElementById("auth-city").value.trim(),
+          };
+          try {
+            await SLCloud.updateProfile(patch);
+            syncMeFromCloud();
+            toast("Profil mis à jour.");
+            closeModal();
+            render();
+          } catch (e) {
+            showAuthErr(e.message || "Mise à jour impossible.");
+          }
+        });
+      } else if (which === "signout") {
+        panel.innerHTML = `
+          <p>Tu vas être déconnecté·e. Tes données restent disponibles en mode invité sur cet appareil.</p>
+          <p class="modal-actions">
+            <button type="button" class="btn btn-danger" id="auth-do-signout">Se déconnecter</button>
+            <button type="button" class="btn btn-ghost" id="auth-cancel">Annuler</button>
+          </p>`;
+        document.getElementById("auth-cancel").addEventListener("click", closeModal);
+        document.getElementById("auth-do-signout").addEventListener("click", async () => {
+          await SLCloud.signOut();
+          toast("Déconnecté·e.");
+          updateSidebarAccount();
+          closeModal();
+          render();
+        });
+      }
+    }
+
+    function showAuthErr(msg) {
+      const el = document.getElementById("auth-err");
+      if (el) { el.textContent = msg; el.hidden = false; }
+    }
+
+    document.querySelectorAll("[data-auth-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("[data-auth-tab]").forEach((b) => b.classList.toggle("is-active", b === btn));
+        renderPanel(btn.getAttribute("data-auth-tab"));
+      });
+    });
+
+    renderPanel(tab);
+  }
+
+  window.openAccountModal = openAccountModal; // permettre des hooks externes (debug)
+
+  // Brancher le bouton "Compte" de la sidebar
+  const sidebarAccount = document.getElementById("sidebar-account");
+  if (sidebarAccount) {
+    sidebarAccount.addEventListener("click", (e) => {
+      e.preventDefault();
+      if (!SLCloud || !SLCloud.available) {
+        toast("Cloud non configuré — voir BACKEND.md");
+        return;
+      }
+      openAccountModal();
+    });
+  }
+
+  // Réagir aux changements d'auth
+  if (SLCloud && SLCloud.on) {
+    SLCloud.on(async (evt) => {
+      if (evt === "ready" || evt === "auth") {
+        if (SLCloud.isSignedIn()) await pullCloudIntoState();
+        updateSidebarAccount();
+        updateHeaderUser();
+      } else if (evt === "profile") {
+        syncMeFromCloud();
+        render();
+      }
+    });
+  }
+
+  updateSidebarAccount();
+
+  // Charger les profils cloud et les fusionner dans l'annuaire local
+  async function refreshCloudPeers() {
+    if (!SLCloud || !SLCloud.ready) return;
+    try {
+      const profiles = await SLCloud.searchProfiles("", 50);
+      cloudPeers.clear();
+      for (const p of profiles) if (!SLCloud.me || p.id !== SLCloud.me.id) cloudPeers.set(p.id, p);
+    } catch (e) {
+      console.warn("[cloud peers]", e);
+    }
+  }
+  if (SLCloud && SLCloud.available) {
+    setTimeout(refreshCloudPeers, 1200);
+    setInterval(refreshCloudPeers, 60000);
+  }
 })();

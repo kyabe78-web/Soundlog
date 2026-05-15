@@ -12,7 +12,10 @@ create index if not exists albums_mb_release_idx
   where musicbrainz_release_id is not null;
 
 -- Recos communautaires avec métadonnées pour cartes cliquables
-create or replace function public.recommendations_for(uid uuid, limit_n int default 12)
+-- (DROP requis : PostgreSQL refuse de changer le type de retour avec CREATE OR REPLACE seul)
+drop function if exists public.recommendations_for(uuid, int);
+
+create function public.recommendations_for(uid uuid, limit_n int default 12)
 returns table (
   album_id text,
   title text,

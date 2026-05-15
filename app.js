@@ -359,6 +359,17 @@
   let libraryRemoteLoading = false;
   let libraryRemoteError = null;
   let libSearchTimer = null;
+  const LIB_RECENTS_KEY = "soundlog.libraryRecents";
+  const LIB_MOOD_CHIPS = [
+    { label: "Indie du dimanche", q: "phoebe bridgers" },
+    { label: "Électro hypnotique", q: "aphex twin" },
+    { label: "Soul & R&B", q: "frank ocean" },
+    { label: "Rock culte", q: "radiohead" },
+    { label: "Hip-hop classique", q: "kendrick lamar" },
+    { label: "Pop nocturne", q: "the weeknd" },
+    { label: "Trip-hop", q: "portishead" },
+    { label: "French touch", q: "daft punk" },
+  ];
 
   const PREVIEW_CACHE_V = 3;
   const MIN_ALBUM_MATCH_SCORE = 70;
@@ -570,6 +581,7 @@
       title: x.collectionName,
       artist: x.artistName,
       year: (x.releaseDate || "").slice(0, 4) || "—",
+      genre: x.primaryGenreName || "",
       artworkUrl: (x.artworkUrl100 || "").replace("100x100bb", "600x600bb"),
       apple: x.collectionViewUrl || null,
       appleCollectionId: x.collectionId ? String(x.collectionId) : null,
@@ -977,6 +989,7 @@
         title: row.title,
         artist: row.artist,
         year: row.year,
+        genre: row.genre || "Album",
         artworkUrl: row.artworkUrl || "",
         links,
         appleCollectionId: row.appleCollectionId || null,
@@ -1739,9 +1752,9 @@
     const alt = escapeHtml(String(u.name || u.handle || "Profil"));
     const url = String(u.avatar_url || "").trim();
     if (url) {
-      return `<div class="${cls} profile-head__avatar--has-img" style="background:hsl(${hue},55%,42%)"><img src="${escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async" onerror="this.remove();this.closest('.profile-head__avatar')&&this.closest('.profile-head__avatar').classList.remove('profile-head__avatar--has-img');" /></div>`;
+      return `<motion class="${cls} profile-head__avatar--has-img" style="background:hsl(${hue},55%,42%)"><img src="${escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async" onerror="this.remove();this.closest('.profile-head__avatar')&&this.closest('.profile-head__avatar').classList.remove('profile-head__avatar--has-img');" /></div>`;
     }
-    return `<div class="${cls}" style="background:hsl(${hue},55%,42%)">${escapeHtml(userInitial(u.name))}</div>`;
+    return `<motion class="${cls}" style="background:hsl(${hue},55%,42%)">${escapeHtml(userInitial(u.name))}</div>`;
   }
 
   function userById(id) {
@@ -2539,91 +2552,260 @@
     </div>`;
   }
 
-  function renderLibraries() {
-    const rowsHtml = (() => {
-      if (libraryRemoteLoading) {
-        return `<div class="lib-loading" role="status" aria-live="polite">
+
+  function getLibRecents() {
+    try {
+      const raw = localStorage.getItem(LIB_RECENTS_KEY);
+      const arr = raw ? JSON.parse(raw) : [];
+      return Array.isArray(arr) ? arr.filter((s) => typeof s === "string" && s.trim()).slice(0, 8) : [];
+    } catch (_) {
+      return [];
+    }
+  }
+
+  function pushLibRecent(q) {
+    const qq = String(q || "").trim();
+    if (qq.length < 2) return;
+    const next = [qq, ...getLibRecents().filter((s) => s.toLowerCase() !== qq.toLowerCase())].slice(0, 8);
+    try {
+      localStorage.setItem(LIB_RECENTS_KEY, JSON.stringify(next));
+    } catch (_) {}
+  }
+
+  function libraryStats() {
+    const myListen = (state.listenings || []).filter((l) => l.userId === "me");
+    const albumIds = new Set(myListen.map((l) => l.albumId));
+    (state.importedAlbums || []).forEach((a) => albumIds.add(a.id));
+    return {
+      albums: albumIds.size,
+      rated: myListen.filter((l) => l.rating).length,
+      wishlist: (state.wishlist || []).length,
+    };
+  }
+
+  function libraryShelfAlbums() {
+    const seen = new Set();
+    const out = [];
+    (state.listenings || [])
+      .filter((l) => l.userId === "me")
+      .sort((a, b) => (a.date < b.date ? 1 : -1))
+      .forEach((l) => {
+        if (seen.has(l.albumId)) return;
+        seen.add(l.albumId);
+        const al = albumById(l.albumId);
+        if (al) out.push(al);
+      });
+    (state.importedAlbums || []).forEach((a) => {
+      if (seen.has(a.id)) return;
+      seen.add(a.id);
+      out.push(a);
+    });
+    return out.slice(0, 16);
+  }
+
+  function catalogAlbumForHit(hit) {
+    const key = normalizeKey(hit.artist, hit.title);
+    return allAlbums().find((a) => normalizeKey(a.artist, a.title) === key) || null;
+  }
+
+  function listeningRatingForAlbumId(albumId) {
+    const rows = (state.listenings || []).filter((l) => l.userId === "me" && l.albumId === albumId && l.rating);
+    if (!rows.length) return null;
+    rows.sort((a, b) => (a.date < b.date ? 1 : -1));
+    return rows[0].rating;
+  }
+
+  function libFeaturedAlbums() {
+    const shelf = libraryShelfAlbums();
+    const shelfIds = new Set(shelf.map((a) => a.id));
+    const pool = CATALOG.filter((a) => !shelfIds.has(a.id));
+    const seed = (state.profile && state.profile.handle) || "soundlog";
+    let h = 0;
+    for (let i = 0; i < seed.length; i++) h = (h * 33 + seed.charCodeAt(i)) | 0;
+    return pool
+      .map((a, i) => ({ a, n: Math.abs((h + i * 17) % 997) }))
+      .sort((x, y) => x.n - y.n)
+      .slice(0, 10)
+      .map((x) => x.a);
+  }
+
+  function libChipsHtml() {
+    const recents = getLibRecents();
+    const chips = [];
+    recents.forEach((q) => chips.push({ label: q, q, kind: "recent" }));
+    LIB_MOOD_CHIPS.forEach((c) => chips.push({ ...c, kind: "mood" }));
+    return chips
+      .slice(0, 14)
+      .map(
+        (c) =>
+          `<button type="button" class="lib-chip${c.kind === "recent" ? " lib-chip--recent" : ""}" data-lib-chip="${escapeHtml(c.q)}">${escapeHtml(c.label)}</button>`
+      )
+      .join("");
+  }
+
+  function libShelfCardHtml(al) {
+    const rating = listeningRatingForAlbumId(al.id);
+    const ratingHtml = rating
+      ? `<span class="lib-shelf-card__rating" aria-label="Ta note">${starString(rating)}</span>`
+      : "";
+    return `<a href="#" class="lib-shelf-card" data-album="${escapeHtml(al.id)}"${albumCardStyle(al)}>
+      <span class="lib-shelf-card__cover">${coverHtml(al, true, "md")}</span>
+      <span class="lib-shelf-card__meta">
+        <strong class="lib-shelf-card__title">${escapeHtml(al.title)}</strong>
+        <span class="lib-shelf-card__artist">${escapeHtml(al.artist)}</span>
+      </span>
+      ${ratingHtml}
+    </a>`;
+  }
+
+  function libraryHitCardHtml(hit, idx) {
+    const g = gradientFromKey(hit.title + hit.artist);
+    const fakeAlbum = {
+      title: hit.title,
+      artist: hit.artist,
+      year: hit.year,
+      genre: hit.genre || "Album",
+      from: g.from,
+      to: g.to,
+      artworkUrl: hit.artworkUrl,
+    };
+    const catalog = catalogAlbumForHit(hit);
+    const rating = catalog ? listeningRatingForAlbumId(catalog.id) : null;
+    const pay = encodeURIComponent(JSON.stringify(hit));
+    const genre = String(hit.genre || "Album").trim() || "Album";
+    const srcBadges = [
+      hit.flags.apple ? `<span class="lib-src lib-src--apple" title="Apple Music"></span>` : "",
+      hit.flags.deezer ? `<span class="lib-src lib-src--deezer" title="Deezer"></span>` : "",
+      `<span class="lib-src lib-src--spotify" title="Spotify"></span>`,
+      `<span class="lib-src lib-src--yt" title="YouTube"></span>`,
+    ].join("");
+    const ownedBadge = catalog ? `<span class="lib-vcard__owned">Dans ton carnet</span>` : "";
+    const ratingBadge = rating ? `<span class="lib-vcard__rating" aria-label="Ta note">${starString(rating)}</span>` : "";
+    const cta = catalog
+      ? `<button type="button" class="lib-vcard__cta lib-vcard__cta--ghost" data-album="${escapeHtml(catalog.id)}">Ouvrir la fiche</button>`
+      : `<button type="button" class="lib-vcard__cta" data-import-hit="${pay}">Collectionner</button>`;
+    return `<article class="lib-vcard" style="--lib-i:${idx}">
+      <div class="lib-vcard__cover-wrap">
+        <div class="lib-vcard__cover">${coverHtml(fakeAlbum, true, "lg")}</div>
+        <div class="lib-vcard__float">
+          <span class="lib-vcard__year">${escapeHtml(String(hit.year))}</span>
+          ${ratingBadge}
+        </div>
+        <div class="lib-vcard__sources" aria-hidden="true">${srcBadges}</div>
+        <div class="lib-vcard__shine" aria-hidden="true"></div>
+      </div>
+      <div class="lib-vcard__body">
+        ${ownedBadge}
+        <h3 class="lib-vcard__title">${escapeHtml(hit.title)}</h3>
+        <p class="lib-vcard__artist">${escapeHtml(hit.artist)}</p>
+        <p class="lib-vcard__meta-row"><span class="lib-vcard__genre">${escapeHtml(genre)}</span></p>
+        ${listenPillsHtml(hit.links)}
+        ${cta}
+      </div>
+    </article>`;
+  }
+
+  function renderLibraryHomePanels() {
+    const shelf = libraryShelfAlbums();
+    const featured = libFeaturedAlbums();
+    const shelfBlock =
+      shelf.length > 0
+        ? `<section class="lib-panel lib-panel--shelf" aria-label="Ta collection">
+            <div class="lib-panel__head">
+              <h2 class="lib-panel__title">Ton carnet</h2>
+              <p class="lib-panel__sub">Les disques que tu as déjà rangés ici</p>
+            </div>
+            <div class="lib-shelf-scroll">${shelf.map(libShelfCardHtml).join("")}</div>
+          </section>`
+        : `<section class="lib-panel lib-panel--welcome">
+            <div class="lib-welcome-card">
+              <p class="lib-welcome-card__eyebrow">Premier disque</p>
+              <h2 class="lib-welcome-card__title">Commence ta collection</h2>
+              <p class="lib-welcome-card__text">Cherche un album ci-dessus — deux lettres suffisent pour faire apparaître de vraies pochettes depuis Apple Music et Deezer.</p>
+            </div>
+          </section>`;
+    const featuredBlock =
+      featured.length > 0
+        ? `<section class="lib-panel" aria-label="Coup de projecteur">
+            <div class="lib-panel__head">
+              <h2 class="lib-panel__title">Coup de projecteur</h2>
+              <p class="lib-panel__sub">Quelques classiques pour lancer une recherche</p>
+            </div>
+            <div class="lib-spotlight-scroll">${featured
+              .map((al) => {
+                const q = `${al.artist} ${al.title}`;
+                return `<button type="button" class="lib-spot-card" data-lib-chip="${escapeHtml(q)}">
+                  <span class="lib-spot-card__cover">${coverHtml(al, true, "md")}</span>
+                  <span class="lib-spot-card__meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></span>
+                </button>`;
+              })
+              .join("")}</div>
+          </section>`
+        : "";
+    return `${shelfBlock}${featuredBlock}`;
+  }
+
+  function renderLibraryResultsInner() {
+    if (libraryRemoteLoading) {
+      return `<div class="lib-status lib-status--loading" role="status" aria-live="polite">
           <div class="lib-vinyl" aria-hidden="true"></div>
-          <p class="lib-loading-text">On fouille les bacs…</p>
-          <div class="lib-skel-grid">${Array.from({ length: 8 })
-            .map(
-              (_, i) =>
-                `<div class="lib-skel-card" style="animation-delay:${(i * 0.04).toFixed(2)}s"><div class="lib-skel-cover"></div><div class="lib-skel-line"></div><div class="lib-skel-line short"></div></div>`
-            )
+          <p class="lib-status__text">On fouille les bacs…</p>
+          <div class="lib-skel-masonry">${Array.from({ length: 8 })
+            .map((_, i) => `<div class="lib-skel-vcard" style="--lib-i:${i}"><div class="lib-skel-vcard__cover"></div><div class="lib-skel-vcard__line"></div><div class="lib-skel-vcard__line short"></div>`)
             .join("")}</div>
         </div>`;
-      }
-      if (libraryRemoteError) {
-        return `<div class="lib-empty lib-empty--err"><p>${escapeHtml(libraryRemoteError)}</p><p class="feed-note">Vérifie ta connexion ou réessaie dans un instant.</p></div>`;
-      }
-      const t = libraryQuery.trim();
-      if (t.length < 2) {
-        return `<div class="lib-empty lib-empty--hint">
-          <div class="lib-empty-icon" aria-hidden="true">♫</div>
-          <p><strong>2 lettres</strong> suffisent pour faire apparaître des <strong>pochettes</strong> depuis Apple Music &amp; Deezer.</p>
-          <p class="feed-note">Ensuite : écoute rapide sur les services, puis « Importer » pour ranger le disque dans Soundlog.</p>
+    }
+    if (libraryRemoteError) {
+      return `<div class="lib-status lib-status--err"><p>${escapeHtml(libraryRemoteError)}</p><p class="lib-status__hint">Vérifie ta connexion ou réessaie dans un instant.</p></div>`;
+    }
+    const t = libraryQuery.trim();
+    if (t.length < 2) return renderLibraryHomePanels();
+    if (!libraryRemoteHits.length) {
+      return `<div class="lib-status lib-status--empty">
+          <p>Aucun album pour <strong>${escapeHtml(t)}</strong>.</p>
+          <p class="lib-status__hint">Essaie un autre mot-clé, un nom d’artiste ou un titre plus court.</p>
         </div>`;
-      }
-      if (!libraryRemoteHits.length) {
-        return `<div class="lib-empty"><p>Aucun album pour <strong>${escapeHtml(t)}</strong>.</p><p class="feed-note">Essaie un autre mot-clé ou un nom d’artiste.</p></div>`;
-      }
-      return `<div class="lib-grid">${libraryRemoteHits
-        .map((hit, idx) => {
-          const g = gradientFromKey(hit.title + hit.artist);
-          const fakeAlbum = {
-            title: hit.title,
-            artist: hit.artist,
-            year: hit.year,
-            genre: "Import",
-            from: g.from,
-            to: g.to,
-            artworkUrl: hit.artworkUrl,
-          };
-          const pay = encodeURIComponent(JSON.stringify(hit));
-          const tilt = ((idx % 7) - 3) * 0.9;
-          const dots = [
-            hit.flags.apple ? `<span class="lib-dot lib-dot-apple" title="Trouvé via Apple"></span>` : "",
-            hit.flags.deezer ? `<span class="lib-dot lib-dot-deezer" title="Trouvé via Deezer"></span>` : "",
-            `<span class="lib-dot lib-dot-spotify" title="Lien Spotify"></span>`,
-            `<span class="lib-dot lib-dot-youtube" title="${hit.flags.yt ? "Vidéo YouTube" : "YouTube"}"></span>`,
-          ].join("");
-          return `<article class="lib-card" style="--lib-tilt:${tilt.toFixed(2)}deg">
-          <div class="lib-card-inner">
-            <div class="lib-cover-zone">
-              <div class="lib-cover-frame">${coverHtml(fakeAlbum, true)}</div>
-              <div class="lib-floating-dots" aria-hidden="true">${dots}</div>
-              <span class="lib-year-chip">${escapeHtml(String(hit.year))}</span>
-            </div>
-            <div class="lib-card-body">
-              <h3 class="lib-card-title">${escapeHtml(hit.title)}</h3>
-              <p class="lib-card-artist">${escapeHtml(hit.artist)}</p>
-              ${listenPillsHtml(hit.links)}
-              <button type="button" class="btn btn-primary lib-import-btn" data-import-hit="${pay}">Importer</button>
-            </div>
-          </div>
-        </article>`;
-        })
-        .join("")}</div>`;
-    })();
-    return `<div class="lib-studio view-libraries-themed">
-      <header class="lib-hero">
-        <div class="lib-hero-icon" aria-hidden="true">◎</div>
-        <div class="lib-hero-copy">
-          <p class="lib-hero-kicker">Mode disquaire</p>
-          <h1 class="page-title lib-hero-title">Bibliothèques</h1>
-          <p class="page-sub lib-hero-sub">Les résultats <strong>Apple Music</strong> et <strong>Deezer</strong> s’affichent en <strong>vraies pochettes</strong>. Spotify et YouTube ouvrent en un clic (recherche ou vidéo si tu as mis une clé YouTube).</p>
+    }
+    return `<section class="lib-results-section" aria-label="Résultats">
+        <div class="lib-results-head">
+          <h2 class="lib-results-head__title">${libraryRemoteHits.length} pochettes trouvées</h2>
+          <p class="lib-results-head__sub">Apple Music &amp; Deezer · écoute rapide puis collectionne dans ton carnet</p>
         </div>
-        <button type="button" class="btn btn-ghost lib-api-btn" id="btn-api-settings">Clé YouTube</button>
+        <div class="lib-masonry">${libraryRemoteHits.map((hit, idx) => libraryHitCardHtml(hit, idx)).join("")}</div>
+      </section>`;
+  }
+
+  function renderLibraries() {
+    const stats = libraryStats();
+    const chips = libChipsHtml();
+    const searching = libraryQuery.trim().length >= 2;
+    return `<div class="lib-page view-libraries-themed">
+      <header class="lib-masthead">
+        <div class="lib-masthead__copy">
+          <p class="lib-masthead__kicker">Carnet personnel</p>
+          <h1 class="lib-masthead__title">Bibliothèques</h1>
+          <p class="lib-masthead__lead">Collectionne tes albums, note tes écoutes, découvre de nouvelles pochettes — comme un disquaire premium dans ta poche.</p>
+        </div>
+        <div class="lib-stats" aria-label="Statistiques de collection">
+          <div class="lib-stat"><b>${stats.albums}</b><span>disques</span></div>
+          <div class="lib-stat"><b>${stats.rated}</b><span>notés</span></div>
+          <div class="lib-stat"><b>${stats.wishlist}</b><span>envies</span></div>
+        </div>
+        <button type="button" class="lib-settings-btn" id="btn-api-settings" title="Clé YouTube (optionnel)">Réglages</button>
       </header>
-      <section class="lib-dig-section" aria-label="Recherche">
-        <label for="lib-q" class="lib-dig-label">Chercher un album</label>
-        <div class="lib-dig-row">
-          <span class="lib-dig-glyph" aria-hidden="true"></span>
-          <input type="search" id="lib-q" class="library-search lib-dig-input" placeholder="Artiste, album, n’importe quoi…" autocomplete="off" value="${escapeHtml(libraryQuery)}" />
+
+      <div class="lib-search-stage${searching ? " lib-search-stage--active" : ""}">
+        <label for="lib-q" class="visually-hidden">Chercher un album</label>
+        <div class="lib-search-shell">
+          <span class="lib-search-icon" aria-hidden="true"></span>
+          <input type="search" id="lib-q" class="lib-search-input" placeholder="Artiste, album, humeur…" autocomplete="off" value="${escapeHtml(libraryQuery)}" />
+          ${searching ? `<button type="button" class="lib-search-clear" id="lib-search-clear" aria-label="Effacer">×</button>` : ""}
         </div>
-        <p class="lib-dig-hint">Astuce : mots simples = plus de covers qui débarquent.</p>
-      </section>
-      <div id="lib-results" class="lib-results">${rowsHtml}</div>
+        ${chips ? `<div class="lib-chips" role="list">${chips}</div>` : ""}
+        <p class="lib-search-hint">${searching ? "Les pochettes arrivent en direct depuis les catalogues." : "Tape au moins 2 lettres — ou choisis une suggestion ci-dessus."}</p>
+      </div>
+
+      <div id="lib-results" class="lib-results">${renderLibraryResultsInner()}</div>
     </div>`;
   }
 
@@ -3669,15 +3851,11 @@
       perfVideosBlock += `<p class="perf-video-add-wrap"><button type="button" class="btn btn-primary btn-sm" id="btn-add-perf-video">+ Ajouter une vidéo YouTube</button></p>`;
     }
 
-    const coverClass = u.avatar_url ? "profile-cover profile-cover--photo" : "profile-cover";
-    const coverStyle = u.avatar_url
-      ? `--ph:${u.hue};--profile-photo:url('${escapeHtml(String(u.avatar_url).replace(/'/g, "%27"))}')`
-      : `--ph:${u.hue}`;
     return `<div class="profile-view view-themed">
-      <div class="${coverClass}" style="${coverStyle}"></div>
+      <div class="profile-cover" style="--ph:${u.hue}"></div>
       <div class="profile-sheet">
       <div class="profile-head">
-        <div class="profile-head__avatar-slot">${userAvatarHtml(u, "profile-head__avatar")}</div>
+        <div class="avatar profile-head__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
         <div>
           <h1 class="page-title profile-head__title">${escapeHtml(u.name)}</h1>
           <p class="page-sub profile-head__handle" style="margin:0">@${escapeHtml(u.handle)}</p>
@@ -3979,7 +4157,6 @@
     injectProfileCompatibility();
     injectSocialEventInterests();
     injectInboxHydration();
-    void injectProfileCloudHydration();
     if (route.view === "album") {
       requestAnimationFrame(() => applyAlbumBackdropTint());
     }
@@ -4158,41 +4335,6 @@
           : `<p class="empty">Pas assez de données pour reco. Importe une playlist + invite des ami·es.</p>`;
       } catch (e) { console.warn("[recos]", e); }
     })();
-  }
-
-
-  async function injectProfileCloudHydration() {
-    if (route.view !== "profile") return;
-    if (!window.SLCloud || !SLCloud.ready) return;
-    const uid = route.userId || "me";
-    let cloudId = null;
-    if (uid === "me") {
-      if (!SLCloud.isSignedIn || !SLCloud.isSignedIn()) return;
-      if (typeof SLCloud.refreshProfile === "function") await SLCloud.refreshProfile();
-      cloudId = SLCloud.me && SLCloud.me.id;
-    } else if (isCloudUuid(uid)) {
-      cloudId = uid;
-    } else {
-      return;
-    }
-    if (!cloudId) return;
-    try {
-      let prof = cloudPeers.get(cloudId) || (uid === "me" ? SLCloud.me : null);
-      if (!prof || prof.avatar_url === undefined) {
-        prof = await SLCloud.getProfileById(cloudId);
-        if (prof) registerCloudPeerProfiles([prof]);
-      }
-      if (route.view !== "profile" || (route.userId || "me") !== uid) return;
-      const u = userById(uid);
-      if (!u) return;
-      const slot = document.querySelector(".profile-head__avatar-slot");
-      if (slot) slot.innerHTML = userAvatarHtml(u, "profile-head__avatar");
-      const cover = document.querySelector(".profile-cover");
-      if (cover && u.avatar_url) {
-        cover.classList.add("profile-cover--photo");
-        cover.style.setProperty("--profile-photo", `url('${String(u.avatar_url).replace(/'/g, "%27")}')`);
-      }
-    } catch (_) {}
   }
 
   async function injectProfileCompatibility() {
@@ -5005,9 +5147,42 @@
     wireLibrarySearch();
   }
 
+  async function runLibrarySearch(q) {
+    const qq = String(q || "").trim();
+    if (qq.length < 2) {
+      libraryRemoteHits = [];
+      libraryRemoteLoading = false;
+      libraryRemoteError = null;
+      render();
+      return;
+    }
+    libraryRemoteLoading = true;
+    libraryRemoteError = null;
+    render();
+    try {
+      libraryRemoteHits = await mergeRemoteAlbums(qq);
+      libraryRemoteError = null;
+      pushLibRecent(qq);
+    } catch (e) {
+      libraryRemoteHits = [];
+      libraryRemoteError = e.message || String(e);
+    }
+    libraryRemoteLoading = false;
+    const h = (window.location.hash || "#").slice(1);
+    if (h !== "bibliotheques") return;
+    const still = document.getElementById("lib-q");
+    if (still && still.value.trim() === qq) render();
+  }
+
   function wireLibrarySearch() {
     const input = document.getElementById("lib-q");
     if (!input) return;
+    const triggerChip = (q) => {
+      libraryQuery = q;
+      input.value = q;
+      input.focus();
+      void runLibrarySearch(q);
+    };
     input.addEventListener("input", () => {
       libraryQuery = input.value;
       clearTimeout(libSearchTimer);
@@ -5022,23 +5197,23 @@
       libraryRemoteLoading = true;
       libraryRemoteError = null;
       render();
-      libSearchTimer = setTimeout(async () => {
-        const q = libraryQuery.trim();
-        if (q.length < 2) return;
-        try {
-          libraryRemoteHits = await mergeRemoteAlbums(q);
-          libraryRemoteError = null;
-        } catch (e) {
-          libraryRemoteHits = [];
-          libraryRemoteError = e.message || String(e);
-        }
-        libraryRemoteLoading = false;
-        const h = (window.location.hash || "#").slice(1);
-        if (h !== "bibliotheques") return;
-        const still = document.getElementById("lib-q");
-        if (still && still.value.trim() === q) render();
-      }, 480);
+      libSearchTimer = setTimeout(() => void runLibrarySearch(libraryQuery), 320);
     });
+    document.querySelectorAll("[data-lib-chip]").forEach((btn) => {
+      btn.addEventListener("click", () => triggerChip(btn.getAttribute("data-lib-chip") || ""));
+    });
+    const clearBtn = document.getElementById("lib-search-clear");
+    if (clearBtn) {
+      clearBtn.addEventListener("click", () => {
+        libraryQuery = "";
+        input.value = "";
+        libraryRemoteHits = [];
+        libraryRemoteLoading = false;
+        libraryRemoteError = null;
+        input.focus();
+        render();
+      });
+    }
     const apiBtn = document.getElementById("btn-api-settings");
     if (apiBtn) apiBtn.addEventListener("click", () => openApiSettingsModal());
     document.querySelectorAll("[data-import-hit]").forEach((btn) => {
@@ -5426,22 +5601,11 @@
     // Users locaux : me + invitedPeers
     const users = [];
     const me = state.profile || {};
-const cloudMe = window.SLCloud && SLCloud.me;
     if (
       (me.displayName && me.displayName.toLowerCase().includes(qq)) ||
-      (me.handle && me.handle.toLowerCase().includes(qq)) ||
-      (cloudMe && ((cloudMe.name || "").toLowerCase().includes(qq) || (cloudMe.handle || "").toLowerCase().includes(qq)))
+      (me.handle && me.handle.toLowerCase().includes(qq))
     ) {
-      users.push({
-        id: "me",
-        name: cloudMe ? cloudMe.name : me.displayName,
-        handle: cloudMe ? cloudMe.handle : me.handle,
-        bio: (cloudMe && cloudMe.bio) || me.bio || "",
-        hue: cloudMe && cloudMe.hue != null ? cloudMe.hue : 152,
-        avatar_url: (cloudMe && cloudMe.avatar_url) || "",
-        local: true,
-        self: true,
-      });
+      users.push({ id: "me", name: me.displayName, handle: me.handle, bio: me.bio || "", hue: 152, local: true, self: true });
     }
     (state.invitedPeers || []).forEach((p) => {
       if ((p.name || "").toLowerCase().includes(qq) || (p.handle || "").toLowerCase().includes(qq)) {
@@ -5461,7 +5625,8 @@ const cloudMe = window.SLCloud && SLCloud.me;
     return escapeHtmlS(t.slice(0, idx)) + `<mark>${escapeHtmlS(t.slice(idx, idx + q.length))}</mark>` + escapeHtmlS(t.slice(idx + q.length));
   }
 
-  
+  function userInitial(name) { return String(name || "?").trim().charAt(0).toUpperCase() || "?"; }
+
   function renderUserRow(u, q) {
     const hue = u.hue != null ? u.hue : hueFromHandle(u.handle || u.name);
     const avatarHtml = u.avatar_url
@@ -5674,7 +5839,6 @@ const cloudMe = window.SLCloud && SLCloud.me;
       try {
         const cloudUsers = await window.SLCloud.searchProfiles(q, 20);
         if (reqId !== searchCloudReqId) return;
-        registerCloudPeerProfiles(cloudUsers || []);
         __slSearchCache = { q: qq, users: cloudUsers };
         if ($main.getAttribute("data-route") === "search" && $search.value.trim().toLowerCase() === qq) {
           render();

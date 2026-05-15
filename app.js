@@ -161,6 +161,7 @@
       eventInterestLocal: {},
       upcomingTourPreview: [],
       feedHomeTab: "following",
+      socialTab: "feed",
     };
   }
 
@@ -224,6 +225,7 @@
           parsed.eventInterestLocal && typeof parsed.eventInterestLocal === "object" ? parsed.eventInterestLocal : base.eventInterestLocal,
         upcomingTourPreview: Array.isArray(parsed.upcomingTourPreview) ? parsed.upcomingTourPreview : base.upcomingTourPreview,
         feedHomeTab: parsed.feedHomeTab === "discover" ? "discover" : base.feedHomeTab,
+        socialTab: ["feed", "circle", "live"].includes(parsed.socialTab) ? parsed.socialTab : base.socialTab,
       };
     } catch {
       return defaultState();
@@ -1755,9 +1757,9 @@
     const alt = escapeHtml(String(u.name || u.handle || "Profil"));
     const url = String(u.avatar_url || "").trim();
     if (url) {
-      return `<motion class="${cls} profile-head__avatar--has-img" style="background:hsl(${hue},55%,42%)"><img src="${escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async" onerror="this.remove();this.closest('.profile-head__avatar')&&this.closest('.profile-head__avatar').classList.remove('profile-head__avatar--has-img');" /></div>`;
+      return `<div class="${cls} profile-head__avatar--has-img" style="background:hsl(${hue},55%,42%)"><img src="${escapeHtml(url)}" alt="${alt}" loading="lazy" decoding="async" onerror="this.remove();this.closest('.profile-head__avatar')&&this.closest('.profile-head__avatar').classList.remove('profile-head__avatar--has-img');" /></div>`;
     }
-    return `<motion class="${cls}" style="background:hsl(${hue},55%,42%)">${escapeHtml(userInitial(u.name))}</div>`;
+    return `<div class="${cls}" style="background:hsl(${hue},55%,42%)">${escapeHtml(userInitial(u.name))}</div>`;
   }
 
   function userById(id) {
@@ -2975,311 +2977,417 @@
     </div>`;
   }
 
-  function renderSocial() {
-    ensureSocialArrays();
-    const zone = String((state.settings && state.settings.alertCity) || "").trim();
-    const desk = !!(state.settings && state.settings.desktopAlerts);
-    const favChips =
-      state.favoriteArtists.length === 0
-        ? `<p class="empty">Aucun artiste suivi pour les concerts. Ouvre une fiche album et active « Suivre pour les concerts ».</p>`
-        : `<div class="artist-chip-row">${state.favoriteArtists
-            .map(
-              (a) =>
-                `<span class="artist-chip">${escapeHtml(a)}<button type="button" class="chip-x" data-rm-fav="${encodeURIComponent(
-                  a
-                )}" title="Retirer" aria-label="Retirer">×</button></span>`
-            )
-            .join("")}</div>`;
+  function ensureSocialTab() {
+    const ok = ["feed", "circle", "live"];
+    if (!state.socialTab || !ok.includes(state.socialTab)) state.socialTab = "feed";
+  }
 
-    const friendsHtml =
-      state.friends.length === 0
-        ? `<p class="empty">Pas encore d’ami·e — envoie une demande depuis un profil.</p>`
-        : `<div class="social-card-grid">${state.friends
-            .map((fid) => {
-              const u = userById(fid);
-              if (!u) return "";
-              return `<div class="social-card">
-            <div class="avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
-            <div class="social-card-text"><strong>${escapeHtml(u.name)}</strong><span class="feed-note">@${escapeHtml(u.handle)}</span></div>
-            <button type="button" class="btn btn-ghost btn-sm" data-profile="${u.id}">Profil</button>
-          </div>`;
-            })
-            .join("")}</div>`;
+  function localCompatPreview(uid) {
+    const mine = collectMyTasteAlbumIds();
+    const peer = collectLocalTasteAlbumIdsForUser(uid);
+    return tasteOverlapScore(mine, peer);
+  }
 
-    const incomingHtml =
-      state.incomingFriendRequests.length === 0
-        ? `<p class="feed-note">Aucune demande en attente.</p>`
-        : `<ul class="req-list">${state.incomingFriendRequests
-            .map((r) => {
-              const u = userById(r.fromUserId);
-              if (!u) return "";
-              return `<li class="req-row">
-            <span><strong>${escapeHtml(u.name)}</strong> veut être ami·e</span>
-            <span>
-              <button type="button" class="btn btn-primary btn-sm" data-accept-friend="${escapeHtml(r.id)}">Accepter</button>
-              <button type="button" class="btn btn-ghost btn-sm" data-decline-friend="${escapeHtml(r.id)}">Refuser</button>
-            </span>
-          </li>`;
-            })
-            .join("")}</ul>`;
-
-    const outgoingHtml =
-      state.outgoingFriendRequests.length === 0
-        ? `<p class="feed-note">Aucune demande envoyée.</p>`
-        : `<ul class="req-list">${state.outgoingFriendRequests
-            .map((r) => {
-              const u = userById(r.toUserId);
-              if (!u) return "";
-              return `<li class="req-row">
-            <span>En attente chez <strong>${escapeHtml(u.name)}</strong></span>
-            <button type="button" class="btn btn-ghost btn-sm" data-cancel-friend-out="${escapeHtml(r.toUserId)}">Annuler</button>
-          </li>`;
-            })
-            .join("")}</ul>`;
-
-    const discoverHtml = USERS.filter((u) => u.id !== "me")
-      .map((u) => {
-        const fol = (state.follows || []).includes(u.id);
-        const fr = isFriend(u.id);
-        return `<div class="social-card social-card--wide">
-        <div class="avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</div>
-        <div class="social-card-text">
-          <strong>${escapeHtml(u.name)}</strong>
-          <span class="feed-note">@${escapeHtml(u.handle)} — ${escapeHtml(u.bio)}</span>
-        </div>
-        <div class="social-card-actions">
-          <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${u.id}">${fol ? "Abonné" : "Suivre"}</button>
-          ${
-            fr
-              ? `<span class="friend-badge-inline">Ami·e</span>`
-              : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${u.id}">Demande d’ami</button>`
-          }
-          <button type="button" class="btn btn-ghost btn-sm" data-profile="${u.id}">Profil</button>
-        </div>
-      </div>`;
-      })
-      .join("");
-
-    const demoUserIds = new Set(USERS.map((u) => u.id));
-    const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
-    const cloudDiscoverPeers = (window.__slCloudPeers
-      ? [...window.__slCloudPeers.keys()].filter((id) => {
-          if (!isCloudUuid(id)) return false;
-          if (meCloud && id === meCloud) return false;
-          return !demoUserIds.has(id);
-        })
-      : []
-    ).slice(0, 24);
-    const cloudDiscoverHtml =
-      cloudDiscoverPeers.length === 0
+  function socialListeningPostHtml(l) {
+    const al = albumById(l.albumId);
+    const u = userById(l.userId);
+    if (!al || !u) return "";
+    const comments = feedCommentsFor(l.id);
+    const commentsHtml =
+      comments.length === 0
         ? ""
-        : `<h3 class="social-subh">Profils Soundlog</h3><div class="social-card-stack">${cloudDiscoverPeers
-            .map((cid) => {
-              const p = window.__slCloudPeers.get(cid);
-              if (!p) return "";
-              const fr = isFriend(cid);
-              const pending = outgoingRequestTo(cid);
-              const fol = (state.follows || []).includes(cid);
-              const hue = p.hue != null ? p.hue : hueFromHandle(p.handle || p.name || "x");
-              return `<div class="social-card social-card--wide">
-        <div class="avatar" style="background:hsl(${hue},55%,42%)">${escapeHtml((p.name || "?").charAt(0))}</div>
-        <div class="social-card-text">
-          <strong>${escapeHtml(p.name || "?")}</strong>
-          <span class="feed-note">@${escapeHtml(p.handle || "")}</span>
-        </div>
-        <div class="social-card-actions">
-          <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${escapeHtml(cid)}">${fol ? "Abonné" : "Suivre"}</button>
-          ${
-            fr
-              ? `<span class="friend-badge-inline">Ami·e</span>`
-              : pending
-                ? `<span class="feed-note">En attente</span>`
-                : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${escapeHtml(cid)}">Demande d’ami</button>`
-          }
-          <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(cid)}">Profil</button>
-        </div>
-      </div>`;
+        : `<ul class="soc-comments">${comments
+            .map((c) => {
+              const cu = userById(c.userId);
+              return `<li><button type="button" class="link" data-profile="${escapeHtml(cu.id)}">${escapeHtml(cu.name)}</button> <span>${escapeHtml(c.text)}</span></li>`;
             })
-            .join("")}</div>`;
-
-    const shoutForm = `<div class="panel shout-panel">
-      <h3>Murmures du disquaire</h3>
-      <p class="feed-note">Petit pavé public (démo locale) — partagé avec les profils fictifs du carnet.</p>
-      <div class="shout-form-row">
-        <input type="text" id="social-shout-text" maxlength="280" placeholder="Un mot sur une sortie, une envie…" />
-        <button type="button" class="btn btn-primary" id="social-add-shout">Publier</button>
+            .join("")}</ul>`;
+    const whenRel = formatRelativeFeedTime(l.date);
+    const avatarInner = userAvatarHtml(u, "feed-post__avatar");
+    const avatar =
+      avatarInner ||
+      `<span class="feed-post__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>`;
+    return `<article class="feed-post soc-feed-card" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}" data-feed-listening-id="${escapeHtml(l.id)}">
+      <header class="feed-post__head">
+        ${avatar}
+        <div class="feed-post__who">
+          <button type="button" class="feed-post__user" data-profile="${u.id}">${escapeHtml(u.name)}</button>
+          <span class="feed-post__verb">a noté</span>
+        </div>
+        <time class="feed-post__time" datetime="${escapeHtml(l.date)}">${escapeHtml(whenRel)}</time>
+      </header>
+      <div class="soc-feed-card__body">
+        <div class="feed-post__media soc-feed-card__cover">${coverHtml(al, false, "lg")}</div>
+        <div class="soc-feed-card__copy">
+          <div class="soc-feed-card__rating">${starString(l.rating)}</div>
+          <button type="button" class="feed-post__album-title" data-album-open="${al.id}">${escapeHtml(al.title)}</button>
+          <p class="feed-post__album-meta">${escapeHtml(al.artist)} · ${escapeHtml(String(al.year))} · ${escapeHtml(al.genre || "")}</p>
+          ${previewNoteHtml(al)}
+          <div class="feed-post__caption">${l.review ? `<p>${escapeHtml(l.review)}</p>` : `<p class="feed-post__muted">Pas de critique.</p>`}</div>
+          ${commentsHtml}
+          ${feedPreviewSectionHtml(al)}
+          <footer class="feed-post__actions soc-feed-card__actions">
+            <button type="button" class="feed-post__action-btn feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false"><span class="feed-ic feed-ic--play" aria-hidden="true"></span> <span data-preview-btn-label>30 s</span></button>
+            <button type="button" class="feed-post__action-btn" data-comment-on="${escapeHtml(l.id)}"><span class="feed-ic feed-ic--bubble" aria-hidden="true"></span> Commenter</button>
+            <button type="button" class="feed-post__action-btn" data-album-open="${escapeHtml(al.id)}"><span class="feed-ic feed-ic--disc" aria-hidden="true"></span> Fiche</button>
+            <button type="button" class="feed-post__action-btn soc-react-btn" data-feed-react="${escapeHtml(l.id)}" title="Réagir">♥</button>
+          </footer>
+        </div>
       </div>
-      <ul class="shout-list">${(state.shoutouts || [])
-        .slice()
-        .sort((a, b) => (a.at < b.at ? 1 : -1))
-        .slice(0, 12)
-        .map((s) => {
-          const u = userById(s.userId);
-          return `<li><span class="feed-note">${escapeHtml((s.at || "").slice(0, 10))}</span> — <button type="button" class="link" data-profile="${u.id}">${escapeHtml(
-            u.name
-          )}</button> : ${escapeHtml(s.text)}</li>`;
-        })
-        .join("")}</ul>
-    </div>`;
+    </article>`;
+  }
 
-    const manualRows = (state.manualTourDates || [])
-      .slice()
-      .sort((a, b) => (a.datetime < b.datetime ? -1 : 1))
-      .map((row) => {
-        const evKey = tourSeenKey(row.artist, row.datetime, [row.venue, row.city].filter(Boolean).join(" — "));
-        const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[evKey]);
-        return `<tr>
-        <td>${escapeHtml(row.artist)}</td>
-        <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
-        <td>${escapeHtml(row.venue || "")}</td>
-        <td>${escapeHtml(row.city || "")}</td>
-        <td>
-          <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
+  function socialNotePostHtml(s) {
+    const u = userById(s.userId);
+    if (!u) return "";
+    const when = formatRelativeFeedTime(s.at || "");
+    return `<article class="soc-note-card">
+      <header class="soc-note-card__head">
+        <span class="soc-note-card__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
+        <div>
+          <button type="button" class="link soc-note-card__user" data-profile="${u.id}">${escapeHtml(u.name)}</button>
+          <span class="soc-note-card__tag">Murmure</span>
+        </div>
+        <time class="soc-note-card__time">${escapeHtml(when)}</time>
+      </header>
+      <p class="soc-note-card__text">${escapeHtml(s.text)}</p>
+    </article>`;
+  }
+
+  function socialFriendPersonHtml(fid) {
+    const u = userById(fid);
+    if (!u) return "";
+    const compat = localCompatPreview(fid);
+    const recent = state.listenings
+      .filter((l) => l.userId === fid)
+      .sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+    const recentAl = recent ? albumById(recent.albumId) : null;
+    const canDm = isFriend(fid) && isCloudUuid(fid) && window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
+    const covers = state.listenings
+      .filter((l) => l.userId === fid)
+      .slice(0, 4)
+      .map((l) => albumById(l.albumId))
+      .filter(Boolean)
+      .map((al) => `<span class="soc-person__mini">${coverHtml(al, true, "sm")}</span>`)
+      .join("");
+    return `<article class="soc-person" data-friend-id="${escapeHtml(fid)}">
+      <button type="button" class="soc-person__link" data-profile="${escapeHtml(fid)}">
+        <span class="soc-person__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
+        <span class="soc-person__info">
+          <strong>${escapeHtml(u.name)}</strong>
+          <span class="soc-person__handle">@${escapeHtml(u.handle)}</span>
+          <span class="soc-person__compat" data-compat-label>${compat.score}% · ${compat.shared} disque${compat.shared > 1 ? "s" : ""} en commun</span>
+        </span>
+        ${covers ? `<span class="soc-person__stack">${covers}</span>` : ""}
+      </button>
+      <div class="soc-person__actions">
+        ${canDm ? `<button type="button" class="btn btn-primary btn-sm" data-open-dm="${escapeHtml(fid)}">Message</button>` : ""}
+        <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(fid)}">Profil</button>
+      </div>
+    </article>`;
+  }
+
+  function socialDiscoverPersonHtml(u, opts) {
+    const id = opts.cloudId || u.id;
+    const fol = (state.follows || []).includes(id);
+    const fr = isFriend(id);
+    const pending = outgoingRequestTo(id);
+    const hue = u.hue != null ? u.hue : hueFromHandle(u.handle || u.name || "x");
+    return `<article class="soc-discover-card">
+      <span class="soc-discover-card__avatar" style="background:hsl(${hue},55%,42%)">${escapeHtml((u.name || "?").charAt(0))}</span>
+      <div class="soc-discover-card__body">
+        <strong>${escapeHtml(u.name || "?")}</strong>
+        <span class="feed-note">@${escapeHtml(u.handle || "")}</span>
+        ${u.bio ? `<p class="soc-discover-card__bio">${escapeHtml(u.bio)}</p>` : ""}
+      </div>
+      <div class="soc-discover-card__actions">
+        <button type="button" class="btn ${fol ? "btn-ghost" : "btn-primary"} btn-sm" data-follow="${escapeHtml(id)}">${fol ? "Suivi·e" : "Suivre"}</button>
+        ${
+          fr
+            ? `<span class="friend-badge-inline">Ami·e</span>`
+            : pending
+              ? `<span class="feed-note">En attente</span>`
+              : `<button type="button" class="btn btn-primary btn-sm" data-friend-req="${escapeHtml(id)}">Ajouter</button>`
+        }
+        <button type="button" class="btn btn-ghost btn-sm" data-profile="${escapeHtml(id)}">Voir</button>
+      </div>
+    </article>`;
+  }
+
+  function socialGigCardHtml(row, manual) {
+    const evKey = row.key || tourSeenKey(row.artist, row.datetime, [row.venue, row.city].filter(Boolean).join(" — "));
+    const interested = !!(state.eventInterestLocal && state.eventInterestLocal[evKey]);
+    const dt = (row.datetime || "").slice(0, 16).replace("T", " ");
+    const where = [row.venue, row.city].filter(Boolean).join(" · ") || "Lieu à préciser";
+    const g = gradientFromKey(row.artist + (row.city || ""));
+    const fakeAl = { title: row.artist, artist: row.eventTitle || "Live", from: g.from, to: g.to, artworkUrl: row.artworkUrl || "" };
+    return `<article class="soc-gig-card" style="--gig-tint:${g.from}">
+      <div class="soc-gig-card__visual">${coverHtml(fakeAl, true, "md")}</div>
+      <div class="soc-gig-card__body">
+        <p class="soc-gig-card__date">${escapeHtml(dt || "Date TBA")}</p>
+        <h3 class="soc-gig-card__artist">${escapeHtml(row.artist)}</h3>
+        <p class="soc-gig-card__venue">${escapeHtml(where)}</p>
+        <p class="soc-gig-card__src feed-note">${manual ? "Ajout manuel" : row.source === "bit" ? "Repéré en ligne" : "Programmé"}</p>
+        <div class="soc-gig-card__foot">
+          <button type="button" class="btn ${interested ? "btn-primary" : "btn-ghost"} btn-sm event-interest-toggle ${interested ? "is-on" : ""}"
             data-ev-key="${escapeHtml(evKey)}"
             data-ev-artist="${escapeHtml(row.artist)}"
             data-ev-dt="${escapeHtml(row.datetime || "")}"
             data-ev-venue="${escapeHtml(row.venue || "")}"
             data-ev-city="${escapeHtml(row.city || "")}"
-            data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
-          <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(evKey)}"></div>
-        </td>
-        <td><button type="button" class="btn btn-ghost btn-sm" data-rm-manual-tour="${escapeHtml(row.id)}">Retirer</button></td>
-      </tr>`;
-      })
-      .join("");
+            data-ev-url="${escapeHtml(row.url || "")}">${interested ? "Partant·e ✓" : "Ça m'intéresse"}</button>
+          ${manual ? `<button type="button" class="btn btn-ghost btn-sm" data-rm-manual-tour="${escapeHtml(row.id)}">Retirer</button>` : ""}
+        </div>
+        <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(evKey)}"></div>
+      </div>
+    </article>`;
+  }
 
-    const previewRows =
-      (state.upcomingTourPreview || []).length === 0
-        ? `<tr><td colspan="6" class="empty">Rien pour l’instant — lance « Vérifier les dates maintenant ».</td></tr>`
-        : (state.upcomingTourPreview || [])
-            .map((row) => {
-              const interestedLocal = !!(state.eventInterestLocal && state.eventInterestLocal[row.key]);
-              return `<tr>
-            <td>${escapeHtml(row.artist)}</td>
-            <td>${escapeHtml((row.datetime || "").slice(0, 16).replace("T", " "))}</td>
-            <td>${escapeHtml(row.venue || "")}</td>
-            <td>${escapeHtml(row.city || "")}</td>
-            <td><span class="feed-note">${row.source === "bit" ? "API" : "Manuel"}</span></td>
-            <td>
-              <button type="button" class="btn btn-ghost btn-sm event-interest-toggle ${interestedLocal ? "is-on" : ""}"
-                data-ev-key="${escapeHtml(row.key)}"
-                data-ev-artist="${escapeHtml(row.artist)}"
-                data-ev-dt="${escapeHtml(row.datetime || "")}"
-                data-ev-venue="${escapeHtml(row.venue || "")}"
-                data-ev-city="${escapeHtml(row.city || "")}"
-                data-ev-url="${escapeHtml(row.url || "")}">Intéressé·e</button>
-              <div class="event-friends-hint feed-note" data-ev-friends="${escapeHtml(row.key)}"></div>
-            </td>
-          </tr>`;
+  function renderSocialFeedPanel() {
+    const items = feedItems();
+    const notes = (state.shoutouts || []).slice().sort((a, b) => (a.at < b.at ? 1 : -1));
+    const merged = [
+      ...items.map((l) => ({ sort: l.date || "", html: socialListeningPostHtml(l) })),
+      ...notes.map((s) => ({ sort: (s.at || "").slice(0, 10), html: socialNotePostHtml(s) })),
+    ]
+      .filter((x) => x.html)
+      .sort((a, b) => (a.sort < b.sort ? 1 : -1));
+    const body =
+      merged.length === 0
+        ? `<div class="soc-empty">
+            <p class="soc-empty__title">Le fil est calme</p>
+            <p class="soc-empty__text">Suis des profils, ajoute des ami·es ou logue une écoute dans ton <strong>Journal</strong>.</p>
+            <button type="button" class="btn btn-primary" data-nav-view="home">Voir l'accueil</button>
+          </div>`
+        : `<div class="soc-feed-stream">${merged.map((x) => x.html).join("")}</div>`;
+    return `${feedStoryStripHtml()}${body}`;
+  }
+
+  function renderSocialCirclePanel() {
+    ensureSocialArrays();
+    const friendsBlock =
+      state.friends.length === 0
+        ? `<p class="soc-empty-inline">Pas encore d'ami·e — envoie une demande depuis un profil.</p>`
+        : `<div class="soc-people-list">${state.friends.map(socialFriendPersonHtml).join("")}</div>`;
+    const incomingBlock =
+      state.incomingFriendRequests.length === 0
+        ? `<p class="feed-note">Aucune demande en attente.</p>`
+        : `<div class="soc-req-list">${state.incomingFriendRequests
+            .map((r) => {
+              const u = userById(r.fromUserId);
+              if (!u) return "";
+              return `<div class="soc-req-card">
+                <span class="soc-req-card__avatar" style="background:hsl(${u.hue},55%,42%)">${escapeHtml(u.name.charAt(0))}</span>
+                <div class="soc-req-card__body"><strong>${escapeHtml(u.name)}</strong><span class="feed-note">veut rejoindre ton cercle</span></div>
+                <div class="soc-req-card__actions">
+                  <button type="button" class="btn btn-primary btn-sm" data-accept-friend="${escapeHtml(r.id)}">Accepter</button>
+                  <button type="button" class="btn btn-ghost btn-sm" data-decline-friend="${escapeHtml(r.id)}">Refuser</button>
+                </div>
+              </div>`;
             })
-            .join("");
-
-    const sentInv = (state.sentInvites || []).slice().reverse().slice(0, 12);
-    const sentInvitesHtml =
-      sentInv.length === 0
-        ? `<p class="feed-note">Aucun lien généré sur cet appareil pour l’instant.</p>`
-        : `<ul class="invite-sent-list">${sentInv
+            .join("")}</div>`;
+    const demoUserIds = new Set(USERS.map((u) => u.id));
+    const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
+    const cloudPeers = (window.__slCloudPeers
+      ? [...window.__slCloudPeers.keys()].filter((id) => isCloudUuid(id) && (!meCloud || id !== meCloud) && !demoUserIds.has(id))
+      : []
+    ).slice(0, 20);
+    const cloudHtml = cloudPeers.length
+      ? `<div class="soc-discover-list">${cloudPeers
+          .map((cid) => {
+            const p = window.__slCloudPeers.get(cid);
+            if (!p) return "";
+            return socialDiscoverPersonHtml(p, { cloudId: cid });
+          })
+          .join("")}</div>`
+      : "";
+    const demoHtml = `<div class="soc-discover-list">${USERS.filter((u) => u.id !== "me")
+      .map((u) => socialDiscoverPersonHtml(u, {}))
+      .join("")}</div>`;
+    const sentInv = (state.sentInvites || []).slice().reverse().slice(0, 8);
+    const inviteBlock = `<section class="soc-invite-banner">
+      <div>
+        <h3>Inviter quelqu'un</h3>
+        <p class="feed-note">Lien local — chaque personne crée son carnet sur son appareil.</p>
+      </div>
+      <button type="button" class="btn btn-primary" id="btn-open-invite-modal">Créer un lien</button>
+    </section>
+    ${
+      sentInv.length
+        ? `<ul class="invite-sent-list">${sentInv
             .map(
               (x) =>
-                `<li><span class="feed-note">${escapeHtml((x.createdAt || "").slice(0, 16).replace("T", " "))}</span> — jeton <code>${escapeHtml(
-                  String(x.token || "")
-                )}</code></li>`
+                `<li><span class="feed-note">${escapeHtml((x.createdAt || "").slice(0, 16).replace("T", " "))}</span> — <code>${escapeHtml(String(x.token || ""))}</code></li>`
             )
-            .join("")}</ul>`;
+            .join("")}</ul>`
+        : ""
+    }`;
+    return `${inviteBlock}
+      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Ton cercle</h2>${friendsBlock}</section>
+      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Demandes reçues</h2>${incomingBlock}</section>
+      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Découvrir</h2>${cloudHtml}${demoHtml}</section>`;
+  }
 
-    const invitePanel = `<section class="panel social-section invite-panel">
-      <h2>Inviter quelqu’un (local)</h2>
-      <p class="feed-note">Génère un lien à copier (message, mail…). La personne l’ouvre sur <strong>son</strong> navigateur : elle crée <strong>son</strong> carnet local. Aucun serveur Soundlog — pas de synchro automatique entre machines.</p>
-      <p><button type="button" class="btn btn-primary" id="btn-open-invite-modal">Créer un lien d’invitation</button></p>
-      <h3 style="margin-top:1rem;font-size:1rem">Liens créés sur cet appareil</h3>
-      ${sentInvitesHtml}
-    </section>`;
-
-    const nPendIn = (state.incomingFriendRequests || []).length;
-    const signedCloud = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
-    const socialDash = `<section class="panel social-dash" aria-label="Aperçu de ton réseau">
-      <div class="social-dash__grid">
-        <article class="social-dash__tile"><strong>${state.friends.length}</strong><span>ami·es</span></article>
-        <article class="social-dash__tile"><strong>${(state.follows || []).length}</strong><span>suivi·es</span></article>
-        <article class="social-dash__tile"><strong>${nPendIn}</strong><span>demandes reçues</span></article>
-        <article class="social-dash__tile social-dash__tile--cta">
-          <button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messages</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Fil</button>
-        </article>
-      </div>
-      <p class="feed-note social-dash__hint">${
-        signedCloud
-          ? "Graphe social synchronisé avec ton compte."
-          : "Passe en mode connecté pour DM, fil Découvrir et demandes d’ami en ligne."
-      }</p>
-    </section>`;
-
-    return `<div class="view-page social-hub view-social-themed">
-      <header class="social-hero">
-        <div>
-          <p class="social-kicker">Cercle &amp; alertes</p>
-          <h1 class="page-title">Communauté</h1>
-          <p class="page-sub">Ami·es, <strong>messages privés</strong>, test de <strong>compatibilité musicale</strong>, murmures et <strong>alertes concerts</strong>. Dis si tu es intéressé·e par une date : tes ami·es connecté·es le verront.</p>
-          <p class="social-hero-tools"><button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messagerie (ami·es)</button></p>
-        </div>
-      </header>
-      ${socialDash}
-
-      ${invitePanel}
-
-      <section class="panel social-section">
-        <h2>Concerts à proximité</h2>
-        <p class="feed-note">On compare les prochaines dates (manuelles ou API) avec ta ville de référence.</p>
-        <div class="social-tools">
-          <label class="social-inline"><span>Ville / région</span><input type="text" id="social-city" value="${escapeHtml(zone)}" placeholder="ex. Paris" /></label>
-          <label class="social-inline social-check"><input type="checkbox" id="social-desk" ${desk ? "checked" : ""} /> <span>Alertes bureau (navigateur)</span></label>
-          <button type="button" class="btn btn-ghost btn-sm" id="social-notif-perm">Demander la permission</button>
-          <button type="button" class="btn btn-primary" id="social-sync-tours">Vérifier les dates maintenant</button>
+  function renderSocialLivePanel() {
+    const zone = String((state.settings && state.settings.alertCity) || "").trim();
+    const desk = !!(state.settings && state.settings.desktopAlerts);
+    const favChips =
+      state.favoriteArtists.length === 0
+        ? `<p class="feed-note">Suis des artistes depuis une fiche album pour les alertes concerts.</p>`
+        : `<div class="artist-chip-row">${state.favoriteArtists
+            .map(
+              (a) =>
+                `<span class="artist-chip">${escapeHtml(a)}<button type="button" class="chip-x" data-rm-fav="${encodeURIComponent(a)}" title="Retirer">×</button></span>`
+            )
+            .join("")}</div>`;
+    const manualCards = (state.manualTourDates || [])
+      .slice()
+      .sort((a, b) => (a.datetime < b.datetime ? -1 : 1))
+      .map((row) => socialGigCardHtml(row, true))
+      .join("");
+    const previewCards =
+      (state.upcomingTourPreview || []).length === 0
+        ? `<p class="soc-empty-inline">Lance une vérification pour repérer des dates près de chez toi.</p>`
+        : (state.upcomingTourPreview || []).map((row) => socialGigCardHtml(row, false)).join("");
+    return `<section class="soc-live-tools">
+        <p class="feed-note">Concerts près de <strong>${escapeHtml(zone || "ta ville")}</strong> — dis si tu es partant·e, tes ami·es le verront.</p>
+        <div class="social-tools soc-live-tools__row">
+          <label class="social-inline"><span>Ville</span><input type="text" id="social-city" value="${escapeHtml(zone)}" placeholder="Paris" /></label>
+          <label class="social-inline social-check"><input type="checkbox" id="social-desk" ${desk ? "checked" : ""} /> Alertes navigateur</label>
+          <button type="button" class="btn btn-ghost btn-sm" id="social-notif-perm">Notifications</button>
+          <button type="button" class="btn btn-primary btn-sm" id="social-sync-tours">Actualiser les dates</button>
         </div>
         ${favChips}
-        <h3 style="margin-top:1.25rem">Ajouter une date manuellement</h3>
-        <p class="feed-note">Si l’API est bloquée, enregistre ici une annonce (festivals, salles, presse).</p>
-        <div class="manual-tour-grid">
-          <input type="text" id="social-man-artist" placeholder="Artiste" />
-          <input type="datetime-local" id="social-man-date" />
-          <input type="text" id="social-man-venue" placeholder="Salle" />
-          <input type="text" id="social-man-city" placeholder="Ville" />
-        </div>
-        <p><button type="button" class="btn btn-primary" id="social-man-add">Ajouter cette date</button></p>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Envies</th><th></th></tr></thead>
-            <tbody>${manualRows || `<tr><td colspan="6" class="empty">Aucune date manuelle.</td></tr>`}</tbody>
-          </table>
-        </div>
-        <h3 style="margin-top:1.5rem">Prochains concerts repérés</h3>
-        <p class="feed-note">Liste mise à jour quand tu cliques « Vérifier les dates maintenant » (même clé de lieu/date pour tout le monde : tes ami·es Soundlog voient qui est partant·e).</p>
-        <div class="table-wrap">
-          <table class="data-table">
-            <thead><tr><th>Artiste</th><th>Date</th><th>Lieu</th><th>Ville</th><th>Source</th><th>Envies</th></tr></thead>
-            <tbody>${previewRows}</tbody>
-          </table>
-        </div>
+        <details class="soc-live-add">
+          <summary>Ajouter une date manuellement</summary>
+          <div class="manual-tour-grid">
+            <input type="text" id="social-man-artist" placeholder="Artiste" />
+            <input type="datetime-local" id="social-man-date" />
+            <input type="text" id="social-man-venue" placeholder="Salle" />
+            <input type="text" id="social-man-city" placeholder="Ville" />
+          </div>
+          <p><button type="button" class="btn btn-primary btn-sm" id="social-man-add">Enregistrer</button></p>
+        </details>
       </section>
+      <section class="soc-panel-section"><h2 class="soc-panel-section__title">Prochains live</h2><div class="soc-gig-scroll">${previewCards}</div></section>
+      ${manualCards ? `<section class="soc-panel-section"><h2 class="soc-panel-section__title">Tes dates</h2><div class="soc-gig-scroll">${manualCards}</div></section>` : ""}`;
+  }
 
-      <div class="social-two">
-        <section class="panel social-section">
-          <h2>Ami·es</h2>
-          ${friendsHtml}
-          <h3 style="margin-top:1.25rem">Demandes reçues</h3>
-          ${incomingHtml}
-          <h3 style="margin-top:1.25rem">Demandes envoyées</h3>
-          ${outgoingHtml}
-        </section>
-        <section class="panel social-section">
-          <h2>Repérer des profils</h2>
-          ${cloudDiscoverHtml}
-          <h3 class="social-subh">Carnet de démo (local)</h3>
-          <div class="social-card-stack">${discoverHtml}</div>
-        </section>
+  async function injectSocialFriendCompat() {
+    if (route.view !== "social") return;
+    const cards = document.querySelectorAll(".soc-person[data-friend-id]");
+    for (const card of cards) {
+      const fid = card.getAttribute("data-friend-id");
+      const label = card.querySelector("[data-compat-label]");
+      if (!fid || !label) continue;
+      try {
+        const r = await computeMusicCompatibilityWith(fid);
+        label.textContent = `${r.score}% compat · ${r.shared} disque${r.shared > 1 ? "s" : ""} en commun`;
+      } catch (_) {}
+    }
+  }
+
+  async function injectSocialGigArtwork() {
+    if (route.view !== "social" || state.socialTab !== "live") return;
+    const cards = document.querySelectorAll(".soc-gig-card");
+    for (const card of cards) {
+      const artist = card.querySelector(".soc-gig-card__artist");
+      if (!artist) continue;
+      const name = artist.textContent.trim();
+      if (!name) continue;
+      const url = await fetchArtworkFromItunes(name, "live");
+      if (!url || route.view !== "social") return;
+      const frame = card.querySelector(".cover-frame");
+      if (!frame || frame.classList.contains("has-art")) continue;
+      const cover = frame.querySelector(".cover");
+      if (!cover) continue;
+      frame.classList.add("has-art");
+      cover.classList.remove("is-fallback");
+      cover.classList.add("has-img");
+      let img = cover.querySelector(".cover-img");
+      if (!img) {
+        img = document.createElement("img");
+        img.className = "cover-img";
+        img.loading = "lazy";
+        cover.insertBefore(img, cover.firstChild);
+      }
+      img.src = url;
+    }
+  }
+
+  function renderSocial() {
+    ensureSocialTab();
+    ensureSocialArrays();
+    const tab = state.socialTab;
+    const nPendIn = (state.incomingFriendRequests || []).length;
+    const signedCloud = window.SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn();
+    const tabs = [
+      { id: "feed", label: "Fil" },
+      { id: "circle", label: "Cercle" },
+      { id: "live", label: "Live" },
+    ];
+    const tabHtml = tabs
+      .map(
+        (x) =>
+          `<button type="button" role="tab" class="soc-tab${tab === x.id ? " is-active" : ""}" data-social-tab="${x.id}" aria-selected="${tab === x.id}">${escapeHtml(x.label)}</button>`
+      )
+      .join("");
+    let panel = "";
+    if (tab === "circle") panel = renderSocialCirclePanel();
+    else if (tab === "live") panel = renderSocialLivePanel();
+    else panel = renderSocialFeedPanel();
+    const murmurComposer =
+      tab === "feed"
+        ? `<section class="soc-compose">
+            <label for="social-shout-text" class="visually-hidden">Murmure</label>
+            <div class="soc-compose__row">
+              <input type="text" id="social-shout-text" maxlength="280" placeholder="Un mot sur une sortie, une envie…" />
+              <button type="button" class="btn btn-primary" id="social-add-shout">Publier</button>
+            </div>
+          </section>`
+        : "";
+    return `<div class="soc-page view-social-themed">
+      <header class="soc-hero">
+        <div class="soc-hero__copy">
+          <p class="soc-hero__kicker">Réseau musical</p>
+          <h1 class="soc-hero__title">Communauté</h1>
+          <p class="soc-hero__lead">Fil d'écoutes, cercle d'ami·es, live dates et murmures — ton carnet devient social.</p>
+        </div>
+        <div class="soc-hero__stats">
+          <div class="soc-stat"><b>${state.friends.length}</b><span>ami·es</span></div>
+          <div class="soc-stat"><b>${(state.follows || []).length}</b><span>suivi·es</span></div>
+          <div class="soc-stat"><b>${nPendIn}</b><span>demandes</span></div>
+        </div>
+        <div class="soc-hero__actions">
+          <button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Messages</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Accueil</button>
+        </div>
+      </header>
+      <nav class="soc-tabs" role="tablist">${tabHtml}</nav>
+      ${murmurComposer}
+      <div class="soc-layout${tab === "feed" ? " soc-layout--feed" : ""}">
+        <main class="soc-main">${panel}</main>
+        <aside class="soc-aside" aria-label="Raccourcis">
+          <section class="soc-aside-card">
+            <h3>Messages</h3>
+            <p class="feed-note">${signedCloud ? "Discute avec tes ami·es Soundlog." : "Connecte-toi pour la messagerie."}</p>
+            <button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Ouvrir</button>
+          </section>
+          <section class="soc-aside-card">
+            <h3>Compatibilité</h3>
+            <p class="feed-note">Ouvre le profil d'un·e ami·e pour le test détaillé de goûts.</p>
+          </section>
+          ${
+            tab !== "live"
+              ? `<section class="soc-aside-card soc-aside-card--cta">
+            <h3>Concerts</h3>
+            <p class="feed-note">Dates près de chez toi et envies partagées.</p>
+            <button type="button" class="btn btn-ghost btn-sm" data-social-tab="live">Voir les live</button>
+          </section>`
+              : ""
+          }
+        </aside>
       </div>
-
-      ${shoutForm}
     </div>`;
   }
 
@@ -4324,6 +4432,8 @@
     injectSocialEventInterests();
     injectInboxHydration();
     void injectLibraryArtworkHydration();
+    void injectSocialFriendCompat();
+    void injectSocialGigArtwork();
     if (route.view === "album") {
       requestAnimationFrame(() => applyAlbumBackdropTint());
     }
@@ -4820,6 +4930,19 @@
       el.addEventListener("click", () => {
         route.searchTab = el.getAttribute("data-search-tab");
         render();
+      });
+    });
+    $main.querySelectorAll("[data-social-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        state.socialTab = btn.getAttribute("data-social-tab") || "feed";
+        persist();
+        render();
+      });
+    });
+    document.querySelectorAll("[data-feed-react]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        btn.classList.toggle("is-on");
+        toast("Réaction enregistrée localement.");
       });
     });
     $main.querySelectorAll("[data-feed-tab]").forEach((el) => {

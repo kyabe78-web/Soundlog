@@ -52,6 +52,10 @@ create policy "notifications update own" on public.notifications
   for update using (auth.uid() = recipient_id);
 
 -- ---------- 4. Helper + triggers (notifications automatiques) ----------
+-- Nettoyage si une exécution partielle a créé d’anciens noms de fonctions
+drop function if exists public.trg_notify_friend_request() cascade;
+drop function if exists public.trg_notify_friend_accepted() cascade;
+
 create or replace function public.sl_notify_user(
   p_recipient uuid,
   p_actor uuid,
@@ -130,7 +134,7 @@ create trigger trg_likes_notify
   after insert on public.listening_likes
   for each row execute procedure public.trg_notify_on_like();
 
-create or replace function public.trg_notify_friend_request() returns trigger
+create or replace function public.trg_notify_on_friend_request() returns trigger
 language plpgsql
 security definer
 set search_path = public
@@ -157,7 +161,7 @@ create trigger trg_fr_notify
   after insert on public.friend_requests
   for each row execute procedure public.trg_notify_on_friend_request();
 
-create or replace function public.trg_notify_friend_accepted() returns trigger
+create or replace function public.trg_notify_on_friend_accepted() returns trigger
 language plpgsql
 security definer
 set search_path = public
@@ -182,7 +186,7 @@ $$;
 drop trigger if exists trg_fr_accepted_notify on public.friend_requests;
 create trigger trg_fr_accepted_notify
   after update on public.friend_requests
-  for each row execute procedure public.trg_notify_friend_accepted();
+  for each row execute procedure public.trg_notify_on_friend_accepted();
 
 create or replace function public.trg_notify_on_follow() returns trigger
 language plpgsql

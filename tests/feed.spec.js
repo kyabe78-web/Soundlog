@@ -2,7 +2,7 @@
 const { test, expect } = require("@playwright/test");
 
 test("aperçu cercle local documenté dans le bundle", async ({ page }) => {
-  const res = await page.request.get("/app.js?v=9");
+  const res = await page.request.get("/app.js?v=10");
   const alt = res.ok() ? res : await page.request.get("/app.js");
   const body = await alt.text();
   expect(body).toContain("installLocalPreviewCircle");
@@ -10,7 +10,7 @@ test("aperçu cercle local documenté dans le bundle", async ({ page }) => {
 });
 
 test("API cloud réactions DM exposée", async ({ page }) => {
-  const res = await page.request.get("/cloud.js?v=9");
+  const res = await page.request.get("/cloud.js?v=10");
   const alt = res.ok() ? res : await page.request.get("/cloud.js");
   const body = await alt.text();
   expect(body).toContain("toggleDmReaction");

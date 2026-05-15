@@ -112,7 +112,8 @@
   const PREVIEW_CIRCLE_KEY = "soundlog.previewCircleInstalled";
 
   function shouldInstallPreviewCircle() {
-    if (cloudSignedIn && cloudSignedIn()) return false;
+    const cloud = window.SLCloud;
+    if (cloud && cloud.isSignedIn && cloud.isSignedIn()) return false;
     try {
       if (localStorage.getItem(PREVIEW_CIRCLE_KEY)) return false;
     } catch (_) {}
@@ -284,7 +285,6 @@
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
     } catch (_) {}
   }
-  installLocalPreviewCircle();
   let previewAudio = null;
   let previewAlbumId = null;
 
@@ -419,6 +419,8 @@
   function cloudSignedIn() {
     return !!(SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn());
   }
+
+  installLocalPreviewCircle();
 
   function cloudMeRow() {
     return cloudSignedIn() && SLCloud.me ? SLCloud.me : null;
@@ -7646,7 +7648,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=9")
+        .register("/sw.js?v=10")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();

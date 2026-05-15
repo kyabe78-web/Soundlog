@@ -1,12 +1,14 @@
 #!/usr/bin/env node
 /**
- * Prépare config.js pour le dev local. Sur Vercel, la config prod vient de /api/sl-config.js.
+ * Génère soundlog-config.js (déployé sur Vercel, hors .gitignore).
+ * config.js reste pour le dev local (gitignored).
  */
 const fs = require("fs");
 const path = require("path");
 
 const root = path.join(__dirname, "..");
-const out = path.join(root, "config.js");
+const localOut = path.join(root, "config.js");
+const deployOut = path.join(root, "soundlog-config.js");
 const isVercel = !!(process.env.VERCEL || process.env.VERCEL_ENV);
 
 const cfg = {
@@ -20,72 +22,85 @@ const cfg = {
   edgeProxyUrl: process.env.SL_EDGE_PROXY_URL || "",
 };
 
-const hasSecrets = !!(cfg.supabaseUrl && cfg.supabaseAnonKey && /^https?:\/\//i.test(cfg.supabaseUrl));
-
 function isValidCfg(c) {
-  return !!(c.supabaseUrl && c.supabaseAnonKey && /^https?:\/\//i.test(c.supabaseUrl));
+  return !!(c && c.supabaseUrl && c.supabaseAnonKey && /^https?:\/\//i.test(c.supabaseUrl));
 }
 
-/** Lit supabaseUrl / supabaseAnonKey depuis un config.js déjà présent (repo ou local). */
 function readExistingConfig(filePath) {
   if (!fs.existsSync(filePath)) return null;
   const text = fs.readFileSync(filePath, "utf8");
-  const url = text.match(/supabaseUrl:\s*["'](https?:\/\/[^"']+)["']/);
-  const key = text.match(/supabaseAnonKey:\s*["']([^"']+)["']/);
-  if (!url || !key || key[1].length < 8) return null;
+  const pick = (key, re) => {
+    const m = text.match(re);
+    return m ? m[1].trim() : "";
+  };
+  const url = pick("supabaseUrl", /supabaseUrl:\s*["'](https?:\/\/[^"']+)["']/);
+  const key = pick("supabaseAnonKey", /supabaseAnonKey:\s*["']([^"']+)["']/);
+  if (!url || !key || key.length < 8) return null;
   return {
-    ...cfg,
-    supabaseUrl: url[1].trim(),
-    supabaseAnonKey: key[1].trim(),
+    supabaseUrl: url,
+    supabaseAnonKey: key,
+    appName: pick("appName", /appName:\s*["']([^"']*)["']/) || cfg.appName,
+    spotifyClientId: pick("spotifyClientId", /spotifyClientId:\s*["']([^"']*)["']/),
+    spotifyRedirectUri: pick("spotifyRedirectUri", /spotifyRedirectUri:\s*["']([^"']*)["']/),
+    youtubeApiKey: pick("youtubeApiKey", /youtubeApiKey:\s*["']([^"']*)["']/),
+    lastfmApiKey: pick("lastfmApiKey", /lastfmApiKey:\s*["']([^"']*)["']/),
+    edgeProxyUrl: pick("edgeProxyUrl", /edgeProxyUrl:\s*["']([^"']*)["']/),
   };
 }
 
-/** Après /api/sl-config : complète SLConfig sans écraser des clés déjà valides. */
-function mergeConfigSnippet(baked) {
-  return `/* Build Vercel — fusion avec /api/sl-config */
+function writeDeployConfig(baked, note) {
+  const body = `/* ${note || "Config déployée"} — ne pas écraser les clés vides */
 (function () {
   var baked = ${JSON.stringify(baked, null, 2)};
   var prev = window.SLConfig || {};
   var out = Object.assign({}, prev, baked);
-  ["supabaseUrl", "supabaseAnonKey"].forEach(function (k) {
+  Object.keys(baked).forEach(function (k) {
     if (baked[k]) out[k] = baked[k];
-    else if (prev[k]) out[k] = prev[k];
   });
   window.SLConfig = out;
 })();
 `;
+  fs.writeFileSync(deployOut, body, "utf8");
+  console.log("[generate-config] Écrit soundlog-config.js", isValidCfg(baked) ? "(cloud actif)" : "(stub)");
 }
 
-if (isVercel) {
-  const fromFile = readExistingConfig(out);
-  if (hasSecrets) {
-    fs.writeFileSync(out, mergeConfigSnippet(cfg), "utf8");
-    console.log("[generate-config] Build OK — clés SL_SUPABASE_* injectées dans config.js.");
-    process.exit(0);
-  }
-  if (fromFile && isValidCfg(fromFile)) {
-    console.log("[generate-config] Build OK — config.js versionné conservé (Supabase + options).");
-    process.exit(0);
-  }
+function resolveBaked() {
+  if (isValidCfg(cfg)) return cfg;
+  const fromLocal = readExistingConfig(localOut);
+  if (isValidCfg(fromLocal)) return fromLocal;
+  const fromDeploy = readExistingConfig(deployOut);
+  if (isValidCfg(fromDeploy)) return fromDeploy;
+  return null;
+}
 
-  fs.writeFileSync(
-    out,
-    mergeConfigSnippet({ ...cfg, supabaseUrl: "", supabaseAnonKey: "" }),
-    "utf8"
-  );
-  console.log(
-    "[generate-config] Build OK — ajoute SL_SUPABASE_URL + SL_SUPABASE_ANON_KEY dans Vercel (ou config.js avec clés), puis Redeploy."
-  );
+const baked = resolveBaked();
+
+if (isVercel) {
+  if (baked) {
+    writeDeployConfig(baked, "Build Vercel");
+    console.log(
+      isValidCfg(cfg)
+        ? "[generate-config] Build OK — variables SL_SUPABASE_* → soundlog-config.js"
+        : "[generate-config] Build OK — clés depuis config.js → soundlog-config.js"
+    );
+  } else {
+    writeDeployConfig({ ...cfg, supabaseUrl: "", supabaseAnonKey: "" }, "Build Vercel (sans clés)");
+    console.log("[generate-config] ATTENTION — pas de clés Supabase. Ajoute SL_SUPABASE_* sur Vercel ou config.js.");
+  }
   process.exit(0);
 }
 
-if (!hasSecrets && fs.existsSync(out)) {
-  console.log("[generate-config] Pas de variables en env — config.js local conservé.");
+if (baked) {
+  writeDeployConfig(baked, "Généré pour dev / preview");
+}
+
+if (!isValidCfg(cfg) && fs.existsSync(localOut)) {
+  console.log("[generate-config] config.js local conservé.");
   process.exit(0);
 }
 
 const body = `/* Généré par scripts/generate-config.js */
 window.SLConfig = ${JSON.stringify(cfg, null, 2)};
 `;
-fs.writeFileSync(out, body, "utf8");
-console.log("[generate-config] Écrit config.js", hasSecrets ? "(cloud actif)" : "(mode invité)");
+fs.writeFileSync(localOut, body, "utf8");
+console.log("[generate-config] Écrit config.js", isValidCfg(cfg) ? "(cloud actif)" : "(mode invité)");

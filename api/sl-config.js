@@ -1,6 +1,6 @@
 /**
- * Config runtime Vercel — lit les variables d’environnement au moment de la requête
- * (pas besoin qu’elles soient présentes au build).
+ * Config runtime Vercel — fusionne les variables d’environnement sans écraser
+ * soundlog-config.js quand les env sont vides.
  */
 function buildConfig() {
   return {
@@ -17,7 +17,18 @@ function buildConfig() {
 
 module.exports = (req, res) => {
   const cfg = buildConfig();
-  const body = "window.SLConfig = " + JSON.stringify(cfg) + ";\n";
+  const body =
+    "(function () {\n" +
+    "  var patch = " +
+    JSON.stringify(cfg) +
+    ";\n" +
+    "  var prev = window.SLConfig || {};\n" +
+    "  var out = Object.assign({}, prev, patch);\n" +
+    "  Object.keys(patch).forEach(function (k) {\n" +
+    "    if (patch[k]) out[k] = patch[k];\n" +
+    "  });\n" +
+    "  window.SLConfig = out;\n" +
+    "})();\n";
   res.setHeader("Content-Type", "application/javascript; charset=utf-8");
   res.setHeader("Cache-Control", "no-store, max-age=0");
   res.status(200).send(body);

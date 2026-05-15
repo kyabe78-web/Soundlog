@@ -18,22 +18,31 @@
   }
   const HAS_CONFIG = hasValidConfig();
 
+  function applyConfigScript(text) {
+    // eslint-disable-next-line no-new-func
+    new Function(text)();
+  }
+
   async function tryLoadRuntimeConfig() {
     if (hasValidConfig()) return true;
-    try {
-      const r = await fetch("/api/sl-config", { cache: "no-store" });
-      if (!r.ok) return false;
-      const ct = (r.headers.get("content-type") || "").toLowerCase();
-      const text = await r.text();
-      if (!text || text.trimStart().startsWith("<")) return false;
-      if (ct && !ct.includes("javascript") && !ct.includes("json") && !ct.includes("text/plain")) return false;
-      // eslint-disable-next-line no-new-func
-      new Function(text)();
-      SLCloud.available = hasValidConfig();
-      return hasValidConfig();
-    } catch (_) {
-      return false;
+    const urls = ["/soundlog-config.js", "/api/sl-config"];
+    for (const url of urls) {
+      try {
+        const r = await fetch(url, { cache: "no-store" });
+        if (!r.ok) continue;
+        const ct = (r.headers.get("content-type") || "").toLowerCase();
+        const text = await r.text();
+        if (!text || text.trimStart().startsWith("<")) continue;
+        if (ct && !ct.includes("javascript") && !ct.includes("json") && !ct.includes("text/plain")) continue;
+        applyConfigScript(text);
+        if (hasValidConfig()) {
+          SLCloud.available = true;
+          return true;
+        }
+      } catch (_) {}
     }
+    SLCloud.available = hasValidConfig();
+    return hasValidConfig();
   }
 
   const listeners = new Set();

@@ -177,7 +177,8 @@
     <div id="modal-root"></div>
     <div id="toast-root"></div>
 
-    <!-- Config cloud : /api/sl-config (Vercel), config.js (local). config.js ne doit pas écraser l’API. -->
+    <!-- soundlog-config.js = déployé (hors .gitignore). api = env Vercel. config.js = dev local. -->
+    <script src="/soundlog-config.js"></script>
     <script src="/api/sl-config" onerror="window.__slConfigApiMissing=1"></script>
     <script src="./config.js" onerror="window.__slConfigLocalMissing=1"></script>
     <script src="./cloud.js"></script>

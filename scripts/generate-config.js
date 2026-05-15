@@ -22,14 +22,34 @@ const cfg = {
 
 const hasSecrets = !!(cfg.supabaseUrl && cfg.supabaseAnonKey && /^https?:\/\//i.test(cfg.supabaseUrl));
 
-function mergeConfigSnippet(stubObj) {
-  return `/* Build Vercel — ne pas écraser /api/sl-config */
+function isValidCfg(c) {
+  return !!(c.supabaseUrl && c.supabaseAnonKey && /^https?:\/\//i.test(c.supabaseUrl));
+}
+
+/** Lit supabaseUrl / supabaseAnonKey depuis un config.js déjà présent (repo ou local). */
+function readExistingConfig(filePath) {
+  if (!fs.existsSync(filePath)) return null;
+  const text = fs.readFileSync(filePath, "utf8");
+  const url = text.match(/supabaseUrl:\s*["'](https?:\/\/[^"']+)["']/);
+  const key = text.match(/supabaseAnonKey:\s*["']([^"']+)["']/);
+  if (!url || !key || key[1].length < 8) return null;
+  return {
+    ...cfg,
+    supabaseUrl: url[1].trim(),
+    supabaseAnonKey: key[1].trim(),
+  };
+}
+
+/** Après /api/sl-config : complète SLConfig sans écraser des clés déjà valides. */
+function mergeConfigSnippet(baked) {
+  return `/* Build Vercel — fusion avec /api/sl-config */
 (function () {
-  var stub = ${JSON.stringify(stubObj, null, 2)};
+  var baked = ${JSON.stringify(baked, null, 2)};
   var prev = window.SLConfig || {};
-  var out = Object.assign({}, stub, prev);
+  var out = Object.assign({}, prev, baked);
   ["supabaseUrl", "supabaseAnonKey"].forEach(function (k) {
-    if (prev[k]) out[k] = prev[k];
+    if (baked[k]) out[k] = baked[k];
+    else if (prev[k]) out[k] = prev[k];
   });
   window.SLConfig = out;
 })();
@@ -37,15 +57,25 @@ function mergeConfigSnippet(stubObj) {
 }
 
 if (isVercel) {
-  const stub = mergeConfigSnippet({ ...cfg, supabaseUrl: "", supabaseAnonKey: "" });
-  fs.writeFileSync(out, stub, "utf8");
+  const fromFile = readExistingConfig(out);
   if (hasSecrets) {
-    console.log("[generate-config] Build OK — clés vues au build + /api/sl-config en prod.");
-  } else {
-    console.log(
-      "[generate-config] Build OK — config chargée à l'exécution via /api/sl-config (vérifie SL_SUPABASE_* dans Vercel → Environment Variables)."
-    );
+    fs.writeFileSync(out, mergeConfigSnippet(cfg), "utf8");
+    console.log("[generate-config] Build OK — clés SL_SUPABASE_* injectées dans config.js.");
+    process.exit(0);
   }
+  if (fromFile && isValidCfg(fromFile)) {
+    console.log("[generate-config] Build OK — config.js versionné conservé (Supabase + options).");
+    process.exit(0);
+  }
+
+  fs.writeFileSync(
+    out,
+    mergeConfigSnippet({ ...cfg, supabaseUrl: "", supabaseAnonKey: "" }),
+    "utf8"
+  );
+  console.log(
+    "[generate-config] Build OK — ajoute SL_SUPABASE_URL + SL_SUPABASE_ANON_KEY dans Vercel (ou config.js avec clés), puis Redeploy."
+  );
   process.exit(0);
 }
 

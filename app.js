@@ -256,7 +256,7 @@
     localStorage.setItem(THEME_KEY, t);
     document.documentElement.dataset.theme = t;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", t === "light" ? "#f4f4f5" : "#09090b");
+    if (meta) meta.setAttribute("content", t === "light" ? "#e8e4dc" : "#08090e");
     const btn = document.getElementById("theme-toggle");
     if (btn) {
       const light = t === "light";
@@ -1295,7 +1295,7 @@
       <div class="feed-side-card__kicker">Sonar · suggestion</div>
       <h3 class="feed-side-card__title">Album à creuser</h3>
       <p class="feed-note sonar-suggest-lead">${escapeHtml(lead)}</p>
-      <div class="album-card sonar-suggest-card" data-album="${al.id}" style="max-width:168px">
+      <div class="album-card sonar-suggest-card" data-album="${al.id}"${albumCardStyle(al, "max-width:168px;")}>
         ${coverHtml(al, true)}
         <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div>
       </div>
@@ -1959,6 +1959,20 @@
     return `background:linear-gradient(145deg,${album.from},${album.to});`;
   }
 
+  function albumTintStyle(album, extra) {
+    if (!album) return extra || "";
+    const from = album.from || "#2a3142";
+    const to = album.to || "#141820";
+    let s = `--tint-from:${from};--tint-to:${to};`;
+    if (extra) s += extra;
+    return s;
+  }
+
+  function albumCardStyle(al, extraCss) {
+    const s = albumTintStyle(al, extraCss);
+    return s ? ` style="${s}"` : "";
+  }
+
   const COVER_FALLBACK_SVG =
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
 
@@ -1983,7 +1997,7 @@
     const img = artUrl
       ? `<img class="cover-img" src="${escapeHtml(artUrl)}" alt="${label}" loading="lazy" decoding="async" width="600" height="600" />`
       : "";
-    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}">
+    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}" style="${albumTintStyle(album)}">
       <div class="cover-glow" style="${grad}" aria-hidden="true"></div>
       <div class="${coverCls}" style="${grad}" role="img" aria-label="${label}">
         ${img}
@@ -3103,13 +3117,13 @@
       .join("");
     const grid = filtered
       .map(
-        (al) => `<div class="album-card" data-album="${al.id}">
+        (al) => `<div class="album-card" data-album="${al.id}"${albumCardStyle(al)}>
         ${coverHtml(al)}
         <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)} · ${al.year}</span></div>
       </div>`
       )
       .join("");
-    return `<div class="discover-view view-themed">
+    return `<div class="discover-view view-themed discover-view--carnet">
       <div class="discover-hero">
         <p class="discover-hero__kicker">Explorer le catalogue</p>
         <h1 class="page-title discover-hero__title">Découvrir</h1>
@@ -3365,7 +3379,7 @@
           .map((id) => {
             const al = albumById(id);
             if (!al) return "";
-            return `<div class="album-card" data-album="${al.id}">
+            return `<div class="album-card" data-album="${al.id}"${albumCardStyle(al)}>
           ${coverHtml(al)}
           <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div>
           <button type="button" class="btn btn-ghost btn-sm" data-rm-wish="${al.id}">Retirer</button>
@@ -3592,7 +3606,7 @@
       .map((l) => {
         const al = albumById(l.albumId);
         if (!al) return "";
-        return `<div class="album-card" data-album="${al.id}" style="max-width:120px">${coverHtml(al, true)}<div class="album-meta"><span class="stars">${starString(
+        return `<div class="album-card" data-album="${al.id}"${albumCardStyle(al, "max-width:120px;")}>${coverHtml(al, true)}<div class="album-meta"><span class="stars">${starString(
           l.rating
         )}</span></div></div>`;
       })
@@ -3683,7 +3697,7 @@
       .map((id) => {
         const al = albumById(id);
         if (!al) return "";
-        return `<div class="album-card" data-album="${al.id}">
+        return `<div class="album-card" data-album="${al.id}"${albumCardStyle(al)}>
         ${coverHtml(al)}
         <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div>
       </div>`;
@@ -3800,7 +3814,7 @@
 
     const sectionAlbums = (rows) => rows.length ? `<section class="search-section">
       <h3 class="search-section__title">Albums <small>${rows.length}</small></h3>
-      <div class="grid-albums">${rows.map((al) => `<div class="album-card" data-album="${al.id}">
+      <div class="grid-albums">${rows.map((al) => `<div class="album-card" data-album="${al.id}"${albumCardStyle(al)}>
         ${coverHtml(al, true)}
         <div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist || "")}</span></div>
       </div>`).join("")}</div>
@@ -4608,7 +4622,7 @@
           const grid = albums
             .map(
               (al) =>
-                `<div class="album-card" data-album="${al.id}">${coverHtml(al, true)}<div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div></div>`
+                `<div class="album-card" data-album="${al.id}"${albumCardStyle(al)}>${coverHtml(al, true)}<div class="album-meta"><strong>${escapeHtml(al.title)}</strong><span>${escapeHtml(al.artist)}</span></div></div>`
             )
             .join("");
           openModal(`<h2>Test de compatibilité</h2>

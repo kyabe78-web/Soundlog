@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="fr">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <meta name="theme-color" content="#f6f5f3" />
+    <title>Soundlog — carnet d’écoutes</title>
+    <meta
+      name="description"
+      content="Soundlog : note, critique et partage tes albums comme sur Letterboxd, mais pour la musique."
+    />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%236b4eae'/%3E%3Ctext x='16' y='22' text-anchor='middle' font-size='16' fill='white' font-family='system-ui,sans-serif' font-weight='700'%3ES%3C/text%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+    <meta property="og:type" content="website" />
+    <meta property="og:title" content="Soundlog — carnet d’écoutes" />
+    <meta property="og:description" content="Note, critique et partage tes albums. Phase de test." />
+  </head>
+  <body>
+    <div class="app-shell">
+      <div class="sidebar-backdrop" id="sidebar-backdrop" hidden aria-hidden="true"></div>
+
+      <aside class="sidebar" id="sidebar-nav" aria-label="Navigation latérale">
+        <div class="sidebar__brand">
+          <a href="#" class="logo" id="logo-link">Sound<span>log</span></a>
+          <p class="logo-tag">Carnet d’écoutes</p>
+        </div>
+
+        <nav class="sidebar-nav" id="main-nav" aria-label="Navigation principale">
+          <button type="button" class="nav-link" data-view="home" data-nav-icon="home">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Accueil</span>
+          </button>
+          <button type="button" class="nav-link" data-view="social" data-nav-icon="social">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Communauté</span>
+          </button>
+          <button type="button" class="nav-link" data-view="discover" data-nav-icon="discover">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Découvrir</span>
+          </button>
+          <button type="button" class="nav-link" data-view="libraries" data-nav-icon="libraries">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Bibliothèques</span>
+          </button>
+          <button type="button" class="nav-link" data-view="diary" data-nav-icon="diary">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Journal</span>
+          </button>
+          <button type="button" class="nav-link" data-view="lists" data-nav-icon="lists">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">Listes</span>
+          </button>
+          <button type="button" class="nav-link" data-view="iwas" data-nav-icon="iwas">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">I was there !</span>
+          </button>
+          <button type="button" class="nav-link" data-view="wishlist" data-nav-icon="wishlist">
+            <span class="nav-link__icon" aria-hidden="true"></span>
+            <span class="nav-link__label">À écouter</span>
+          </button>
+        </nav>
+
+        <p class="sidebar__note">Données 100 % locales · Sonar adapte l’interface sur cet appareil</p>
+      </aside>
+
+      <div class="app-frame">
+        <header class="topbar">
+          <button type="button" class="icon-btn menu-toggle" id="menu-toggle" aria-label="Ouvrir le menu" aria-expanded="false">
+            <span class="icon-btn__bars" aria-hidden="true"></span>
+          </button>
+
+          <h1 class="topbar-title" id="topbar-title">Accueil</h1>
+
+          <div class="topbar-search">
+            <label class="visually-hidden" for="global-search">Rechercher</label>
+            <input
+              type="search"
+              id="global-search"
+              placeholder="Album, artiste, genre…"
+              autocomplete="off"
+              enterkeyhint="search"
+            />
+          </div>
+
+          <div class="topbar-actions">
+            <div class="notif-wrap" id="notif-wrap">
+              <button
+                type="button"
+                class="icon-btn notif-bell"
+                id="notif-bell"
+                aria-expanded="false"
+                aria-controls="notif-popover"
+                title="Notifications"
+              >
+                <span class="notif-bell-glyph" aria-hidden="true"></span>
+                <span class="notif-badge" id="notif-badge" hidden>0</span>
+              </button>
+              <div class="notif-popover" id="notif-popover" role="region" aria-label="Notifications" hidden></div>
+            </div>
+
+            <div class="user-chip" id="user-chip" role="button" tabindex="0" title="Mon profil">
+              <span class="avatar" id="header-avatar">?</span>
+              <span class="user-chip__name" id="header-username">—</span>
+            </div>
+          </div>
+        </header>
+
+        <main class="app-content" id="app-main"></main>
+
+        <footer class="site-footer">
+          Apple &amp; Deezer · Spotify &amp; YouTube — sans serveur Soundlog, tout reste sur ton appareil.
+        </footer>
+      </div>
+    </div>
+
+    <nav class="bottom-nav" id="bottom-nav" aria-label="Navigation mobile">
+      <button type="button" class="nav-link" data-view="home" data-nav-icon="home">
+        <span class="nav-link__icon" aria-hidden="true"></span>
+        <span class="nav-link__label">Accueil</span>
+      </button>
+      <button type="button" class="nav-link" data-view="discover" data-nav-icon="discover">
+        <span class="nav-link__icon" aria-hidden="true"></span>
+        <span class="nav-link__label">Découvrir</span>
+      </button>
+      <button type="button" class="nav-link" data-view="diary" data-nav-icon="diary">
+        <span class="nav-link__icon" aria-hidden="true"></span>
+        <span class="nav-link__label">Journal</span>
+      </button>
+      <button type="button" class="nav-link" data-view="social" data-nav-icon="social">
+        <span class="nav-link__icon" aria-hidden="true"></span>
+        <span class="nav-link__label">Communauté</span>
+      </button>
+      <button type="button" class="nav-link nav-link--menu" id="nav-more" data-nav-icon="menu">
+        <span class="nav-link__icon" aria-hidden="true"></span>
+        <span class="nav-link__label">Menu</span>
+      </button>
+    </nav>
+
+    <div id="modal-root"></div>
+    <div id="toast-root"></div>
+
+    <script src="./app.js" defer></script>
+  </body>
+</html>

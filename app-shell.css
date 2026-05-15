@@ -136,6 +136,7 @@ body.inbox-drawer-open .inbox-drawer-backdrop {
   transform: translateX(104%);
   transition: transform 0.38s cubic-bezier(0.22, 1, 0.36, 1);
   box-shadow: -12px 0 48px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
 }
 
 body.inbox-drawer-open .inbox-drawer {

@@ -2613,7 +2613,6 @@
     const closeBtn = document.getElementById("inbox-drawer-close");
     const backdrop = document.getElementById("inbox-drawer-backdrop");
     const openBtn = document.getElementById("topbar-messages");
-    const mount = document.getElementById("inbox-drawer-mount");
     if (closeBtn) closeBtn.addEventListener("click", closeInboxDrawer);
     if (backdrop) backdrop.addEventListener("click", closeInboxDrawer);
     if (openBtn) {
@@ -2622,24 +2621,33 @@
         else openInboxDrawer(route.dmThreadId);
       });
     }
-    if (mount && !mount.dataset.dmDelegated) {
-      mount.dataset.dmDelegated = "1";
-      mount.addEventListener("click", (e) => {
-        const toggle = e.target.closest("#dm-toggle-share");
-        if (toggle) {
-          e.preventDefault();
-          const tray = mount.querySelector("#dm-share-tray");
-          if (tray) tray.classList.toggle("is-open");
-          return;
-        }
-        const chip = e.target.closest("[data-dm-share-kind]");
-        if (chip) {
-          e.preventDefault();
-          const panel = mount.querySelector("#inbox-thread-panel");
-          const tid = panel && panel.getAttribute("data-thread-id");
-          if (tid) openDmShareModal(tid, chip.getAttribute("data-dm-share-kind"));
-        }
-      });
+    if (!document.documentElement.dataset.slInboxCapture) {
+      document.documentElement.dataset.slInboxCapture = "1";
+      document.addEventListener(
+        "click",
+        (e) => {
+          if (!document.body.classList.contains("inbox-drawer-open")) return;
+          const root = inboxRoot();
+          const toggle = e.target.closest("[data-dm-toggle-share]");
+          if (toggle && root.contains(toggle)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            toggleDmShareTray(root);
+            return;
+          }
+          const chip = e.target.closest("[data-dm-share-kind]");
+          if (chip && root.contains(chip)) {
+            e.preventDefault();
+            e.stopImmediatePropagation();
+            const panel = root.querySelector("#inbox-thread-panel, [data-thread-id]");
+            const tid =
+              (panel && panel.getAttribute("data-thread-id")) || route.dmThreadId;
+            if (tid) openDmShareModal(tid, chip.getAttribute("data-dm-share-kind"));
+            return;
+          }
+        },
+        true
+      );
     }
     document.addEventListener("keydown", (e) => {
       if (e.key === "Escape" && document.body.classList.contains("inbox-drawer-open")) closeInboxDrawer();
@@ -3552,8 +3560,19 @@
     return SLCloud.sendDmMessage(threadId, body);
   }
 
+  function toggleDmShareTray(root) {
+    if (!root) return false;
+    const tray = root.querySelector("[data-dm-share-tray], #dm-share-tray");
+    const toggle = root.querySelector("[data-dm-toggle-share]");
+    if (!tray || !toggle) return false;
+    const open = !tray.classList.contains("is-open");
+    tray.classList.toggle("is-open", open);
+    toggle.setAttribute("aria-expanded", open ? "true" : "false");
+    return open;
+  }
+
   function dmShareTrayHtml() {
-    return `<div class="dm-share-tray" id="dm-share-tray">
+    return `<div class="dm-share-tray" id="dm-share-tray" data-dm-share-tray role="region" aria-label="Partager de la musique">
       <button type="button" class="dm-share-chip" data-dm-share-kind="listening">🎧 Écoute</button>
       <button type="button" class="dm-share-chip" data-dm-share-kind="album">💿 Album</button>
       <button type="button" class="dm-share-chip" data-dm-share-kind="preview">▶ Extrait</button>
@@ -3578,7 +3597,7 @@
         <div class="dm-chat__messages" id="inbox-messages" role="log" aria-live="polite"></div>
         ${dmShareTrayHtml()}
         <form class="dm-compose" id="inbox-compose">
-          <button type="button" class="dm-compose__attach" id="dm-toggle-share" title="Partager de la musique">+</button>
+          <button type="button" class="dm-compose__attach" id="dm-toggle-share" data-dm-toggle-share aria-expanded="false" aria-controls="dm-share-tray" title="Partager de la musique">+</button>
           <label class="visually-hidden" for="inbox-msg-input">Message</label>
           <input type="text" id="inbox-msg-input" class="dm-compose__input" maxlength="2000" placeholder="Message ou partage un son…" autocomplete="off" />
           <button type="submit" class="dm-compose__send" aria-label="Envoyer">↑</button>
@@ -5601,24 +5620,13 @@
     }
 
     if (tray) tray.classList.remove("is-open");
-    if (toggleShare && tray) {
-      toggleShare.onclick = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        tray.classList.toggle("is-open");
-      };
-    }
-    if (tray) {
-      tray.querySelectorAll("[data-dm-share-kind]").forEach((chip) => {
-        chip.onclick = (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          openDmShareModal(threadId, chip.getAttribute("data-dm-share-kind"));
-        };
-      });
-    }
+    if (toggleShare) toggleShare.setAttribute("aria-expanded", "false");
 
     const renderMsgs = (msgs) => {
+      if (!SLCloud.me || !SLCloud.me.id) {
+        box.innerHTML = `<p class="dm-chat__empty">Connexion en cours…</p>`;
+        return;
+      }
       const me = SLCloud.me.id;
       box.innerHTML = msgs.length
         ? msgs.map((m) => dmMessageBubbleHtml(m, me)).join("")

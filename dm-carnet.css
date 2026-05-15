@@ -477,6 +477,10 @@
   gap: 0.4rem;
   padding: 0.5rem 0.85rem;
   border-top: 1px solid rgba(255, 255, 255, 0.05);
+  flex-shrink: 0;
+  position: relative;
+  z-index: 6;
+  background: rgba(8, 10, 18, 0.98);
 }
 
 .dm-share-tray.is-open {
@@ -513,11 +517,14 @@
   padding: 0.65rem 0.85rem 0.85rem;
   border-top: 1px solid rgba(255, 255, 255, 0.06);
   flex-shrink: 0;
+  position: relative;
+  z-index: 7;
+  background: rgba(8, 10, 18, 0.98);
 }
 
 .dm-compose__attach {
-  width: 36px;
-  height: 36px;
+  width: 44px;
+  height: 44px;
   border-radius: 50%;
   border: 0;
   background: rgba(255, 255, 255, 0.08);
@@ -526,6 +533,14 @@
   line-height: 1;
   cursor: pointer;
   flex-shrink: 0;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.dm-compose__attach[aria-expanded="true"] {
+  background: var(--accent);
+  color: #fff;
 }
 
 .dm-compose__input {

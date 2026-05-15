@@ -181,6 +181,17 @@ Après le `SCHEMA.sql` initial, joue **une fois** le fichier `MIGRATION_v2.sql` 
 
 Idempotent : peut être rejoué sans casser.
 
+### Migration v4 — durée d’écoute estimée & classement
+
+Toujours dans le SQL Editor, après `MIGRATION_v2.sql`, exécute **une fois** `MIGRATION_v4.sql` :
+
+- Colonne `duration_ms` sur les titres importés (durée du morceau côté Spotify / Deezer).
+- Table `streaming_play_events` pour enregistrer l’API Spotify *Recently Played* (fenêtre limitée par Spotify, synchronisable depuis la modale **Mes statistiques**).
+- Vue `user_stats` enrichie (`imported_library_ms`, `streaming_recent_ms`, `streaming_recent_plays`).
+- Vue `leaderboard_listening` : rang des comptes selon la durée cumulée (imports + historique récent).
+
+> Spotify n’expose pas le « temps d’écoute total » historique ; le score est une **approximation** (somme des durées des morceaux importés + une passe paginée sur *recently played*). Les utilisateurs doivent **réautoriser Spotify** après mise à jour pour la scope `user-read-recently-played`.
+
 ## 12. Realtime
 
 Soundlog s'abonne automatiquement à 5 tables après le login. Tu reçois en direct :
@@ -304,6 +315,7 @@ Coût indicatif : 10-15 € / an pour un `.com`, gratuit en sous-domaine.
 # 1. Crée le projet Supabase
 # 2. SQL Editor → colle SCHEMA.sql → Run
 # 3. SQL Editor → colle MIGRATION_v2.sql → Run  (avatars, playlists, stats, realtime)
+# 3b. SQL Editor → colle MIGRATION_v4.sql → Run  (durées streaming, classement)
 # 4. Copie Project URL et anon key dans config.js
 # 5. (Optionnel) Crée app Spotify Developer → Client ID dans config.js
 # 6. (Optionnel) supabase functions deploy preview-proxy --no-verify-jwt

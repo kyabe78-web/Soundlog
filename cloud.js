@@ -10,6 +10,8 @@
   const listeners = new Set();
   function emit(evt, payload) { listeners.forEach((cb) => { try { cb(evt, payload); } catch (_) {} }); }
 
+  let initPromise = null;
+
   const SLCloud = {
     available: HAS_CONFIG,
     ready: false,
@@ -22,35 +24,48 @@
     async init() {
       if (!HAS_CONFIG) return false;
       if (this.ready) return true;
-      try {
-        await loadSdk();
-        const { createClient } = window.supabase;
-        this.client = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
-          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
-        });
-        this.ready = true;
-        const { data } = await this.client.auth.getSession();
-        this.session = data.session || null;
-        if (this.session) await this.refreshProfile();
-        this.client.auth.onAuthStateChange(async (_e, sess) => {
-          this.session = sess || null;
-          if (sess) await this.refreshProfile();
-          else this.me = null;
-          emit("auth", { session: this.session, me: this.me });
-        });
-        emit("ready", { session: this.session, me: this.me });
-        return true;
-      } catch (e) {
-        console.warn("[SLCloud] init failed", e);
-        this.pendingError = e && e.message;
-        return false;
-      }
+      if (initPromise) return initPromise;
+      initPromise = (async () => {
+        try {
+          await loadSdk();
+          const { createClient } = window.supabase;
+          this.client = createClient(CFG.supabaseUrl, CFG.supabaseAnonKey, {
+            auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true, flowType: "pkce" },
+          });
+          this.ready = true;
+          const { data } = await this.client.auth.getSession();
+          this.session = data.session || null;
+          if (this.session) await this.refreshProfile();
+          this.client.auth.onAuthStateChange(async (_e, sess) => {
+            this.session = sess || null;
+            if (sess) await this.refreshProfile();
+            else this.me = null;
+            emit("auth", { session: this.session, me: this.me });
+          });
+          emit("ready", { session: this.session, me: this.me });
+          return true;
+        } catch (e) {
+          console.warn("[SLCloud] init failed", e);
+          this.pendingError = e && e.message;
+          initPromise = null;
+          return false;
+        }
+      })();
+      return initPromise;
+    },
+
+    /** Attendre que le SDK Supabase soit prêt (évite « Cloud non initialisé » à l’ouverture du menu). */
+    async ensureReady() {
+      if (!HAS_CONFIG) throw new Error("Cloud non configuré — voir config.js et BACKEND.md");
+      const ok = await this.init();
+      if (!ok || !this.ready) throw new Error(this.pendingError || "Impossible d’initialiser le cloud");
+      return true;
     },
 
     isSignedIn() { return !!this.session; },
 
     async signUp({ email, password, handle, name, hue, bio }) {
-      if (!this.ready) throw new Error("Cloud non initialisé");
+      await this.ensureReady();
       // 1. Vérifier que le handle est libre
       const taken = await this.handleTaken(handle);
       if (taken) throw new Error("Ce handle est déjà pris.");
@@ -75,16 +90,47 @@
     },
 
     async signIn({ email, password }) {
-      if (!this.ready) throw new Error("Cloud non initialisé");
+      await this.ensureReady();
       const { data, error } = await this.client.auth.signInWithPassword({ email, password });
       if (error) throw error;
       this.session = data.session;
       await this.refreshProfile();
+      if (!this.me) await this.ensureProfileAfterAuth();
+      if (!this.me) throw new Error("Profil Soundlog introuvable. Réessaie ou crée un compte.");
       return this.me;
     },
 
+    /** Crée une ligne profiles si l’utilisateur Auth existe sans profil (anciens comptes, import manuel). */
+    async ensureProfileAfterAuth() {
+      if (!this.session) return null;
+      if (this.me) return this.me;
+      const uid = this.session.user.id;
+      const email = String(this.session.user.email || "");
+      let base = email.split("@")[0].toLowerCase().replace(/[^a-z0-9_.-]/g, "").slice(0, 28);
+      if (!base || base.length < 2) base = "user";
+      let handle = base;
+      for (let n = 0; n < 24; n++) {
+        const taken = await this.handleTaken(handle);
+        if (!taken) break;
+        handle = `${base}${n + 1}`.slice(0, 32);
+      }
+      const profile = {
+        id: uid,
+        handle,
+        name: base,
+        hue: randomHue(),
+        bio: "",
+      };
+      const { error } = await this.client.from("profiles").insert(profile);
+      if (error) {
+        console.warn("[SLCloud] ensureProfileAfterAuth", error);
+        return null;
+      }
+      return this.refreshProfile();
+    },
+
     async signInWithMagicLink({ email }) {
-      if (!this.ready) throw new Error("Cloud non initialisé");
+      await this.ensureReady();
       const { error } = await this.client.auth.signInWithOtp({
         email,
         options: { emailRedirectTo: window.location.origin + window.location.pathname },
@@ -473,6 +519,51 @@
       const { data } = await this.client.from("user_stats").select("*").eq("user_id", userId).maybeSingle();
       return data || null;
     },
+    async getListeningRank(userId) {
+      const { data } = await this.client.from("leaderboard_listening").select("*").eq("user_id", userId).maybeSingle();
+      return data || null;
+    },
+    async getListeningLeaderboard(limit = 32) {
+      const { data } = await this.client
+        .from("leaderboard_listening")
+        .select("user_id,handle,name,rank_listen,library_minutes,recent_listen_minutes,combined_minutes,leaderboard_size")
+        .order("rank_listen", { ascending: true })
+        .limit(limit);
+      return data || [];
+    },
+    /** Enregistre l’historique « Recently Played » Spotify (session locale requise). */
+    async syncSpotifyPlayHistory() {
+      if (!this.me) throw new Error("Pas connecté Soundlog");
+      const events = await this.spotify.fetchAllRecentlyPlayed();
+      if (!events.length) return { inserted: 0 };
+      return { inserted: await this.upsertStreamingPlayEvents(events) };
+    },
+    async upsertStreamingPlayEvents(events) {
+      if (!this.me || !events.length) return 0;
+      const rows = events.map((e) => ({
+        user_id: this.me.id,
+        source: e.source,
+        remote_track_id: e.remote_track_id || "",
+        track_name: e.track_name || "",
+        artist_name: e.artist_name || "",
+        duration_ms: e.duration_ms != null ? e.duration_ms : null,
+        played_at: e.played_at,
+      }));
+      let done = 0;
+      const chunk = 180;
+      for (let i = 0; i < rows.length; i += chunk) {
+        const slice = rows.slice(i, i + chunk);
+        const { error } = await this.client.from("streaming_play_events").upsert(slice, {
+          onConflict: "user_id,source,remote_track_id,played_at",
+        });
+        if (error) {
+          console.warn("[streaming_play_events]", error);
+          throw error;
+        }
+        done += slice.length;
+      }
+      return done;
+    },
     async getTopArtists(userId, limit = 20) {
       const { data } = await this.client
         .from("user_top_artists")
@@ -517,6 +608,7 @@
         album_artwork_url: t.albumArtworkUrl || null,
         remote_track_id: t.remoteTrackId || null,
         remote_album_id: t.remoteAlbumId || null,
+        duration_ms: t.durationMs != null && t.durationMs > 0 ? Math.round(t.durationMs) : null,
       }));
       const chunk = 500;
       for (let i = 0; i < rows.length; i += chunk) {
@@ -532,8 +624,13 @@
         .order("imported_at", { ascending: false });
       return data || [];
     },
-    async listImportedTracks(userId, playlistId) {
-      let q = this.client.from("imported_tracks").select("*").eq("user_id", userId).order("added_at", { ascending: true });
+    async listImportedTracks(userId, playlistId, limit = 2500) {
+      let q = this.client
+        .from("imported_tracks")
+        .select("*")
+        .eq("user_id", userId)
+        .order("added_at", { ascending: true })
+        .limit(limit);
       if (playlistId) q = q.eq("playlist_id", playlistId);
       const { data } = await q;
       return data || [];
@@ -680,7 +777,9 @@
         return (window.SLConfig && window.SLConfig.spotifyRedirectUri)
           || (window.location.origin + window.location.pathname);
       },
-      get scopes() { return "playlist-read-private playlist-read-collaborative user-library-read user-top-read"; },
+      get scopes() {
+        return "playlist-read-private playlist-read-collaborative user-library-read user-top-read user-read-recently-played";
+      },
       isConfigured() { return !!this.clientId; },
       hasToken() {
         try { const t = JSON.parse(localStorage.getItem(this.tokenKey) || "null"); return t && t.access_token && Date.now() < (t.expires_at || 0); } catch { return false; }
@@ -775,7 +874,7 @@
       },
       async listTracksOfPlaylist(playlistId) {
         const out = [];
-        let url = `/playlists/${playlistId}/tracks?limit=100&fields=items(track(id,name,album(id,name,images,release_date),artists(name))),next`;
+        let url = `/playlists/${playlistId}/tracks?limit=100&fields=items(track(id,name,duration_ms,album(id,name,images,release_date),artists(name))),next`;
         while (url) {
           const j = await this.api(url);
           out.push(...(j.items || []).map((it) => it.track).filter(Boolean));
@@ -796,6 +895,30 @@
             const u = new URL(j.next);
             url = u.pathname.replace("/v1", "") + u.search;
           } else url = null;
+        }
+        return out;
+      },
+      /** @returns {Promise<{source:string,remote_track_id:string,track_name:string,artist_name:string,duration_ms:number|null,played_at:string}[]>} */
+      async fetchAllRecentlyPlayed() {
+        const out = [];
+        let path = "/me/player/recently-played?limit=50";
+        for (let guard = 0; guard < 45; guard++) {
+          const j = await this.api(path);
+          for (const it of j.items || []) {
+            const tr = it.track;
+            if (!tr || !it.played_at) continue;
+            out.push({
+              source: "spotify",
+              remote_track_id: tr.id || "",
+              track_name: tr.name || "",
+              artist_name: (tr.artists || []).map((a) => a.name).join(", "),
+              duration_ms: tr.duration_ms != null ? tr.duration_ms : null,
+              played_at: it.played_at,
+            });
+          }
+          if (!j.next) break;
+          const u = new URL(j.next);
+          path = u.pathname.replace(/^\/v1/, "") + u.search;
         }
         return out;
       },

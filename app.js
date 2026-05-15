@@ -1821,7 +1821,14 @@
     }, 2400);
   }
 
+  let modalKeydownHandler = null;
+
   function closeModal() {
+    document.body.classList.remove("modal-open");
+    if (modalKeydownHandler) {
+      document.removeEventListener("keydown", modalKeydownHandler);
+      modalKeydownHandler = null;
+    }
     $modal.innerHTML = "";
   }
 
@@ -3760,9 +3767,14 @@
     const isMe = uid === "me";
     block.dataset.loading = "1";
 
-    document.querySelectorAll("[data-open-imports]").forEach((b) => {
-      b.addEventListener("click", () => { if (window.__sl && window.__sl.openPlatformPicker) window.__sl.openPlatformPicker(); });
-    });
+    if (!block.dataset.importsBound) {
+      block.dataset.importsBound = "1";
+      block.addEventListener("click", (e) => {
+        if (e.target.closest("[data-open-imports]") && window.__sl && window.__sl.openPlatformPicker) {
+          window.__sl.openPlatformPicker();
+        }
+      });
+    }
 
     (async () => {
       let playlists = [];
@@ -4302,13 +4314,13 @@
     const logThis = document.getElementById("btn-log-this");
     if (logThis) logThis.addEventListener("click", () => openListenModal(null, route.albumId));
 
-    document.querySelectorAll("[data-edit-listen]").forEach((b) => {
+    $main.querySelectorAll("[data-edit-listen]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         openListenModal(b.getAttribute("data-edit-listen"), null);
       });
     });
-    document.querySelectorAll("[data-del-listen]").forEach((b) => {
+    $main.querySelectorAll("[data-del-listen]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-del-listen");
@@ -4319,7 +4331,7 @@
         render();
       });
     });
-    document.querySelectorAll("[data-rm-wish]").forEach((b) => {
+    $main.querySelectorAll("[data-rm-wish]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-rm-wish");
@@ -4329,7 +4341,7 @@
         render();
       });
     });
-    document.querySelectorAll("[data-add-wish-suggest]").forEach((b) => {
+    $main.querySelectorAll("[data-add-wish-suggest]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-add-wish-suggest");
@@ -4342,14 +4354,14 @@
         render();
       });
     });
-    document.querySelectorAll("[data-album-open]").forEach((b) => {
+    $main.querySelectorAll("[data-album-open]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-album-open");
         if (id) navigate("album", { albumId: id });
       });
     });
-    document.querySelectorAll("[data-follow]").forEach((b) => {
+    $main.querySelectorAll("[data-follow]").forEach((b) => {
       b.addEventListener("click", () => {
         const uid = b.getAttribute("data-follow");
         const i = state.follows.indexOf(uid);
@@ -4371,7 +4383,7 @@
     if (btnNewList) btnNewList.addEventListener("click", openNewListModal);
     const btnAddConcert = document.getElementById("btn-add-concert");
     if (btnAddConcert) btnAddConcert.addEventListener("click", openAddConcertModal);
-    document.querySelectorAll("[data-del-concert]").forEach((b) => {
+    $main.querySelectorAll("[data-del-concert]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-del-concert");
@@ -4381,7 +4393,7 @@
         render();
       });
     });
-    document.querySelectorAll("[data-nav-view]").forEach((b) => {
+    $main.querySelectorAll("[data-nav-view]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -4389,7 +4401,7 @@
         if (v) navigate(v);
       });
     });
-    document.querySelectorAll("[data-open-dm]").forEach((b) => {
+    $main.querySelectorAll("[data-open-dm]").forEach((b) => {
       b.addEventListener("click", async () => {
         const uid = b.getAttribute("data-open-dm");
         if (!window.SLCloud || !SLCloud.isSignedIn()) {
@@ -4406,7 +4418,7 @@
         }
       });
     });
-    document.querySelectorAll("[data-compat-detail]").forEach((b) => {
+    $main.querySelectorAll("[data-compat-detail]").forEach((b) => {
       b.addEventListener("click", async () => {
         const uid = b.getAttribute("data-compat-detail");
         try {
@@ -4422,7 +4434,7 @@
             <p class="page-sub">Score <strong>${r.score}%</strong> — ${r.shared} albums en commun (${r.union} uniques au total dans nos goûts comparés).</p>
             <p class="feed-note">Basé sur nos <strong>écoutes publiques</strong> et <strong>listes publiques</strong> Soundlog (ta pile « à écouter » côté toi uniquement).</p>
             <div class="grid-albums" style="margin-top:1rem">${grid || `<p class="empty">Pas d’album en commun indexé pour l’instant.</p>`}</div>`);
-          document.querySelectorAll("#modal-bd [data-album]").forEach((el) => {
+          $main.querySelectorAll("#modal-bd [data-album]").forEach((el) => {
             el.addEventListener("click", () => {
               const id = el.getAttribute("data-album");
               closeModal();
@@ -4434,7 +4446,7 @@
         }
       });
     });
-    document.querySelectorAll(".event-interest-toggle").forEach((btn) => {
+    $main.querySelectorAll(".event-interest-toggle").forEach((btn) => {
       btn.addEventListener("click", async () => {
         const key = btn.getAttribute("data-ev-key");
         if (!key) return;
@@ -4475,7 +4487,7 @@
 
     const btnAddPerfVideo = document.getElementById("btn-add-perf-video");
     if (btnAddPerfVideo) btnAddPerfVideo.addEventListener("click", () => openPerformanceVideoModal());
-    document.querySelectorAll("[data-del-perf-video]").forEach((b) => {
+    $main.querySelectorAll("[data-del-perf-video]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -4516,13 +4528,13 @@
       });
     });
 
-    document.querySelectorAll("[data-preview-play]").forEach((b) => {
+    $main.querySelectorAll("[data-preview-play]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         void playAlbumPreview(b.getAttribute("data-preview-play"));
       });
     });
-    document.querySelectorAll("[data-preview-swap]").forEach((b) => {
+    $main.querySelectorAll("[data-preview-swap]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-preview-swap");
@@ -4542,25 +4554,25 @@
         void playAlbumPreview(id, { force: true });
       });
     });
-    document.querySelectorAll("[data-preview-stop]").forEach((b) => {
+    $main.querySelectorAll("[data-preview-stop]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         stopAlbumPreview();
       });
     });
-    document.querySelectorAll("[data-comment-on]").forEach((b) => {
+    $main.querySelectorAll("[data-comment-on]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         openCommentModal(b.getAttribute("data-comment-on"));
       });
     });
-    document.querySelectorAll("[data-friend-req]").forEach((b) => {
+    $main.querySelectorAll("[data-friend-req]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         sendFriendRequest(b.getAttribute("data-friend-req"));
       });
     });
-    document.querySelectorAll("[data-friend-remove]").forEach((b) => {
+    $main.querySelectorAll("[data-friend-remove]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const uid = b.getAttribute("data-friend-remove");
@@ -4577,25 +4589,25 @@
         render();
       });
     });
-    document.querySelectorAll("[data-accept-friend]").forEach((b) => {
+    $main.querySelectorAll("[data-accept-friend]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         acceptIncomingFriendRequest(b.getAttribute("data-accept-friend"));
       });
     });
-    document.querySelectorAll("[data-decline-friend]").forEach((b) => {
+    $main.querySelectorAll("[data-decline-friend]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         declineIncomingFriendRequest(b.getAttribute("data-decline-friend"));
       });
     });
-    document.querySelectorAll("[data-cancel-friend-out]").forEach((b) => {
+    $main.querySelectorAll("[data-cancel-friend-out]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         cancelOutgoingFriendRequest(b.getAttribute("data-cancel-friend-out"));
       });
     });
-    document.querySelectorAll("[data-rm-fav]").forEach((b) => {
+    $main.querySelectorAll("[data-rm-fav]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         try {
@@ -4609,7 +4621,7 @@
         } catch (_) {}
       });
     });
-    document.querySelectorAll("[data-rm-manual-tour]").forEach((b) => {
+    $main.querySelectorAll("[data-rm-manual-tour]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
         const id = b.getAttribute("data-rm-manual-tour");
@@ -5063,19 +5075,47 @@
 
   bindMobileShell();
   bindShellNavigation();
+  if (!$modal.dataset.albumDelegate) {
+    $modal.dataset.albumDelegate = "1";
+    $modal.addEventListener("click", (ev) => {
+      const card = ev.target.closest("[data-album]");
+      if (!card || ev.target.closest("button")) return;
+      const id = card.getAttribute("data-album");
+      if (!id) return;
+      closeModal();
+      navigate("album", { albumId: id });
+    });
+  }
+  if (!$main.dataset.importHitDelegate) {
+    $main.dataset.importHitDelegate = "1";
+    $main.addEventListener("click", (ev) => {
+      const btn = ev.target.closest("[data-import-hit]");
+      if (!btn) return;
+      ev.preventDefault();
+      ev.stopPropagation();
+      try {
+        importCatalogHit(JSON.parse(decodeURIComponent(btn.getAttribute("data-import-hit"))));
+      } catch (_) {
+        toast("Import impossible (données invalides).");
+      }
+    });
+  }
+
   document.getElementById("logo-link").addEventListener("click", (e) => {
     e.preventDefault();
     $search.value = "";
     navigate("home");
   });
   const userChip = document.getElementById("user-chip");
-  userChip.addEventListener("click", () => navigate("profile", { userId: "me" }));
-  userChip.addEventListener("keydown", (e) => {
-    if (e.key === "Enter" || e.key === " ") {
-      e.preventDefault();
-      navigate("profile", { userId: "me" });
-    }
-  });
+  if (userChip) {
+    userChip.addEventListener("click", () => navigate("profile", { userId: "me" }));
+    userChip.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        navigate("profile", { userId: "me" });
+      }
+    });
+  }
   // =======================================================================
   // Recherche unifiée — popover live multi-entités (users / artists / albums / tracks)
   // =======================================================================
@@ -5560,6 +5600,7 @@
             album_artwork_url: r.albumArtworkUrl || null,
             remote_track_id: r.remoteTrackId || null,
             remote_album_id: r.remoteAlbumId || null,
+            duration_ms: r.durationMs != null ? r.durationMs : null,
             added_at: new Date().toISOString(),
           });
         });
@@ -5605,7 +5646,7 @@
   }
   window.__slSchedulePushCloud = schedulePushCloud;
   async function pushCloudFull() {
-    if (!SLCloud || !SLCloud.isSignedIn()) return;
+    if (!SLCloud || !SLCloud.isSignedIn() || !SLCloud.me || !SLCloud.me.id) return;
     const cloudId = SLCloud.me.id;
     try {
       // 1. Albums référencés par les écoutes/listes/wishlist : upsert dans le catalogue partagé
@@ -5707,9 +5748,55 @@
     if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
   });
 
-  // Initial pull au login
+  let cloudPullPromise = null;
+  let cloudSyncBannerEl = null;
+
+  function showCloudSyncBanner(msg) {
+    if (!cloudSyncBannerEl) {
+      cloudSyncBannerEl = document.createElement("div");
+      cloudSyncBannerEl.className = "cloud-sync-banner";
+      cloudSyncBannerEl.setAttribute("role", "status");
+      document.body.appendChild(cloudSyncBannerEl);
+    }
+    cloudSyncBannerEl.textContent = msg;
+    cloudSyncBannerEl.hidden = false;
+  }
+
+  function hideCloudSyncBanner() {
+    if (cloudSyncBannerEl) cloudSyncBannerEl.hidden = true;
+  }
+
+  async function ensureCloudReady() {
+    if (!SLCloud || !SLCloud.available) throw new Error("Cloud non configuré — voir BACKEND.md");
+    if (typeof SLCloud.ensureReady === "function") return SLCloud.ensureReady();
+    if (!SLCloud.ready && typeof SLCloud.init === "function") {
+      const ok = await SLCloud.init();
+      if (!ok) throw new Error(SLCloud.pendingError || "Cloud indisponible");
+    }
+    if (!SLCloud.ready) throw new Error("Cloud non initialisé");
+  }
+
   async function pullCloudIntoState() {
+    if (cloudPullPromise) return cloudPullPromise;
+    cloudPullPromise = pullCloudIntoStateWork().finally(() => {
+      cloudPullPromise = null;
+    });
+    return cloudPullPromise;
+  }
+
+  async function pullCloudIntoStateWork() {
     if (!SLCloud || !SLCloud.isSignedIn()) return;
+    showCloudSyncBanner("Synchronisation avec ton compte…");
+    try {
+      if (!SLCloud.me || !SLCloud.me.id) {
+        if (typeof SLCloud.refreshProfile === "function") await SLCloud.refreshProfile();
+        if (!SLCloud.me && typeof SLCloud.ensureProfileAfterAuth === "function") await SLCloud.ensureProfileAfterAuth();
+      }
+      if (!SLCloud.me || !SLCloud.me.id) {
+        hideCloudSyncBanner();
+        toast("Session ouverte mais profil introuvable — réessaie dans un instant.");
+        return;
+      }
     const cloudId = SLCloud.me.id;
     // État local « moi » à fusionner (évite de perdre des ajouts pas encore poussés ou un refresh rapide)
     const prevMineLists = (state.lists || [])
@@ -5830,30 +5917,42 @@
     }
     state.cloudImportedPlaylists = data.importedPlaylists || [];
     state.cloudImportedTracks = data.importedTracks || [];
-    // Pull metadata for unknown albums
-    for (const aid of knownIds) {
-      if (!albumById(aid)) {
+    // Métadonnées albums : parallèle, plafonné (évite blocage UI plusieurs minutes)
+    const missingAlbumIds = [...knownIds].filter((aid) => aid && !albumById(aid)).slice(0, 56);
+    const hydrateOne = async (aid) => {
+      try {
         const remote = await SLCloud.getAlbumById(aid);
-        if (remote) {
-          state.importedAlbums = state.importedAlbums || [];
-          state.importedAlbums.push({
-            id: remote.id,
-            title: remote.title,
-            artist: remote.artist,
-            year: remote.year,
-            genre: remote.genre,
-            artworkUrl: remote.artwork_url,
-            appleCollectionId: remote.apple_collection_id,
-            deezerAlbumId: remote.deezer_album_id,
-          });
-        }
+        if (!remote) return;
+        state.importedAlbums = state.importedAlbums || [];
+        if (state.importedAlbums.some((a) => a.id === remote.id)) return;
+        state.importedAlbums.push({
+          id: remote.id,
+          title: remote.title,
+          artist: remote.artist,
+          year: remote.year,
+          genre: remote.genre,
+          artworkUrl: remote.artwork_url,
+          appleCollectionId: remote.apple_collection_id,
+          deezerAlbumId: remote.deezer_album_id,
+        });
+      } catch (e) {
+        console.warn("[pull] album", aid, e);
       }
+    };
+    for (let i = 0; i < missingAlbumIds.length; i += 8) {
+      await Promise.all(missingAlbumIds.slice(i, i + 8).map(hydrateOne));
     }
     persistLocalOnly();
     updateHeaderUser();
     updateSidebarAccount();
     render();
-    void flushCloudPush();
+    schedulePushCloud();
+    } catch (e) {
+      console.warn("[pullCloudIntoState]", e);
+      toast("Sync partielle : " + (e.message || "erreur réseau"));
+    } finally {
+      hideCloudSyncBanner();
+    }
   }
 
   function updateSidebarAccount() {
@@ -5876,6 +5975,28 @@
       label.innerHTML = `<span>Se connecter</span><small>ou créer un compte</small>`;
       if (note) note.textContent = "Mode invité — clique « Se connecter » pour synchroniser.";
     }
+  }
+
+  function setAuthFormBusy(busy, label) {
+    ["auth-do-signin", "auth-do-signup", "auth-do-magic", "auth-save", "auth-do-signout"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (busy) {
+        if (!el.dataset.slLabel) el.dataset.slLabel = el.textContent;
+        if (label) el.textContent = label;
+        el.disabled = true;
+        el.setAttribute("aria-busy", "true");
+      } else {
+        if (el.dataset.slLabel) {
+          el.textContent = el.dataset.slLabel;
+          delete el.dataset.slLabel;
+        }
+        el.disabled = false;
+        el.removeAttribute("aria-busy");
+      }
+    });
+    const cancel = document.getElementById("auth-cancel");
+    if (cancel) cancel.disabled = !!busy;
   }
 
   function openAccountModal(initialTab) {
@@ -5912,24 +6033,34 @@
           const email = document.getElementById("auth-email").value.trim();
           const pw = document.getElementById("auth-pw").value;
           if (!email || !pw) return showAuthErr("Email + mot de passe requis.");
+          setAuthFormBusy(true, "Connexion…");
           try {
+            await ensureCloudReady();
             await SLCloud.signIn({ email, password: pw });
-            toast("Connecté·e !");
             closeModal();
+            toast("Connecté·e — synchronisation…");
             await pullCloudIntoState();
             updateSidebarAccount();
+            updateHeaderUser();
+            toast("Données synchronisées.");
           } catch (e) {
             showAuthErr(e.message || "Connexion impossible.");
+          } finally {
+            setAuthFormBusy(false);
           }
         });
         document.getElementById("auth-do-magic").addEventListener("click", async () => {
           const email = document.getElementById("auth-email").value.trim();
           if (!email) return showAuthErr("Email requis.");
+          setAuthFormBusy(true, "Envoi…");
           try {
+            await ensureCloudReady();
             await SLCloud.signInWithMagicLink({ email });
             toast("Lien envoyé — clique-le dans ta boîte mail.");
           } catch (e) {
             showAuthErr(e.message || "Envoi impossible.");
+          } finally {
+            setAuthFormBusy(false);
           }
         });
       } else if (which === "signup") {
@@ -5952,15 +6083,26 @@
           if (!handle || !name || !email || !pw) return showAuthErr("Tous les champs sont requis.");
           if (pw.length < 8) return showAuthErr("Le mot de passe doit faire 8 caractères ou plus.");
           if (!/^[a-z0-9_.\-]{2,32}$/.test(handle)) return showAuthErr("Handle invalide.");
+          setAuthFormBusy(true, "Création…");
           try {
+            await ensureCloudReady();
             await SLCloud.signUp({ email, password: pw, handle, name, hue: state.profile && hueFromHandle(handle) });
-            toast("Compte créé !");
+            if (!SLCloud.isSignedIn()) {
+              toast("Compte créé — confirme ton email si Supabase l’exige, puis connecte-toi.");
+              renderPanel("signin");
+              return;
+            }
             closeModal();
-            await pushCloudFull(); // pousse l'état local existant vers le nouveau compte
+            toast("Compte créé — synchronisation…");
             await pullCloudIntoState();
+            schedulePushCloud();
             updateSidebarAccount();
+            updateHeaderUser();
+            toast("Compte prêt.");
           } catch (e) {
             showAuthErr(e.message || "Inscription impossible.");
+          } finally {
+            setAuthFormBusy(false);
           }
         });
       } else if (which === "profile") {
@@ -6049,21 +6191,30 @@
   // Brancher le bouton "Compte" de la sidebar
   const sidebarAccount = document.getElementById("sidebar-account");
   if (sidebarAccount) {
-    sidebarAccount.addEventListener("click", (e) => {
+    sidebarAccount.addEventListener("click", async (e) => {
       e.preventDefault();
       if (!SLCloud || !SLCloud.available) {
         toast("Cloud non configuré — voir BACKEND.md");
         return;
       }
-      openAccountModal();
+      try {
+        await ensureCloudReady();
+        openAccountModal();
+      } catch (err) {
+        toast(err.message || "Impossible d’ouvrir le compte cloud.");
+      }
     });
   }
 
-  // Réagir aux changements d'auth
+  // Réagir aux changements d'auth : pull uniquement au démarrage (ready), pas à chaque auth
+  // (évite double sync avec le bouton « Se connecter » qui appelle déjà pullCloudIntoState).
   if (SLCloud && SLCloud.on) {
-    SLCloud.on(async (evt) => {
-      if (evt === "ready" || evt === "auth") {
-        if (SLCloud.isSignedIn()) await pullCloudIntoState();
+    SLCloud.on((evt) => {
+      if (evt === "ready") {
+        updateSidebarAccount();
+        updateHeaderUser();
+        if (SLCloud.isSignedIn()) void pullCloudIntoState();
+      } else if (evt === "auth") {
         updateSidebarAccount();
         updateHeaderUser();
       } else if (evt === "profile") {
@@ -6260,21 +6411,86 @@
   });
 
   // ---------- Stats personnelles ----------
+  function formatListenMs(ms) {
+    const n = Number(ms) || 0;
+    if (n <= 0) return "—";
+    const min = Math.round(n / 60000);
+    if (min < 60) return `${min} min`;
+    const h = Math.floor(min / 60);
+    const r = min % 60;
+    return `${h} h ${r} min`;
+  }
+
   async function openCloudStatsModal() {
     if (!SLCloud || !SLCloud.isSignedIn()) return;
     const uid = SLCloud.me.id;
+    const spReady = SLCloud.spotify && SLCloud.spotify.isConfigured() && SLCloud.spotify.hasToken();
     openModal(`<h2>Mes statistiques</h2>
       <div id="cloud-stats" class="cloud-stats"><p class="feed-note">Calcul…</p></div>
-      <p class="modal-actions"><button type="button" class="btn btn-ghost" id="cloud-stats-close">Fermer</button></p>`);
+      <p class="modal-actions cloud-stats-actions">
+        <button type="button" class="btn btn-primary" id="cloud-stats-sync-spotify" ${spReady ? "" : "disabled"} title="Session Spotify requise">Sync Spotify (écoutes récentes)</button>
+        <button type="button" class="btn btn-ghost" id="cloud-stats-close">Fermer</button>
+      </p>
+      <p class="feed-note cloud-stats-foot">Le classement combine la <strong>durée des titres importés</strong> (quand connue) et l’<strong>historique « récemment écouté »</strong> Spotify. Réautorise Spotify si la sync est refusée (nouvelle permission).</p>`);
     document.getElementById("cloud-stats-close").addEventListener("click", closeModal);
-    try {
-      const [stats, top, recos] = await Promise.all([
-        SLCloud.getUserStats(uid),
-        SLCloud.getTopArtists(uid, 12),
-        SLCloud.getRecommendations(uid, 12),
-      ]);
+    const syncBtn = document.getElementById("cloud-stats-sync-spotify");
+    if (syncBtn && spReady) {
+      syncBtn.addEventListener("click", async () => {
+        syncBtn.disabled = true;
+        syncBtn.textContent = "Synchronisation…";
+        try {
+          const r = await SLCloud.syncSpotifyPlayHistory();
+          toast(`Historique Spotify : ${r.inserted || 0} ligne(s) traitée(s).`);
+          await fillCloudStatsPanel(uid);
+        } catch (e) {
+          toast(e.message || "Sync impossible — reconnecte Spotify.");
+        } finally {
+          syncBtn.disabled = false;
+          syncBtn.textContent = "Sync Spotify (écoutes récentes)";
+        }
+      });
+    }
+    async function fillCloudStatsPanel(userId) {
       const node = document.getElementById("cloud-stats");
-      node.innerHTML = `
+      if (!node) return;
+      node.innerHTML = `<p class="feed-note">Chargement…</p>`;
+      try {
+        const [stats, top, recos, rankRow, board] = await Promise.all([
+          SLCloud.getUserStats(userId),
+          SLCloud.getTopArtists(userId, 12),
+          SLCloud.getRecommendations(userId, 12),
+          SLCloud.getListeningRank(userId).catch(() => null),
+          SLCloud.getListeningLeaderboard(14).catch(() => []),
+        ]);
+        const libMs = stats && (stats.imported_library_ms != null ? stats.imported_library_ms : null);
+        const recMs = stats && (stats.streaming_recent_ms != null ? stats.streaming_recent_ms : null);
+        const recPlays = stats && (stats.streaming_recent_plays != null ? stats.streaming_recent_plays : null);
+        const rankLine = rankRow
+          ? `<p class="cloud-rank-line"><strong>Rang #${rankRow.rank_listen}</strong> sur ${rankRow.leaderboard_size || "?"} · combiné ${escapeHtml(String(rankRow.combined_minutes))} min</p>`
+          : `<p class="feed-note">Pas encore classé·e — importe des playlists avec durées ou synchronise Spotify.</p>`;
+        const lb =
+          board && board.length
+            ? `<ol class="cloud-leaderboard">${board
+                .map(
+                  (row) =>
+                    `<li class="${row.user_id === userId ? "is-me" : ""}"><span class="cloud-lb-rank">#${row.rank_listen}</span><span class="cloud-lb-name">${escapeHtml(
+                      row.name || row.handle || "?"
+                    )}</span><span class="cloud-lb-meta">${escapeHtml(String(row.combined_minutes))} min</span>${
+                      Number(row.recent_listen_minutes) > 0
+                        ? `<span class="cloud-lb-sub">${escapeHtml(String(row.recent_listen_minutes))} min Spotify récent</span>`
+                        : ""
+                    }</li>`
+                )
+                .join("")}</ol>`
+            : `<p class="feed-note">Classement vide pour l’instant.</p>`;
+        node.innerHTML = `
+        <section class="cloud-streaming-summary">
+          <h3>Streaming &amp; durée</h3>
+          <p class="feed-note">Volume musical des imports : <strong>${escapeHtml(formatListenMs(libMs))}</strong> · lectures enregistrées (API Spotify) : <strong>${escapeHtml(
+            formatListenMs(recMs)
+          )}</strong>${recPlays != null ? ` <span class="feed-note">(${recPlays} événements)</span>` : ""}</p>
+          ${rankLine}
+        </section>
         <section class="cloud-stats-grid">
           <article><strong>${stats?.total_listenings || 0}</strong><span>écoutes</span></article>
           <article><strong>${stats?.unique_albums || 0}</strong><span>albums uniques</span></article>
@@ -6285,13 +6501,17 @@
           <article><strong>${stats?.total_imported_tracks || 0}</strong><span>titres importés</span></article>
           <article><strong>${stats?.imported_unique_artists || 0}</strong><span>artistes ext.</span></article>
         </section>
+        <h3>Classement (durée cumulée)</h3>
+        ${lb}
         <h3>Top artistes</h3>
         ${top.length ? `<ol class="cloud-top-artists">${top.map((a) => `<li><span>${escapeHtml(a.artist_name)}</span><em>${a.track_count}</em></li>`).join("")}</ol>` : `<p class="feed-note">Importe une playlist ou note des albums pour générer ton top artistes.</p>`}
         <h3>Recommandé pour toi</h3>
         ${recos.length ? `<ul class="cloud-recos">${recos.map((r) => `<li><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.artist)} <em>(score ${Number(r.score).toFixed(1)})</em></li>`).join("")}</ul>` : `<p class="feed-note">Pas assez de données collectives pour reco — invite des ami·es !</p>`}`;
-    } catch (e) {
-      document.getElementById("cloud-stats").innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p>`;
+      } catch (e) {
+        node.innerHTML = `<p class="auth-error">${escapeHtml(e.message || "Erreur de chargement")}</p><p class="feed-note">Si tu viens de déployer la base, exécute <strong>MIGRATION_v4.sql</strong> dans Supabase.</p>`;
+      }
     }
+    await fillCloudStatsPanel(uid);
   }
 
   // ---------- Avatar upload ----------
@@ -6443,6 +6663,7 @@
         albumArtworkUrl: (t.album?.images && t.album.images[0] && t.album.images[0].url) || null,
         remoteTrackId: t.id,
         remoteAlbumId: t.album?.id,
+        durationMs: t.duration_ms != null ? t.duration_ms : null,
       }));
       await SLCloud.insertImportedTracks(rows);
       // Ajoute aussi les albums uniques dans le catalogue Soundlog (mode importé)
@@ -6505,6 +6726,7 @@
           albumArtworkUrl: (t.album?.images && t.album.images[0] && t.album.images[0].url) || null,
           remoteTrackId: t.id,
           remoteAlbumId: t.album?.id,
+          durationMs: t.duration_ms != null ? t.duration_ms : null,
         }));
         await SLCloud.insertImportedTracks(rows);
         setStatus(`Importé : ${rows.length} titres aimés.`);
@@ -6605,6 +6827,7 @@
           albumArtworkUrl: (t.album && (t.album.cover_xl || t.album.cover_big || t.album.cover_medium)) || null,
           remoteTrackId: t.id ? String(t.id) : null,
           remoteAlbumId: t.album && t.album.id ? String(t.album.id) : null,
+          durationMs: t.duration != null ? Number(t.duration) * 1000 : null,
         }));
         await SLCloud.insertImportedTracks(rows);
         // Fusion albums uniques dans le catalogue local

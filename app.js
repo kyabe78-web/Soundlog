@@ -4870,8 +4870,19 @@
     document.getElementById("dz-cancel").addEventListener("click", closeModal);
     document.getElementById("dz-import").addEventListener("click", async () => {
       const raw = document.getElementById("dz-url").value.trim();
+      // Détection des liens raccourcis Deezer (deezer.page.link, link.deezer.com)
+      if (/link\.deezer\.com|deezer\.page\.link/.test(raw)) {
+        setStatus("");
+        const n = document.getElementById("dz-status");
+        if (n) {
+          n.innerHTML = `Lien raccourci détecté. Soundlog ne peut pas le déplier (CORS).
+            <br><a href="${escapeHtml(raw)}" target="_blank" rel="noopener" class="link">Ouvrir le lien dans un nouvel onglet</a>,
+            puis copie l'URL longue (<code>deezer.com/.../playlist/<i>NNNN</i></code>) depuis la barre d'adresse et recolle-la ici.`;
+        }
+        return;
+      }
       const m = raw.match(/playlist[\/=](\d+)/) || raw.match(/^(\d+)$/);
-      if (!m) { setStatus("URL ou ID invalide."); return; }
+      if (!m) { setStatus("URL ou ID invalide. Format attendu : https://www.deezer.com/playlist/123 ou juste 123."); return; }
       const playlistId = m[1];
       try {
         setStatus("Récupération de la playlist...");

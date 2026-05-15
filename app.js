@@ -4853,6 +4853,28 @@
     return Array.from(a).map((b) => b.toString(16).padStart(2, "0")).join("");
   }
 
+  // Helper JSONP pour Deezer (contourne CORS sans Edge Function)
+  function deezerJsonp(url) {
+    return new Promise((resolve, reject) => {
+      const cb = "_dz_cb_" + Date.now() + "_" + Math.floor(Math.random() * 1e6);
+      window[cb] = (data) => {
+        try { delete window[cb]; } catch (_) { window[cb] = null; }
+        const s = document.getElementById(cb);
+        if (s) s.remove();
+        resolve(data);
+      };
+      const sep = url.includes("?") ? "&" : "?";
+      const script = document.createElement("script");
+      script.id = cb;
+      script.src = `${url}${sep}output=jsonp&callback=${cb}`;
+      script.onerror = () => { reject(new Error("Échec JSONP Deezer")); };
+      document.head.appendChild(script);
+      setTimeout(() => {
+        if (window[cb]) { try { delete window[cb]; } catch (_) {} reject(new Error("Timeout Deezer")); }
+      }, 15000);
+    });
+  }
+
   // ---------- Import Deezer (URL publique, zéro auth) ----------
   async function openDeezerImportModal() {
     if (!SLCloud || !SLCloud.isSignedIn()) { toast("Connecte-toi d'abord."); return; }
@@ -4886,16 +4908,13 @@
       const playlistId = m[1];
       try {
         setStatus("Récupération de la playlist...");
-        const metaRes = await fetch(viaEdgeProxy(`https://api.deezer.com/playlist/${playlistId}`));
-        if (!metaRes.ok) throw new Error("Playlist introuvable (privée ?)");
-        const meta = await metaRes.json();
-        if (meta.error) throw new Error(meta.error.message || "Erreur Deezer");
+        const meta = await deezerJsonp(`https://api.deezer.com/playlist/${playlistId}`);
+        if (meta.error) throw new Error(meta.error.message || "Playlist introuvable (privée ?)");
         // Collecte tous les tracks (pagination)
         let tracks = (meta.tracks && meta.tracks.data) || [];
         let next = meta.tracks && meta.tracks.next;
         while (next) {
-          const r = await fetch(viaEdgeProxy(next));
-          const j = await r.json();
+          const j = await deezerJsonp(next);
           tracks.push(...(j.data || []));
           next = j.next;
         }

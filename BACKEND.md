@@ -301,7 +301,7 @@ Coût indicatif : 10-15 € / an pour un `.com`, gratuit en sous-domaine.
 
 | Symptôme | Cause probable | Remède |
 |---|---|---|
-| « Cloud non configuré » au clic | `config.js` vide ou mal chargé | Vérifier `index.html` et le contenu de `config.js` |
+| « Connexion cloud indisponible » | Variables Vercel manquantes ou pas de redeploy | Vercel → Environment Variables → `SL_SUPABASE_URL` + `SL_SUPABASE_ANON_KEY` → Redeploy |
 | Inscription échoue avec "duplicate key" | Handle déjà pris | Choisir un autre handle |
 | Connexion échoue silencieusement | Confirm-email activé | Désactiver le `Confirm email` en dev, ou cliquer le lien reçu |
 | Sync ne semble pas se faire | Cache localStorage stale | Vide le cache navigateur OU fais `localStorage.clear()` dans la console |

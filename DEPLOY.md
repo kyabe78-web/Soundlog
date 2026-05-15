@@ -49,8 +49,20 @@ GitHub **n’accepte plus ton mot de passe** pour `git push`. Il faut un **Perso
 
 1. https://vercel.com → Add New → Project  
 2. Import `Soundlog` (dépôt `kyabe78-web/Soundlog`)  
-3. **Build Command** : vide  
-4. **Output Directory** : `.`  
-5. Deploy  
+3. **Framework Preset** : Other (ou laisse Vercel lire `vercel.json`)  
+4. **Build Command** : `npm run build` (déjà dans `vercel.json`)  
+5. **Output Directory** : `.`  
+6. **Environment Variables** (obligatoire pour la connexion) :
 
-Lien public : `https://soundlog-xxxxx.vercel.app`
+| Name | Value |
+|------|--------|
+| `SL_SUPABASE_URL` | `https://TON-ID.supabase.co` |
+| `SL_SUPABASE_ANON_KEY` | clé **publishable** ou **anon** (Supabase → Settings → API) |
+
+Coche **Production** et **Preview**.
+
+7. **Deploy**, puis après toute modification de variables : **Deployments → ⋯ → Redeploy**
+
+Lien public : `https://soundlog-nine.vercel.app`
+
+Sans ces variables, le message « Cloud non configuré » apparaît à la connexion.

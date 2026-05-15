@@ -4,8 +4,16 @@
    Reste optionnel : sans config valide, l'app fonctionne 100% locale.
    ========================================================================= */
 (function () {
-  const CFG = window.SLConfig || {};
-  const HAS_CONFIG = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && /^https?:\/\//.test(CFG.supabaseUrl));
+  function readConfig() {
+    const c = window.SLConfig || {};
+    return {
+      ...c,
+      supabaseUrl: String(c.supabaseUrl || "").trim(),
+      supabaseAnonKey: String(c.supabaseAnonKey || "").trim(),
+    };
+  }
+  const CFG = readConfig();
+  const HAS_CONFIG = !!(CFG.supabaseUrl && CFG.supabaseAnonKey && /^https?:\/\//i.test(CFG.supabaseUrl));
 
   const listeners = new Set();
   function emit(evt, payload) { listeners.forEach((cb) => { try { cb(evt, payload); } catch (_) {} }); }
@@ -56,7 +64,11 @@
 
     /** Attendre que le SDK Supabase soit prêt (évite « Cloud non initialisé » à l’ouverture du menu). */
     async ensureReady() {
-      if (!HAS_CONFIG) throw new Error("Cloud non configuré — voir config.js et BACKEND.md");
+      if (!HAS_CONFIG) {
+        throw new Error(
+          "Connexion cloud indisponible sur ce site. Les clés Supabase doivent être configurées au déploiement (Vercel → Environment Variables → SL_SUPABASE_URL et SL_SUPABASE_ANON_KEY, puis Redeploy)."
+        );
+      }
       const ok = await this.init();
       if (!ok || !this.ready) throw new Error(this.pendingError || "Impossible d’initialiser le cloud");
       return true;

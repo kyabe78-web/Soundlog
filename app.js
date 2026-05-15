@@ -6964,7 +6964,11 @@
   }
 
   async function ensureCloudReady() {
-    if (!SLCloud || !SLCloud.available) throw new Error("Cloud non configuré — voir BACKEND.md");
+    if (!SLCloud || !SLCloud.available) {
+      throw new Error(
+        "Connexion cloud indisponible. Sur Vercel, ajoute SL_SUPABASE_URL et SL_SUPABASE_ANON_KEY (Settings → Environment Variables), puis Redeploy."
+      );
+    }
     if (typeof SLCloud.ensureReady === "function") return SLCloud.ensureReady();
     if (!SLCloud.ready && typeof SLCloud.init === "function") {
       const ok = await SLCloud.init();
@@ -7209,6 +7213,14 @@
   }
 
   function openAccountModal(initialTab) {
+    if (!SLCloud || !SLCloud.available) {
+      openModal(`<h2>Compte Soundlog</h2>
+        <p class="auth-error" style="display:block">La connexion en ligne n’est pas disponible sur cette version du site.</p>
+        <p class="feed-note">Pour les administrateurs : dans Vercel → <strong>Settings → Environment Variables</strong>, ajoute <code>SL_SUPABASE_URL</code> et <code>SL_SUPABASE_ANON_KEY</code> (valeurs Supabase → Settings → API), coche <strong>Production</strong> et <strong>Preview</strong>, puis <strong>Deployments → Redeploy</strong>.</p>
+        <p class="modal-actions"><button type="button" class="btn btn-ghost" id="auth-cancel">Fermer</button></p>`);
+      document.getElementById("auth-cancel").addEventListener("click", closeModal);
+      return;
+    }
     const signedIn = SLCloud && SLCloud.isSignedIn() && SLCloud.me;
     const tab = initialTab || (signedIn ? "profile" : "signin");
     const tabsHtml = signedIn
@@ -7414,7 +7426,7 @@
     sidebarAccount.addEventListener("click", async (e) => {
       e.preventDefault();
       if (!SLCloud || !SLCloud.available) {
-        toast("Cloud non configuré — voir BACKEND.md");
+        toast("Connexion cloud indisponible — contacte l’administrateur du site.");
         return;
       }
       try {

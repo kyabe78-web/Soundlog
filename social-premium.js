@@ -29,10 +29,10 @@
   }
 
   function circleAlbumScores() {
-    const ids = d.feedCircleIds();
+    const items = d.socialFeedItems ? d.socialFeedItems() : [];
     const counts = new Map();
-    d.state.listenings.forEach((l) => {
-      if (!ids.has(l.userId) || !l.albumId) return;
+    items.forEach((l) => {
+      if (!l.albumId) return;
       counts.set(l.albumId, (counts.get(l.albumId) || 0) + 1);
     });
     return [...counts.entries()]
@@ -63,11 +63,8 @@
   }
 
   function recentCircleListenings(limit) {
-    const ids = d.feedCircleIds();
-    return d.state.listenings
-      .filter((l) => ids.has(l.userId))
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0))
-      .slice(0, limit || 24);
+    const items = d.socialFeedItems ? d.socialFeedItems() : [];
+    return items.slice(0, limit || 24);
   }
 
   function feedFilterBtn(id, label, active) {
@@ -188,28 +185,26 @@
   }
 
   function renderFeedPanel() {
-    const feedFilter = d.state.socialFeedFilter || "all";
-    const items = d.feedItems();
+    const feedFilter = d.state.socialFeedFilter || "following";
+    const ff = feedFilter === "circle" ? "following" : feedFilter;
     const trending = circleAlbumScores();
     const signed = d.cloudSignedIn && d.cloudSignedIn();
-    const localStream =
-      items.length === 0
-        ? '<div class="soc-empty soc-empty--inline"><p class="soc-empty__title">Ton cercle se réveille</p><p class="feed-note">Suis des profils, invite des ami·es ou logue une écoute.</p><p><button type="button" class="btn btn-primary btn-sm" data-nav-view="carnet">Logger</button> <button type="button" class="btn btn-ghost btn-sm" data-social-circle-tab="discover">Découvrir</button></p></div>'
-        : items
-            .slice(0, 24)
-            .map((l) => feedCardFromListening(l))
-            .join("");
-    const stream =
-      feedFilter === "cloud"
-        ? '<div id="soc-cloud-feed" class="soc-cloud-feed"><p class="feed-note">Chargement des écoutes en ligne…</p></div>'
-        : '<div id="soc-feed-local" class="soc-feed-local' +
-          (feedFilter === "circle" ? " soc-feed-local--solo" : "") +
-          '">' +
-          localStream +
-          "</div>" +
-          (feedFilter === "circle"
-            ? ""
-            : '<div id="soc-cloud-feed" class="soc-cloud-feed"><p class="feed-note">Synchronisation du fil en ligne…</p></div>');
+
+    const communityShell =
+      window.SLCarnetSocial && window.SLCarnetSocial.renderCommunityFeedShell
+        ? window.SLCarnetSocial.renderCommunityFeedShell()
+        : '<section class="community-feed" data-social-community-feed><p class="feed-note">Chargement…</p></section>';
+
+    let stream = "";
+    if (ff === "cloud") {
+      stream = '<div id="soc-cloud-feed" class="soc-cloud-feed"><p class="feed-note">Chargement des écoutes en ligne…</p></div>';
+    } else if (ff === "following") {
+      stream = communityShell;
+    } else {
+      stream =
+        communityShell +
+        '<div id="soc-cloud-feed" class="soc-cloud-feed soc-cloud-feed--below"><p class="feed-note">Synchronisation du fil en ligne…</p></div>';
+    }
 
     const trendHtml =
       trending.length === 0
@@ -238,7 +233,7 @@
       ? '<button type="button" class="btn btn-primary btn-sm" id="soc-shout-cloud">Publier</button>'
       : "";
     const composeHint = signed
-      ? '<p class="soc-compose__hint feed-note">Visible par la communauté connectée.</p>'
+      ? '<p class="soc-compose__hint feed-note">Murmures visibles par la communauté connectée.</p>'
       : '<p class="soc-compose__hint feed-note">Stocké sur cet appareil uniquement.</p>';
 
     return (
@@ -247,9 +242,9 @@
       (d.feedStoryStripHtml ? d.feedStoryStripHtml() : "") +
       liveNowStrip() +
       '<nav class="soc-feed-filters" aria-label="Filtrer le fil">' +
-      feedFilterBtn("all", "Tout", feedFilter === "all") +
-      feedFilterBtn("circle", "Cercle local", feedFilter === "circle") +
-      feedFilterBtn("cloud", "En ligne", feedFilter === "cloud") +
+      feedFilterBtn("following", "Proches", ff === "following") +
+      feedFilterBtn("all", "Tout", ff === "all") +
+      feedFilterBtn("cloud", "En ligne", ff === "cloud") +
       "</nav>" +
       renderActivityRail() +
       '<section class="soc-compose panel">' +
@@ -271,13 +266,13 @@
       trendHtml +
       renderSuggestAside() +
       '<div class="soc-aside-card soc-aside-card--cta"><h3>Messages</h3><p class="feed-note">Partage un album ou un live en DM.</p><button type="button" class="btn btn-primary btn-sm" data-nav-view="inbox">Ouvrir la messagerie</button></div>' +
-      '<div class="soc-aside-card"><h3>Live culture</h3><p class="feed-note">Tampons concerts &amp; souvenirs.</p><button type="button" class="btn btn-ghost btn-sm" data-nav-view="social" data-hub-live="1">I was there !</button></div>' +
+      '<div class="soc-aside-card"><h3>Mon carnet</h3><p class="feed-note">Tes écoutes et critiques personnelles.</p><button type="button" class="btn btn-ghost btn-sm" data-nav-view="carnet">Ouvrir mon carnet</button></div>' +
+      '<div class="soc-aside-card"><h3>Concerts</h3><p class="feed-note">Tampons live &amp; souvenirs.</p><button type="button" class="btn btn-ghost btn-sm" data-nav-view="social" data-hub-live="1">I was there !</button></div>' +
       "</aside></div>"
     );
   }
 
-
-  function renderPeoplePanel() {
+ {
     d.ensureSocialArrays();
     const friends =
       d.state.friends.length === 0
@@ -571,8 +566,8 @@
       ? '<header class="soc-hero soc-hero--compact" aria-label="Ton cercle">' +
         '<p class="soc-hero__compact-lead">' +
         (signed
-          ? "Fil synchronisé avec ton compte — réagis, invite et découvre."
-          : "Mode invité : tout est local sur cet appareil — connecte-toi pour le fil en ligne.") +
+          ? "Fil d’activité de tes proches — likes, commentaires et carnets publics."
+          : "Mode invité : découvre l’activité locale de ton cercle — connecte-toi pour le fil synchronisé.") +
         "</p>" +
         statsBlock +
         actionsBlock +
@@ -580,8 +575,8 @@
       : '<header class="soc-hero">' +
         '<div class="soc-hero__copy">' +
         '<p class="soc-hero__kicker">Cercle musical</p>' +
-        '<h1 class="soc-hero__title">Communauté</h1>' +
-        '<p class="soc-hero__lead">Fil d’écoutes, compatibilité, murmures et concerts — ' +
+        '<h1 class="soc-hero__title">Activité du cercle</h1>' +
+        '<p class="soc-hero__lead">Écoutes des proches, compatibilité, murmures et concerts — ' +
         (signed ? "synchronisé avec ton compte." : "connecte-toi pour rejoindre la communauté en ligne.") +
         "</p></div>" +
         statsBlock +
@@ -716,7 +711,12 @@
   function renderCloudFeedInto(node, rows) {
     if (!node || !d.publicFeedPostHtml) return;
     const ids = cloudCircleUserIds();
-    const filtered = (rows || []).filter((r) => r.user_id && ids.has(r.user_id));
+    const meCloud = window.SLCloud && window.SLCloud.me && window.SLCloud.me.id;
+    const filtered = (rows || []).filter((r) => {
+      if (!r.user_id || !ids.has(r.user_id)) return false;
+      if (meCloud && r.user_id === meCloud) return false;
+      return true;
+    });
     if (!filtered.length) {
       node.innerHTML =
         '<div class="soc-empty soc-empty--inline"><p class="feed-note">Aucune écoute cloud dans ton cercle pour l’instant. Invite des ami·es connecté·es ou publie une note depuis ton carnet.</p></div>';
@@ -734,7 +734,7 @@
     const node = document.getElementById("soc-cloud-feed");
     if (!node) return;
     const filter = d.state.socialFeedFilter || "all";
-    if (filter === "circle") return;
+    if (filter === "following") return;
     const signed = d.cloudSignedIn && d.cloudSignedIn();
     if (!signed || !window.SLCloud || !window.SLCloud.publicFeed) {
       if (filter === "cloud") {

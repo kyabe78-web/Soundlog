@@ -206,9 +206,9 @@
       carnetTab: "journal",
       carnetJournalTab: "mine",
       diaryFilter: "all",
-      socialTab: "community",
+      socialTab: "feed",
       socialCircleTab: "feed",
-      socialFeedFilter: "all",
+      socialFeedFilter: "following",
       socialReactions: {},
     };
   }
@@ -272,7 +272,16 @@
         upcomingTourPreview: Array.isArray(parsed.upcomingTourPreview) ? parsed.upcomingTourPreview : base.upcomingTourPreview,
         feedHomeTab: parsed.feedHomeTab === "discover" ? "discover" : base.feedHomeTab,
         feedHomeShown: Math.min(80, Math.max(10, parseInt(parsed.feedHomeShown, 10) || base.feedHomeShown)),
-        carnetJournalTab: parsed.carnetJournalTab === "circle" ? "circle" : base.carnetJournalTab,
+        carnetJournalTab: "mine",
+        socialTab: parsed.socialTab === "live" ? "live" : "feed",
+        socialFeedFilter:
+          parsed.socialFeedFilter === "cloud"
+            ? "cloud"
+            : parsed.socialFeedFilter === "circle" || parsed.socialFeedFilter === "following"
+              ? "following"
+              : parsed.socialFeedFilter === "all"
+                ? "all"
+                : base.socialFeedFilter,
       };
       purgeLegacyDemoContent(merged);
       return merged;
@@ -2591,7 +2600,8 @@
       Object.assign(route, m);
       if (m.hubTab === "albums" || m.hubTab === "import") state.exploreTab = m.hubTab;
       if (m.hubTab === "journal" || m.hubTab === "pile" || m.hubTab === "lists") state.carnetTab = m.hubTab;
-      if (m.hubTab === "community" || m.hubTab === "live") state.socialTab = m.hubTab;
+      if (m.hubTab === "community") m.hubTab = "feed";
+      if (m.hubTab === "feed" || m.hubTab === "live") state.socialTab = m.hubTab;
     }
   }
 
@@ -2656,14 +2666,14 @@
   }
 
   function renderSocialHub() {
-    const raw = route.hubTab || state.socialTab || "community";
-    const tab = raw === "live" ? "live" : "community";
+    const raw = route.hubTab || state.socialTab || "feed";
+    const tab = raw === "live" ? "live" : raw === "community" ? "feed" : "feed";
     route.hubTab = tab;
     state.socialTab = tab;
     const tabs = hubTabsHtml(
       [
-        { id: "community", label: "Cercle" },
-        { id: "live", label: "Live" },
+        { id: "feed", label: "Activité" },
+        { id: "live", label: "Concerts" },
       ],
       tab,
       "social"
@@ -2678,7 +2688,7 @@
       body = renderSocial();
     }
     const title = tab === "live" ? "I was there !" : "Communauté";
-    return `<div class="hub-page view-social-themed" data-hub-page="social" data-social-hub-tab="${tab}"><header class="hub-page__head"><p class="hub-page__kicker">Social</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
+    return `<div class="hub-page view-social-themed" data-hub-page="social" data-social-hub-tab="${tab}"><header class="hub-page__head"><p class="hub-page__kicker">Social — activité des proches</p><h1 class="hub-page__title">${title}</h1><p class="hub-page__sub feed-note">Écoutes et critiques de ton cercle. Ton univers personnel est dans <button type="button" class="link" data-nav-view="carnet">Mon carnet</button>.</p>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
   }
 
   function openInboxDrawer(threadId) {
@@ -3035,7 +3045,8 @@
     } else if (view === "carnet") {
       route.hubTab = state.carnetTab || "journal";
     } else if (view === "social") {
-      route.hubTab = state.socialTab || "community";
+      const st = state.socialTab || "feed";
+      route.hubTab = st === "community" ? "feed" : st;
     } else {
       route.hubTab = null;
     }
@@ -3125,7 +3136,7 @@
     else if (h === "a-ecouter") route.view = "wishlist";
     else if (h === "communaute" || h === "social") {
       route.view = "social";
-      route.hubTab = "community";
+      route.hubTab = "feed";
     }
     else if (h.startsWith("messagerie/")) {
       route.view = "inbox";
@@ -3373,11 +3384,35 @@
     return c.rows.map((row) => publicFeedPostHtml(row)).filter(Boolean).join("");
   }
 
+  function isMeUserId(userId) {
+    if (userId === "me") return true;
+    if (cloudSignedIn() && SLCloud.me && userId === SLCloud.me.id) return true;
+    return false;
+  }
+
+  /** Fil Social — activité des proches uniquement (pas le carnet personnel). */
+  function socialFeedItems() {
+    const ids = feedCircleIds();
+    const base = cloudSignedIn()
+      ? unifiedFeedItems()
+      : state.listenings.filter((l) => ids.has(l.userId));
+    return base
+      .filter((l) => !isMeUserId(l.userId))
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  }
+
+  /** Fil accueil / following global (peut inclure soi). */
   function feedItems() {
     if (cloudSignedIn()) return unifiedFeedItems();
     const ids = feedCircleIds();
     return state.listenings
       .filter((l) => ids.has(l.userId))
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+  }
+
+  function personalFeedItems() {
+    return state.listenings
+      .filter((l) => l.userId === "me")
       .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
   }
 
@@ -4675,10 +4710,10 @@
   }
 
   function renderDiary() {
-    const mine = state.listenings.filter((l) => l.userId === "me");
+    state.carnetJournalTab = "mine";
+    const mine = personalFeedItems();
     const stats = computeDiaryStats(mine);
     const filter = state.diaryFilter || "all";
-    const journalTab = state.carnetJournalTab === "circle" ? "circle" : "mine";
     const filters = [
       { id: "all", label: "Tout" },
       { id: "reviewed", label: "Avec critique" },
@@ -4690,18 +4725,16 @@
           `<button type="button" class="diary-filter${filter === f.id ? " is-active" : ""}" data-diary-filter="${f.id}">${f.label}</button>`
       )
       .join("");
-    const journalTabs =
-      window.SLCarnetSocial && SLCarnetSocial.renderJournalTabs
-        ? SLCarnetSocial.renderJournalTabs(journalTab)
-        : "";
     const feedHtml =
-      window.SLCarnetSocial && SLCarnetSocial.renderFeedHtml
-        ? SLCarnetSocial.renderFeedHtml(journalTab)
-        : `<p class="feed-note">Fil social indisponible.</p>`;
+      window.SLCarnetSocial && SLCarnetSocial.renderPersonalJournal
+        ? SLCarnetSocial.renderPersonalJournal()
+        : window.SLCarnetSocial && SLCarnetSocial.renderFeedHtml
+          ? SLCarnetSocial.renderFeedHtml()
+          : `<p class="feed-note">Journal indisponible.</p>`;
 
-    return `<div class="diary-carnet diary-carnet--social view-themed">
+    return `<div class="diary-carnet diary-carnet--personal view-themed">
       <header class="diary-carnet__masthead">
-        <p class="diary-carnet__lead">Ton carnet devient un fil social — likes, réactions et commentaires sur chaque écoute.</p>
+        <p class="diary-carnet__lead">Ton journal personnel — écoutes, notes et critiques. Pour voir tes proches, ouvre <button type="button" class="link" data-nav-view="social">Social</button>.</p>
         <button type="button" class="btn btn-primary" id="btn-add-listen">+ Logger</button>
         <div class="diary-stats" aria-label="Statistiques du journal">
           <div class="diary-stat"><b>${stats.total}</b><span>écoutes</span></div>
@@ -4711,11 +4744,10 @@
           <div class="diary-stat"><b>${stats.thisMonth}</b><span>ce mois</span></div>
         </div>
         <div class="diary-carnet__toolbar">
-          ${journalTab === "mine" ? `<div class="diary-filters" role="tablist" aria-label="Filtrer le journal">${filtersHtml}</div>` : ""}
+          <div class="diary-filters" role="tablist" aria-label="Filtrer le journal">${filtersHtml}</div>
         </div>
       </header>
-      ${journalTabs}
-      <div class="diary-timeline diary-timeline--social">${feedHtml}</div>
+      <div class="diary-timeline diary-timeline--personal">${feedHtml}</div>
     </div>`;
   }
 
@@ -5767,10 +5799,12 @@
     const carnetHub = $main.querySelector('[data-hub-page="carnet"]');
     if (carnetHub && window.SLCarnetSocial) {
       SLCarnetSocial.bind(carnetHub);
-      void (async () => {
-        await SLCarnetSocial.hydrateFeed(carnetHub);
-        if (state.carnetJournalTab === "circle") await SLCarnetSocial.hydrateCircleStream();
-      })();
+      void SLCarnetSocial.hydrateFeed(carnetHub);
+    }
+    const socialHub = $main.querySelector('[data-hub-page="social"]');
+    if (socialHub && window.SLCarnetSocial) {
+      SLCarnetSocial.bind(socialHub);
+      void SLCarnetSocial.hydrateCommunityFeed(socialHub);
     }
     if (window.__slSyncTopbarStack) requestAnimationFrame(window.__slSyncTopbarStack);
   }
@@ -6213,6 +6247,8 @@
       feedPreviewSectionHtml,
       feedCircleIds,
       feedItems,
+      socialFeedItems,
+      navigate,
       feedStoryStripHtml,
       formatRelativeFeedTime,
       userById,
@@ -6253,8 +6289,9 @@
       mergeCloudAlbumFromRow,
       ensureAlbumFromPublicFeedRow,
       filterDiaryListenings,
-      diaryDateLabel,
+      socialFeedItems,
       userById,
+      diaryDateLabel,
       isCloudUuid,
       toggleListeningLike,
       SLCloud: window.SLCloud,
@@ -6638,12 +6675,13 @@
     $main.querySelectorAll("[data-carnet-journal-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const tab = btn.getAttribute("data-carnet-journal-tab") || "mine";
-        state.carnetJournalTab = tab;
-        if (window.SLCarnetSocial && window.SLCarnetSocial.invalidateCircleCache) {
-          SLCarnetSocial.invalidateCircleCache();
+        if (tab === "circle") {
+          navigate("social", { hubTab: "feed" });
+          return;
         }
+        state.carnetJournalTab = "mine";
         persist();
-        render();
+        render({ trustRoute: true });
       });
     });
     $main.querySelectorAll("[data-diary-filter]").forEach((btn) => {
@@ -6974,7 +7012,8 @@
     });
     document.querySelectorAll("[data-social-feed-filter]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        state.socialFeedFilter = btn.getAttribute("data-social-feed-filter") || "all";
+        const f = btn.getAttribute("data-social-feed-filter") || "following";
+        state.socialFeedFilter = f === "circle" ? "following" : f;
         persist();
         render();
       });

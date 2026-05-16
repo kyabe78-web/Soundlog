@@ -112,6 +112,69 @@
       .join("")}</div>`;
   }
 
+  /** Entrée journal personnel — sans interactions sociales (likes/commentaires du cercle). */
+  function renderPersonalPost(listening, album) {
+    const x = d();
+    if (!listening || !album) return "";
+    const lid = listening.id;
+    const when = listening.date || listening.createdAt || "";
+    const review = listening.review || listening.comment || "";
+    const label = x.diaryDateLabel ? x.diaryDateLabel(when) : when;
+
+    return `<article class="diary-entry diary-entry--personal" data-listening-id="${x.escapeHtml(lid)}" data-preview-album="${x.escapeHtml(album.id)}">
+      <div class="diary-entry__cover">${x.coverHtml(album, false)}</div>
+      <div class="diary-entry__body">
+        <div class="diary-entry__meta">
+          <time datetime="${x.escapeHtml(when)}">${x.escapeHtml(label)}</time>
+          <span class="diary-entry__badge">Mon carnet</span>
+        </div>
+        <h3 class="diary-entry__title"><button type="button" class="link" data-album="${x.escapeHtml(album.id)}">${x.escapeHtml(album.title)}</button></h3>
+        <p class="diary-entry__artist">${x.escapeHtml(album.artist)}${album.year ? ` · ${album.year}` : ""}</p>
+        <div class="diary-entry__stars">${x.starString(listening.rating)}</div>
+        ${review ? `<p class="diary-entry__review">${x.escapeHtml(String(review).trim())}</p>` : `<p class="diary-entry__review diary-entry__review--muted">Pas de critique.</p>`}
+        <div class="diary-entry__actions">
+          <button type="button" class="btn btn-ghost btn-sm" data-edit-listen="${x.escapeHtml(lid)}">Modifier</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-preview-play="${x.escapeHtml(album.id)}">Extrait</button>
+          <button type="button" class="btn btn-ghost btn-sm diary-entry__danger" data-del-listen="${x.escapeHtml(lid)}">Supprimer</button>
+        </div>
+      </div>
+    </article>`;
+  }
+
+  function renderPersonalJournal() {
+    const x = d();
+    const mine = x.state.listenings
+      .filter((l) => l.userId === "me")
+      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
+    const filtered = x.filterDiaryListenings(mine);
+    if (!filtered.length) {
+      return `<div class="carnet-feed carnet-feed--personal carnet-feed--empty">
+        <p class="diary-empty__title">${mine.length ? "Aucune entrée pour ce filtre" : "Ton journal est vide"}</p>
+        <p class="feed-note">Logue un album pour commencer ton carnet personnel.</p>
+        <p style="margin-top:1rem"><button type="button" class="btn btn-primary" id="btn-add-listen">+ Logger une écoute</button></p>
+      </div>`;
+    }
+    const posts = filtered
+      .map((l) => {
+        const al = x.albumById(l.albumId);
+        if (!al) return "";
+        return renderPersonalPost(l, al);
+      })
+      .filter(Boolean)
+      .join("");
+    return `<div class="carnet-feed carnet-feed--personal" data-carnet-feed="personal"><div class="carnet-feed__stream">${posts}</div></div>`;
+  }
+
+  function renderCommunityFeedShell() {
+    return `<section class="community-feed" data-social-community-feed aria-label="Activité de ton cercle">
+      <header class="community-feed__head">
+        <h2 class="community-feed__title">Activité des proches</h2>
+        <p class="community-feed__lead feed-note">Écoutes, critiques et réactions des personnes que tu suis — pas ton carnet personnel.</p>
+      </header>
+      <div class="community-feed__stream" data-social-community-stream><p class="feed-note">Chargement du fil…</p></div>
+    </section>`;
+  }
+
   function renderPost(listening, album, author) {
     const x = d();
     if (!listening || !album) return "";
@@ -423,54 +486,59 @@
     };
   }
 
-  function renderFeedHtml(tab) {
+  function renderFeedHtml() {
+    return renderPersonalJournal();
+  }
+
+  function renderLocalCommunityPosts() {
     const x = d();
-    const sub = tab || x.state.carnetJournalTab || "mine";
-    if (sub === "circle") {
-      return `<div class="carnet-feed carnet-feed--circle" data-carnet-feed="circle">
-        <p class="feed-note carnet-feed__hint">Fil de ton cercle — écoutes des personnes que tu suis et de tes ami·es.</p>
-        <div class="carnet-feed__stream" data-carnet-stream="circle"><p class="feed-note">Chargement du fil…</p></div>
-      </div>`;
-    }
-    const mine = x.state.listenings
-      .filter((l) => l.userId === "me")
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    const filtered = x.filterDiaryListenings(mine);
-    if (!filtered.length) {
-      return `<div class="carnet-feed carnet-feed--empty">
-        <p class="diary-empty__title">${mine.length ? "Aucune entrée pour ce filtre" : "Ton journal est vide"}</p>
-        <p class="feed-note">Logue un album pour lancer ton fil social.</p>
-        <p style="margin-top:1rem"><button type="button" class="btn btn-primary" id="btn-add-listen">+ Logger une écoute</button></p>
-      </div>`;
-    }
-    const posts = filtered
+    const items =
+      typeof x.socialFeedItems === "function"
+        ? x.socialFeedItems()
+        : x.state.listenings.filter((l) => l.userId !== "me");
+    if (!items.length) return "";
+    return items
+      .slice(0, 32)
       .map((l) => {
         const al = x.albumById(l.albumId);
-        if (!al) return "";
-        return renderPost(l, al, { name: x.state.profile.displayName || "Toi", hue: x.state.profile.hue || 152 });
+        const u = x.userById(l.userId);
+        if (!al || !u) return "";
+        return renderPost(l, al, { name: u.name, hue: u.hue });
       })
       .filter(Boolean)
       .join("");
-    return `<div class="carnet-feed" data-carnet-feed="mine"><div class="carnet-feed__stream">${posts}</div></div>`;
   }
 
-  async function hydrateCircleStream() {
-    const stream = document.querySelector('[data-carnet-stream="circle"]');
+  async function hydrateCommunityFeed(root) {
+    const scope = root || document;
+    const stream = scope.querySelector("[data-social-community-stream]");
     if (!stream) return;
+
+    const localHtml = renderLocalCommunityPosts();
     if (!cloudOn()) {
-      stream.innerHTML = `<p class="feed-note">Connecte-toi pour voir le fil de ton cercle.</p>`;
+      stream.innerHTML = localHtml
+        ? localHtml
+        : `<div class="community-feed__empty"><p class="soc-empty__title">Ton cercle est calme</p><p class="feed-note">Suis des profils ou connecte-toi pour voir l’activité des proches.</p><p><button type="button" class="btn btn-primary btn-sm" data-nav-view="carnet">Mon carnet</button> <button type="button" class="btn btn-ghost btn-sm" data-social-circle-tab="discover">Découvrir</button></p></div>`;
+      if (localHtml) await hydrateFeed(scope.querySelector("[data-social-community-feed]") || scope);
       return;
     }
+
     const rows = await fetchCircleRows();
-    if (!rows.length) {
-      stream.innerHTML = `<p class="feed-note">Ton cercle est calme — suis des profils ou ajoute des ami·es.</p>`;
-      return;
+    const cloudItems = rows.map(mapCloudListening).filter(Boolean);
+    const cloudHtml = cloudItems.map((it) => renderPost(it.listening, it.album, it.author)).join("");
+
+    if (!cloudHtml && !localHtml) {
+      stream.innerHTML = `<div class="community-feed__empty"><p class="soc-empty__title">Aucune activité pour l’instant</p><p class="feed-note">Invite des ami·es ou découvre des profils — leur carnet apparaîtra ici.</p></div>`;
+    } else {
+      stream.innerHTML =
+        (cloudHtml ? `<div class="community-feed__section"><p class="community-feed__kicker">En ligne</p>${cloudHtml}</div>` : "") +
+        (localHtml ? `<div class="community-feed__section"><p class="community-feed__kicker">Sur cet appareil</p>${localHtml}</div>` : "");
     }
-    const items = rows.map(mapCloudListening).filter(Boolean);
-    stream.innerHTML = items
-      .map((it) => renderPost(it.listening, it.album, it.author))
-      .join("");
-    await hydrateFeed(document.querySelector('[data-carnet-feed="circle"]'));
+    await hydrateFeed(scope.querySelector("[data-social-community-feed]") || scope);
+  }
+
+  async function hydrateCircleStream(root) {
+    return hydrateCommunityFeed(root);
   }
 
   async function hydrateFeed(root) {
@@ -609,15 +677,11 @@
     install(dep) {
       deps = dep;
     },
-    renderJournalTabs(active) {
-      const sub = active || (d() && d().state.carnetJournalTab) || "mine";
-      return `<div class="carnet-journal-tabs" role="tablist" aria-label="Fil du carnet">
-        <button type="button" class="carnet-journal-tab${sub === "mine" ? " is-active" : ""}" data-carnet-journal-tab="mine" role="tab">Ton fil</button>
-        <button type="button" class="carnet-journal-tab${sub === "circle" ? " is-active" : ""}" data-carnet-journal-tab="circle" role="tab">Cercle</button>
-      </div>`;
-    },
+    renderPersonalJournal,
+    renderCommunityFeedShell,
     renderFeedHtml,
     hydrateFeed,
+    hydrateCommunityFeed,
     hydrateCircleStream,
     bind,
     invalidateCircleCache() {

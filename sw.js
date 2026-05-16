@@ -1,5 +1,5 @@
 /* Soundlog — service worker (offline shell, network-first for app code) */
-const CACHE = "soundlog-shell-v31";
+const CACHE = "soundlog-shell-v32";
 const SHELL = [
   "/",
   "/index.html",
@@ -39,6 +39,7 @@ const NETWORK_FIRST = [
   "/mignon-radio.js",
   "/mignon-viz.js",
   "/mignon-polish.css",
+  "/mignon-clean.css",
   "/mignon-v3.css",
   "/mignon-pixel.css",
   "/mignon-ref.css",

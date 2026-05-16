@@ -1,0 +1,700 @@
+/* =========================================================================
+   MIGNON CLEAN — minimal retro game UI (source of truth when .mg-clean)
+   ========================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap");
+
+.app-content[data-route="mignon"] {
+  --mc-bg: #0e0c14;
+  --mc-panel: #16121f;
+  --mc-border: #2e2840;
+  --mc-text: #e6e2f0;
+  --mc-muted: #8a849c;
+  --mc-accent: #e878a8;
+  --mc-accent-dim: #9a5880;
+  --mc-green: #78d890;
+  --mc-orange: #e8b060;
+  --mc-purple: #a090c8;
+}
+
+/* Hide legacy clutter layers */
+.mg-page.mg-clean .mg-crt-overlay,
+.mg-page.mg-clean .mg-crt-chroma,
+.mg-page.mg-clean .mg-handheld,
+.mg-page.mg-clean .mg-ref-body,
+.mg-page.mg-clean .mg-ref-deck,
+.mg-page.mg-clean .mg-ref-worlds,
+.mg-page.mg-clean .mg-ref-footer {
+  display: none !important;
+}
+
+.mg-page.mg-clean {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 12px 10px 24px;
+  color: var(--mc-text);
+  font-family: "VT323", monospace;
+  font-size: 1.1rem;
+  line-height: 1.35;
+  -webkit-font-smoothing: none;
+}
+
+.mg-clean-shell {
+  background: var(--mc-panel);
+  border: 2px solid var(--mc-border);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.35);
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* ── HUD ── */
+.mg-clean-hud {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  grid-template-rows: auto auto;
+  gap: 6px 12px;
+  align-items: center;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--mc-border);
+}
+
+.mg-clean-hud__identity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mg-clean-hud__name {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.5rem;
+  color: var(--mc-accent);
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed var(--mc-border);
+  padding: 2px 0;
+  min-width: 100px;
+  max-width: 180px;
+}
+
+.mg-clean-hud__lvl,
+.mg-clean-hud__mood {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.35rem;
+  color: var(--mc-muted);
+}
+
+.mg-clean-hud__xp {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mg-clean-hud__xp-bar {
+  flex: 1;
+  height: 6px;
+  background: #0a0810;
+  border: 1px solid var(--mc-border);
+  max-width: 280px;
+}
+
+.mg-clean-hud__xp-bar i {
+  display: block;
+  height: 100%;
+  background: var(--mc-orange);
+}
+
+.mg-clean-hud__xp-label {
+  font-size: 0.85rem;
+  color: var(--mc-muted);
+}
+
+.mg-clean-hud__vibe {
+  margin: 0;
+  font-size: 0.9rem;
+  color: var(--mc-muted);
+}
+
+.mg-clean-hud__meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: end;
+}
+
+.mg-clean-hud__coins {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.32rem;
+  color: var(--mc-orange);
+}
+
+.mg-clean-hud__btn {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--mc-border);
+  background: #12101a;
+  color: var(--mc-muted);
+  cursor: pointer;
+  font-size: 0.75rem;
+  line-height: 1;
+}
+
+.mg-clean-hud__btn.is-on {
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+}
+
+/* ── Main layout ── */
+.mg-clean-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 260px);
+  gap: 10px;
+  align-items: start;
+}
+
+.mg-clean-core {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+/* ── Sanctuary (hero) ── */
+.mg-clean-sanctuary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.mg-clean-stage {
+  position: relative;
+  min-height: min(52vh, 380px);
+  background: #08060e;
+  border: 2px solid var(--mc-border);
+  overflow: hidden;
+}
+
+.mg-clean-stage .px-room {
+  position: absolute;
+  inset: 0;
+}
+
+.mg-clean-stage__creature,
+.mg-clean-stage .mg-stage__creature {
+  position: absolute;
+  left: 50%;
+  bottom: 14%;
+  transform: translateX(-50%) scale(1.35);
+  transform-origin: bottom center;
+  z-index: 12;
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, 0.4));
+}
+
+.mg-clean-stage .px-radiobot {
+  transform: scale(1.1);
+  transform-origin: bottom center;
+}
+
+.mg-clean-stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+}
+
+.mg-clean-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: #12101a;
+  border: 1px solid var(--mc-border);
+}
+
+.mg-clean-stat__icon {
+  font-size: 0.85rem;
+  opacity: 0.9;
+}
+
+.mg-clean-stat__track {
+  flex: 1;
+  height: 5px;
+  background: #0a0810;
+}
+
+.mg-clean-stat__track i {
+  display: block;
+  height: 100%;
+}
+
+.mg-clean-stat--happy i { background: var(--mc-accent); }
+.mg-clean-stat--energy i { background: var(--mc-green); }
+.mg-clean-stat--hunger i { background: var(--mc-orange); }
+.mg-clean-stat--affinity i { background: var(--mc-purple); }
+
+.mg-clean-actions {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.mg-clean-action {
+  width: 44px;
+  height: 44px;
+  border: 2px solid var(--mc-border);
+  background: #1a1624;
+  color: var(--mc-text);
+  font-size: 1.1rem;
+  cursor: pointer;
+  box-shadow: 0 2px 0 #08060e;
+}
+
+.mg-clean-action:hover {
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+}
+
+.mg-clean-action:active {
+  transform: translateY(2px);
+  box-shadow: none;
+}
+
+.mg-clean-action--sleep {
+  color: var(--mc-purple);
+}
+
+/* ── Dock ── */
+.mg-clean-dock {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+  padding-top: 4px;
+  border-top: 1px solid var(--mc-border);
+}
+
+.mg-clean-dock__btn {
+  flex: 1;
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  background: #12101a;
+  color: var(--mc-muted);
+  cursor: pointer;
+  position: relative;
+}
+
+.mg-clean-dock__btn:hover {
+  border-color: var(--mc-border);
+  color: var(--mc-text);
+}
+
+.mg-clean-dock__btn.is-active {
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+  background: #1c1828;
+}
+
+.mg-clean-dock__icon {
+  font-size: 1rem;
+}
+
+.mg-clean-dock__label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.22rem;
+  letter-spacing: 0.02em;
+}
+
+.mg-clean-dock__dot {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  width: 6px;
+  height: 6px;
+  background: var(--mc-green);
+  border-radius: 50%;
+}
+
+/* ── Radio column ── */
+.mg-clean-radio {
+  position: sticky;
+  top: 10px;
+  min-width: 0;
+}
+
+.mg-clean-radio .mg-radio-panel {
+  border: 2px solid var(--mc-border);
+  background: #12101a;
+  padding: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  box-shadow: none;
+  min-height: 0;
+  max-height: none;
+}
+
+.mg-radio--clean .mg-radio-panel__head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 0;
+  border: none;
+  background: none;
+}
+
+.mg-radio--clean .mg-radio-panel__title {
+  margin: 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.42rem;
+  color: var(--mc-accent);
+  text-shadow: none;
+}
+
+.mg-radio--clean .mg-radio-panel__station {
+  margin: 4px 0 0;
+  font-size: 0.85rem;
+  color: var(--mc-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mg-radio--clean .mg-radio-tuner__led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #3a3848;
+  flex-shrink: 0;
+}
+
+.mg-radio--clean .mg-radio-tuner__led.is-live {
+  background: var(--mc-green);
+  box-shadow: 0 0 6px var(--mc-green);
+}
+
+.mg-radio--clean .mg-radio-toggle {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.32rem;
+  padding: 6px 8px;
+  border: 1px solid var(--mc-border);
+  background: #0e0c14;
+  color: var(--mc-muted);
+  cursor: pointer;
+}
+
+.mg-radio--clean .mg-radio-toggle.is-on {
+  border-color: var(--mc-green);
+  color: var(--mc-green);
+}
+
+.mg-radio--clean .mg-radio-viz {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  height: 28px;
+  padding: 4px 0;
+}
+
+.mg-radio--clean .mg-radio-now {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 8px;
+  background: #0e0c14;
+  border: 1px solid var(--mc-border);
+  min-height: 64px;
+}
+
+.mg-radio--clean .mg-radio-now__art {
+  width: 48px;
+  height: 48px;
+  flex-shrink: 0;
+  background: #1a1624 center/cover;
+  border: 1px solid var(--mc-border);
+}
+
+.mg-radio--clean .mg-radio-now__track {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.32rem;
+  line-height: 1.5;
+  margin: 0 0 4px;
+  color: var(--mc-text);
+}
+
+.mg-radio--clean .mg-radio-now__artist {
+  margin: 0;
+  font-size: 0.95rem;
+  color: var(--mc-muted);
+}
+
+.mg-radio--clean .mg-radio-now__idle {
+  margin: 0;
+  color: var(--mc-muted);
+  font-size: 0.95rem;
+}
+
+.mg-radio--clean .mg-radio-progress {
+  position: relative;
+  height: 6px;
+  background: #0a0810;
+  border: 1px solid var(--mc-border);
+  cursor: pointer;
+}
+
+.mg-radio--clean .mg-radio-progress__fill {
+  height: 100%;
+  background: var(--mc-accent);
+}
+
+.mg-radio--clean .mg-radio-progress__time,
+.mg-radio--clean .mg-radio-progress__dur {
+  position: absolute;
+  top: 10px;
+  font-size: 0.75rem;
+  color: var(--mc-muted);
+}
+
+.mg-radio--clean .mg-radio-progress__time { left: 0; }
+.mg-radio--clean .mg-radio-progress__dur { right: 0; }
+
+.mg-radio--clean .mg-radio-transport {
+  display: flex;
+  gap: 4px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.mg-radio--clean .mg-radio-transport button {
+  min-width: 36px;
+  height: 36px;
+  border: 1px solid var(--mc-border);
+  background: #1a1624;
+  color: var(--mc-text);
+  cursor: pointer;
+  font-size: 0.9rem;
+}
+
+.mg-radio--clean .mg-radio-play {
+  min-width: 44px;
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+}
+
+.mg-radio--clean .mg-radio-opt.is-on {
+  border-color: var(--mc-green);
+  color: var(--mc-green);
+}
+
+.mg-radio--clean .mg-radio-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.85rem;
+  color: var(--mc-muted);
+}
+
+.mg-radio--clean .mg-radio-volume {
+  flex: 1;
+  accent-color: var(--mc-accent);
+}
+
+.mg-radio--clean .mg-radio-more {
+  font-size: 0.85rem;
+  color: var(--mc-muted);
+}
+
+.mg-radio--clean .mg-radio-more summary {
+  cursor: pointer;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.28rem;
+  color: var(--mc-muted);
+  padding: 4px 0;
+}
+
+.mg-radio--clean .mg-radio-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin: 6px 0;
+}
+
+.mg-radio--clean .mg-radio-mode {
+  padding: 3px 5px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.22rem;
+  border: 1px solid var(--mc-border);
+  background: #0e0c14;
+  color: var(--mc-muted);
+  cursor: pointer;
+}
+
+.mg-radio--clean .mg-radio-mode.is-active {
+  border-color: var(--mc-accent);
+  color: var(--mc-accent);
+}
+
+.mg-radio--clean .mg-radio-queue {
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 100px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+}
+
+.mg-radio--clean .mg-radio-queue__item.is-now {
+  color: var(--mc-accent);
+}
+
+.mg-radio-full-badge {
+  margin-left: 4px;
+  padding: 0 3px;
+  font-size: 0.2rem;
+  color: var(--mc-green);
+  border: 1px solid var(--mc-green);
+}
+
+/* ── Overlays ── */
+.mg-clean-overlay-host {
+  position: relative;
+}
+
+.mg-clean-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  margin: auto;
+  max-width: min(640px, calc(100vw - 24px));
+  max-height: min(85vh, 720px);
+  overflow-y: auto;
+  padding: 16px;
+  background: var(--mc-panel);
+  border: 2px solid var(--mc-border);
+  box-shadow: 0 16px 48px rgba(0, 0, 0, 0.6);
+}
+
+.mg-clean-overlay__close {
+  float: right;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--mc-border);
+  background: #12101a;
+  color: var(--mc-muted);
+  cursor: pointer;
+  font-size: 1rem;
+}
+
+.mg-clean-overlay__title {
+  margin: 0 0 12px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.45rem;
+  color: var(--mc-accent);
+}
+
+.mg-clean-overlay__subtitle {
+  margin: 12px 0 6px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.3rem;
+  color: var(--mc-muted);
+}
+
+.mg-clean-foot {
+  display: flex;
+  gap: 8px;
+  justify-content: center;
+  padding-top: 8px;
+  border-top: 1px solid var(--mc-border);
+}
+
+.mg-clean-foot__link {
+  padding: 6px 12px;
+  border: 1px solid var(--mc-border);
+  background: #12101a;
+  color: var(--mc-muted);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.28rem;
+  cursor: pointer;
+}
+
+.mg-clean-foot__link:hover {
+  color: var(--mc-text);
+  border-color: var(--mc-accent);
+}
+
+/* Pixel crisp */
+.mg-page.mg-clean .px-room,
+.mg-page.mg-clean .px-creature,
+.mg-page.mg-clean .px-radiobot {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.mg-page.mg-clean.is-music-live .mg-clean-stage {
+  box-shadow: inset 0 0 24px rgba(232, 120, 168, 0.08);
+}
+
+[data-mg-focus].is-highlight {
+  outline: 2px solid var(--mc-accent);
+  outline-offset: 2px;
+}
+
+/* ── Responsive ── */
+@media (max-width: 900px) {
+  .mg-clean-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .mg-clean-radio {
+    position: static;
+  }
+
+  .mg-clean-stage {
+    min-height: min(44vh, 320px);
+  }
+
+  .mg-clean-stage__creature,
+  .mg-clean-stage .mg-stage__creature {
+    transform: translateX(-50%) scale(1.2);
+  }
+}
+
+@media (max-width: 520px) {
+  .mg-page.mg-clean {
+    padding: 8px 6px 16px;
+  }
+
+  .mg-clean-hud {
+    grid-template-columns: 1fr;
+  }
+
+  .mg-clean-hud__meta {
+    justify-self: start;
+  }
+
+  .mg-clean-stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .mg-clean-dock__label {
+    display: none;
+  }
+
+  .mg-clean-dock__btn {
+    min-width: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mg-page.mg-clean .px-creature[data-anim="idle"] .px-creature__eye,
+  .mg-page.is-music-live .px-radiobot[data-anim="dance"] {
+    animation: none !important;
+  }
+}

@@ -472,32 +472,21 @@
     const repeatLabel = repeatMode === "one" ? "①" : repeatMode === "all" ? "∞" : "↻";
     const playIcon = prog && !prog.paused && on ? "⏸" : "▶";
 
-    return `<aside class="mg-radio-panel mg-winamp${on ? " is-on" : ""}" id="mignon-radio-panel" aria-label="Lecteur radio">
+    return `<aside class="mg-radio-panel mg-radio--clean mg-winamp${on ? " is-on" : ""}" id="mignon-radio-panel" aria-label="Lecteur radio">
       <header class="mg-radio-panel__head">
         <div class="mg-radio-panel__brand">
-          <span class="mg-radio-panel__icon" aria-hidden="true"></span>
-          <div>
-            <h2 class="mg-radio-panel__title">RADIO AUTOMATIQUE</h2>
-            <p class="mg-radio-panel__station">${esc(station.label)}</p>
-          </div>
+          <h2 class="mg-radio-panel__title">Radio</h2>
+          <p class="mg-radio-panel__station">${esc(station.label)}<span class="mg-radio-tuner__led${on && meta && !prog?.paused ? " is-live" : ""}"></span></p>
         </div>
-        <button type="button" class="mg-radio-toggle${on ? " is-on" : ""}" data-radio-act="power" aria-pressed="${on ? "true" : "false"}">${on ? "PWR" : "OFF"}</button>
+        <button type="button" class="mg-radio-toggle${on ? " is-on" : ""}" data-radio-act="power" aria-pressed="${on ? "true" : "false"}">${on ? "ON" : "OFF"}</button>
       </header>
-      <div class="mg-radio-modes" role="group" aria-label="Mode station">${modeChipsHtml(prefs.mode)}</div>
-      <div class="mg-radio-tuner">
-        <span class="mg-radio-tuner__dial" aria-hidden="true"></span>
-        <span class="mg-radio-tuner__freq">${on ? "FM · " + esc(station.id.toUpperCase()) : "STANDBY"}</span>
-        <span class="mg-radio-tuner__led${on && meta && !prog?.paused ? " is-live" : ""}"></span>
-      </div>
-      <div class="mg-radio-viz${on ? " is-live" : ""}" data-mignon-viz aria-hidden="true">${window.SLMignonViz ? window.SLMignonViz.vizBarsHtml(16) : ""}</div>
-      <div class="mg-radio-wave${on && meta ? " is-live" : ""}" aria-hidden="true">${waveformHtml(on && meta)}</div>
+      <div class="mg-radio-viz${on ? " is-live" : ""}" data-mignon-viz aria-hidden="true">${window.SLMignonViz ? window.SLMignonViz.vizBarsHtml(10) : ""}</div>
       <div class="mg-radio-now${meta ? "" : " is-idle"}">
         ${meta ? `<div class="mg-radio-now__art" style="${meta.artwork ? `background-image:url('${esc(meta.artwork)}')` : ""}"></div>
         <div class="mg-radio-now__meta">
           <p class="mg-radio-now__track">${esc(meta.title)}${meta.isFull ? '<span class="mg-radio-full-badge">FULL</span>' : ""}</p>
           <p class="mg-radio-now__artist">${esc(meta.artist)}</p>
-          <p class="mg-radio-now__album">${esc(meta.album)}</p>
-        </div>` : `<p class="mg-radio-now__idle">${on ? "▸ Tuning depuis tes logs…" : "Radio en veille — PWR pour démarrer"}</p>`}
+        </div>` : `<p class="mg-radio-now__idle">${on ? "▸ Tuning depuis tes logs…" : "Appuie sur ON pour démarrer"}</p>`}
       </div>
       <div class="mg-radio-progress" id="mignon-radio-progress" role="slider" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${prog ? Math.round(prog.pct) : 0}">
         <span class="mg-radio-progress__fill" style="width:${prog ? prog.pct : 0}%"></span>
@@ -517,10 +506,11 @@
         <input type="range" class="mg-radio-volume" id="mignon-radio-volume" min="0" max="100" value="${Math.round(radioVolume * 100)}" aria-label="Volume" />
         <span class="mg-radio-volume__pct">${Math.round(radioVolume * 100)}%</span>
       </div>
-      <p class="mg-radio-scroll" aria-hidden="true">${meta ? `▸ ${meta.artist} — ${meta.title} ◂` : "··· underground · pixel · cozy ····"}</p>
-      <h3 class="mg-radio-queue__label">▸ File</h3>
-      <ul class="mg-radio-queue">${queuePreview || '<li class="mg-radio-queue__empty">Log des écoutes pour alimenter la radio.</li>'}</ul>
-      <p class="mg-radio-tags">${esc(station.tags.slice(0, 4).join(" · ") || vibe)}</p>
+      <details class="mg-radio-more">
+        <summary>Options</summary>
+        <div class="mg-radio-modes" role="group" aria-label="Mode">${modeChipsHtml(prefs.mode)}</div>
+        <ul class="mg-radio-queue">${queuePreview || '<li class="mg-radio-queue__empty">Log des écoutes pour alimenter la radio.</li>'}</ul>
+      </details>
     </aside>`;
   }
 
@@ -545,7 +535,7 @@
     const toggle = panel.querySelector(".mg-radio-toggle");
     if (toggle) {
       toggle.classList.toggle("is-on", on);
-      toggle.textContent = on ? "PWR" : "OFF";
+      toggle.textContent = on ? "ON" : "OFF";
       toggle.setAttribute("aria-pressed", on ? "true" : "false");
     }
 
@@ -576,11 +566,10 @@
         <div class="mg-radio-now__meta">
           <p class="mg-radio-now__track">${meta.title.replace(/</g, "&lt;")}${meta.isFull ? '<span class="mg-radio-full-badge">FULL</span>' : ""}</p>
           <p class="mg-radio-now__artist">${meta.artist.replace(/</g, "&lt;")}</p>
-          <p class="mg-radio-now__album">${meta.album.replace(/</g, "&lt;")}</p>
         </div>`;
       } else {
         now.classList.add("is-idle");
-        now.innerHTML = `<p class="mg-radio-now__idle">${on ? "▸ Tuning depuis tes logs…" : "Radio en veille — PWR pour démarrer"}</p>`;
+        now.innerHTML = `<p class="mg-radio-now__idle">${on ? "▸ Tuning depuis tes logs…" : "Appuie sur ON pour démarrer"}</p>`;
       }
     }
 

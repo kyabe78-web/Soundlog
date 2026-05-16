@@ -410,6 +410,46 @@ main.app-content {
   display: none;
 }
 
+.cover-frame--loading::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  border-radius: inherit;
+  background: linear-gradient(
+    110deg,
+    rgba(255, 255, 255, 0.04) 8%,
+    rgba(255, 255, 255, 0.12) 18%,
+    rgba(255, 255, 255, 0.04) 33%
+  );
+  background-size: 200% 100%;
+  animation: cover-shimmer 1.1s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.cover-frame--loading .cover-img {
+  opacity: 0;
+}
+
+.cover-frame.has-art:not(.cover-frame--loading) .cover-img.is-loaded,
+.cover-frame.has-art:not(.cover-frame--loading) .cover-img {
+  opacity: 1;
+  transition: opacity 0.35s var(--ease);
+}
+
+.cover-frame.is-broken .cover-fallback-icon {
+  opacity: 0.5;
+}
+
+@keyframes cover-shimmer {
+  0% {
+    background-position: 100% 0;
+  }
+  100% {
+    background-position: -100% 0;
+  }
+}
+
 .cover-text {
   position: absolute;
   left: 0.65rem;

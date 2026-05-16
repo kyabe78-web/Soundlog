@@ -1184,26 +1184,42 @@
   }
 
   function mergeCloudAlbumFromRow(row) {
-    if (!row || !row.id) return null;
-    const existing = albumById(row.id);
-    if (existing) return existing;
+    return ingestRemoteAlbumRow(row, { persist: true });
+  }
+
+  function ingestRemoteAlbumRow(remote, opts) {
+    if (!remote || !remote.id) return null;
+    opts = opts || {};
+    const art = remote.artwork_url || remote.artworkUrl || "";
+    let al = albumById(remote.id);
+    if (al) {
+      if (art && window.SLArtwork) SLArtwork.patchAlbumArtwork(al, art);
+      else if (art && !bestArtworkUrl(al)) {
+        al.artworkUrl = art;
+        const imp = (state.importedAlbums || []).find((a) => a.id === remote.id);
+        if (imp) imp.artworkUrl = art;
+      }
+      return al;
+    }
     state.importedAlbums = state.importedAlbums || [];
-    const g = gradientFromKey(String(row.id));
+    const g = gradientFromKey(String(remote.id));
     state.importedAlbums.push({
-      id: row.id,
-      title: row.title || "?",
-      artist: row.artist || "?",
-      year: row.year || new Date().getFullYear(),
-      genre: row.genre || "",
-      artworkUrl: row.artwork_url || "",
-      musicbrainzReleaseId: row.musicbrainz_release_id || null,
-      appleCollectionId: row.apple_collection_id || null,
-      deezerAlbumId: row.deezer_album_id || null,
+      id: remote.id,
+      title: remote.title || "?",
+      artist: remote.artist || "?",
+      year: remote.year || new Date().getFullYear(),
+      genre: remote.genre || "",
+      artworkUrl: art,
       from: g.from,
       to: g.to,
+      musicbrainzReleaseId: remote.musicbrainz_release_id || null,
+      appleCollectionId: remote.apple_collection_id || null,
+      deezerAlbumId: remote.deezer_album_id || null,
     });
-    persist();
-    return albumById(row.id);
+    if (opts.persist) persist();
+    al = albumById(remote.id);
+    if (al && art && window.SLArtwork) SLArtwork.patchAlbumArtwork(al, art);
+    return al;
   }
 
   function recoCoverHtml(r) {
@@ -2469,12 +2485,18 @@
     '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>';
 
   function bestArtworkUrl(album) {
-    let url = String((album && album.artworkUrl) || "").trim();
+    if (window.SLArtwork && album) {
+      const chain = SLArtwork.buildUrlChain(album);
+      if (chain[0]) return chain[0];
+    }
+    let url = String((album && (album.artworkUrl || album.artwork_url)) || "").trim();
     if (!url) return "";
-    return url
-      .replace(/100x100bb/gi, "600x600bb")
-      .replace(/\/100x100-/gi, "/600x600-")
-      .replace(/cover_medium/gi, "cover_big");
+    return window.SLArtwork && SLArtwork.upgradeArtworkUrl
+      ? SLArtwork.upgradeArtworkUrl(url)
+      : url
+          .replace(/100x100bb/gi, "600x600bb")
+          .replace(/\/100x100-/gi, "/600x600-")
+          .replace(/cover_medium/gi, "cover_big");
   }
 
   function coverHtml(album, small, sizeHint) {
@@ -2484,12 +2506,20 @@
     const grad = coverStyle(album);
     const label = escapeHtml(`${album.title} — ${album.artist || ""}`.trim());
     const titleBit = escapeHtml(small ? album.title.slice(0, 20) : album.title);
-    const frameCls = ["cover-frame", "cover-frame--" + size, artUrl ? "has-art" : ""].filter(Boolean).join(" ");
+    const needsResolve = !artUrl && album.id && album.title;
+    const frameCls = [
+      "cover-frame",
+      "cover-frame--" + size,
+      artUrl ? "has-art cover-frame--loading" : "",
+      needsResolve ? "needs-artwork" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
     const coverCls = artUrl ? "cover has-img" : "cover is-fallback";
     const img = artUrl
       ? `<img class="cover-img" src="${escapeHtml(artUrl)}" alt="${label}" loading="lazy" decoding="async" width="600" height="600" />`
       : "";
-    return `<div class="${frameCls}" data-album="${escapeHtml(album.id || "")}" style="${albumTintStyle(album)}">
+    return `<div class="${frameCls}" data-cover-id="${escapeHtml(album.id || "")}" data-album="${escapeHtml(album.id || "")}" style="${albumTintStyle(album)}">
       <div class="cover-glow" style="${grad}" aria-hidden="true"></div>
       <div class="${coverCls}" style="${grad}" role="img" aria-label="${label}">
         ${img}
@@ -3176,7 +3206,12 @@
     const id = row.album_id;
     if (!id) return null;
     let al = albumById(id);
-    if (al) return al;
+    const art = row.artwork_url || "";
+    if (al) {
+      if (art && window.SLArtwork) SLArtwork.patchAlbumArtwork(al, art);
+      else if (art && !bestArtworkUrl(al)) al.artworkUrl = art;
+      return al;
+    }
     state.importedAlbums = state.importedAlbums || [];
     if (!state.importedAlbums.some((a) => a.id === id)) {
       state.importedAlbums.push({
@@ -4122,20 +4157,8 @@
     try {
       const remote = await SLCloud.getAlbumById(albumId);
       if (!remote) return null;
-      state.importedAlbums = state.importedAlbums || [];
-      if (!state.importedAlbums.some((a) => a.id === remote.id)) {
-        state.importedAlbums.push({
-          id: remote.id,
-          title: remote.title,
-          artist: remote.artist,
-          year: remote.year,
-          genre: remote.genre,
-          artworkUrl: remote.artwork_url,
-          appleCollectionId: remote.apple_collection_id,
-          deezerAlbumId: remote.deezer_album_id,
-        });
-        persistLocalOnly();
-      }
+      ingestRemoteAlbumRow(remote, { persist: false });
+      persistLocalOnly();
       return albumById(albumId);
     } catch (_) {
       return null;
@@ -5736,6 +5759,9 @@
       });
     }
     bindRecoCardEvents($main);
+    if (window.SLArtwork) {
+      SLArtwork.wireCoverImages($main);
+    }
     if (window.__slSyncTopbarStack) requestAnimationFrame(window.__slSyncTopbarStack);
   }
 
@@ -8016,11 +8042,15 @@
     (e) => {
       const img = e.target;
       if (!img || !img.classList || !img.classList.contains("cover-img")) return;
+      if (window.SLArtwork && typeof SLArtwork.onCoverImgError === "function") {
+        void SLArtwork.onCoverImgError(img);
+        return;
+      }
       const frame = img.closest(".cover-frame");
       const cover = img.closest(".cover");
       if (frame) {
         frame.classList.add("is-broken");
-        frame.classList.remove("has-art");
+        frame.classList.remove("has-art", "cover-frame--loading");
       }
       if (cover) cover.classList.remove("has-img");
       img.remove();
@@ -8029,6 +8059,28 @@
   );
 
   applyTheme(getTheme());
+
+  if (window.SLArtwork) {
+    SLArtwork.install({
+      getAlbum: albumById,
+      allAlbums,
+      findImported: (id) => (state.importedAlbums || []).find((a) => a.id === id),
+      persist,
+      musicCountry,
+      edgeProxy: viaEdgeProxy,
+      onApplied: (albumId) => {
+        if ($main) SLArtwork.wireCoverImages($main);
+        if (route.view === "album" && route.albumId === albumId) {
+          requestAnimationFrame(() => applyAlbumBackdropTint());
+        }
+      },
+      onBatchDone: () => {
+        if ($main) SLArtwork.wireCoverImages($main);
+        scheduleSoftRender();
+      },
+    });
+    void SLArtwork.bootstrapCatalogArtwork();
+  }
 
   bindNotifHub();
   void (async function waitCloudBoot() {
@@ -8438,18 +8490,7 @@
       try {
         const remote = await SLCloud.getAlbumById(aid);
         if (!remote) return;
-        state.importedAlbums = state.importedAlbums || [];
-        if (state.importedAlbums.some((a) => a.id === remote.id)) return;
-        state.importedAlbums.push({
-          id: remote.id,
-          title: remote.title,
-          artist: remote.artist,
-          year: remote.year,
-          genre: remote.genre,
-          artworkUrl: remote.artwork_url,
-          appleCollectionId: remote.apple_collection_id,
-          deezerAlbumId: remote.deezer_album_id,
-        });
+        ingestRemoteAlbumRow(remote, { persist: false });
       } catch (e) {
         console.warn("[pull] album", aid, e);
       }

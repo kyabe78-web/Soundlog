@@ -8,7 +8,7 @@
     "preview": "npx --yes serve . -l 4173",
     "build": "node scripts/generate-config.js",
     "test:e2e": "playwright test",
-    "test:unit": "node tests/persistence.unit.js"
+    "test:unit": "node tests/persistence.unit.js && node tests/artwork.unit.js"
   },
   "devDependencies": {
     "@playwright/test": "^1.49.1"

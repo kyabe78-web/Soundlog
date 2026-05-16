@@ -674,16 +674,67 @@
     if (m.ambientOn) startAmbientForRoom(m);
   }
 
-  function placeDecor(itemId) {
+  function snapDecorPercent(clientX, clientY, rect) {
+    const cols = 8;
+    const rows = 5;
+    const px = clamp(((clientX - rect.left) / rect.width) * 100, 4, 96);
+    const py = clamp(((rect.bottom - clientY) / rect.height) * 100, 6, 94);
+    const x = (Math.round((px / 100) * cols) / cols) * 100;
+    const y = (Math.round((py / 100) * rows) / rows) * 100;
+    return { x: Math.round(x), y: Math.round(y) };
+  }
+
+  function placeDecorAt(itemId, x, y) {
     let m = getMignon("me");
     if (!m.inventory.furniture.includes(itemId)) return;
-    const x = 15 + Math.floor(Math.random() * 55);
-    const y = 12 + Math.floor(Math.random() * 25);
     m.roomLayout.placed = m.roomLayout.placed || [];
     if (m.roomLayout.placed.length >= 8) m.roomLayout.placed.shift();
     m.roomLayout.placed.push({ id: itemId, x, y });
     saveMignon(m);
     refreshMignonUI({ room: true });
+    if (d() && d().toast) d().toast("Objet placé dans le sanctuaire");
+  }
+
+  function placeDecor(itemId) {
+    const x = Math.round((Math.floor(Math.random() * 6) + 1) / 8 * 100);
+    const y = Math.round((Math.floor(Math.random() * 4) + 1) / 5 * 100);
+    placeDecorAt(itemId, x, y);
+  }
+
+  function wireDecorDrag(root) {
+    const stages = root.querySelectorAll("[data-mignon-decor-stage]");
+    if (!stages.length) return;
+    root.querySelectorAll("[data-mignon-drag]").forEach((chip) => {
+      chip.addEventListener("click", () => {
+        if (chip.disabled) return;
+        root._mignonDecorPending = chip.getAttribute("data-mignon-drag");
+        if (d() && d().toast) d().toast("Clique dans la pièce pour placer l'objet");
+      });
+      chip.addEventListener("dragstart", (e) => {
+        if (chip.disabled) return;
+        e.dataTransfer.setData("text/mignon-decor", chip.getAttribute("data-mignon-drag"));
+      });
+    });
+    stages.forEach((stage) => {
+      stage.addEventListener("dragover", (e) => e.preventDefault());
+      stage.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const id = e.dataTransfer.getData("text/mignon-decor");
+        if (!id) return;
+        const rect = stage.getBoundingClientRect();
+        const pos = snapDecorPercent(e.clientX, e.clientY, rect);
+        placeDecorAt(id, pos.x, pos.y);
+      });
+      stage.addEventListener("click", (e) => {
+        const pending = root._mignonDecorPending;
+        if (!pending || e.target.closest(".px-creature, .mg-action, [data-mignon-pet]")) return;
+        if (!root.querySelector('[data-mg-panel="decor"].is-active')) return;
+        const rect = stage.getBoundingClientRect();
+        const pos = snapDecorPercent(e.clientX, e.clientY, rect);
+        placeDecorAt(pending, pos.x, pos.y);
+        root._mignonDecorPending = null;
+      });
+    });
   }
 
   function renameMignon(name) {
@@ -866,15 +917,23 @@
       .join("");
     const skinCards = ENG()
       ? Object.values(ENG().ARCHETYPES)
-          .map((a) => {
+          .map((a, idx) => {
             const owned = m.unlockedSkins.includes(a.id);
             const active = m.equippedSkin === a.id;
-            return `<article class="mignon-skin-card${active ? " is-active" : ""}${!owned ? " is-locked" : ""}" data-mignon-skin="${a.id}">
-              <div class="mignon-skin-card__preview px-creature px-creature--skin-preview" data-skin="${a.id}"></div>
-              <h4>${d().escapeHtml(a.label)}</h4>
-              <p class="feed-note">${d().escapeHtml(a.desc)}</p>
-              <span class="mignon-skin-card__rarity mignon-skin-card__rarity--${a.rarity}">${d().escapeHtml(a.rarity)}</span>
-              ${owned ? `<button type="button" class="btn btn-ghost btn-sm" data-mignon-equip-skin="${a.id}">${active ? "Équipé" : "Équiper"}</button>` : "<span class=feed-note>Verrouillé</span>"}
+            const lore = a.lore || a.desc;
+            const aff = a.affinity || "—";
+            return `<article class="mg-dex-card mg-dex-card--${a.rarity}${active ? " is-active" : ""}${!owned ? " is-locked" : ""}" data-mignon-skin="${a.id}">
+              <header class="mg-dex-card__head">
+                <span class="mg-dex-card__no">#${String(idx + 1).padStart(2, "0")}</span>
+                <span class="mg-dex-card__rarity">${d().escapeHtml(a.rarity)}</span>
+              </header>
+              <div class="mg-dex-card__sprite">${owned ? creatureMarkup({ ...m, equippedSkin: a.id, anim: "idle" }, { compact: true }) : '<span class="mg-dex-card__lock">?</span>'}</div>
+              <div class="mg-dex-card__body">
+                <h4>${d().escapeHtml(a.label)}</h4>
+                <p class="mg-dex-card__lore">${d().escapeHtml(lore)}</p>
+                <p class="mg-dex-card__affinity">♫ ${d().escapeHtml(aff)}</p>
+                ${owned ? `<button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-equip-skin="${a.id}">${active ? "◆ Équipé" : "Équiper"}</button>` : '<span class="feed-note">Verrouillé</span>'}
+              </div>
             </article>`;
           })
           .join("")
@@ -883,7 +942,7 @@
       ? Object.values(ENG().FURNITURE)
           .map((f) => {
             const owned = m.inventory.furniture.includes(f.id);
-            return `<button type="button" class="mignon-decor-chip${owned ? "" : " is-locked"}" data-mignon-place="${f.id}" ${owned ? "" : "disabled"}>${d().escapeHtml(f.label)}</button>`;
+            return `<button type="button" class="mignon-decor-chip${owned ? "" : " is-locked"}" data-mignon-drag="${f.id}" draggable="${owned ? "true" : "false"}" ${owned ? "" : "disabled"}>${d().escapeHtml(f.label)}</button>`;
           })
           .join("")
       : "";
@@ -900,10 +959,15 @@
             )
             .join("")}</ul>`;
 
-    return `<div class="mg-page" data-mignon-page data-music-vibe="${d().escapeHtml(vibe)}">
+    return `<div class="mg-page mg-universe" data-mignon-page data-music-vibe="${d().escapeHtml(vibe)}">
+      <div class="mg-handheld"><div class="mg-handheld__bezel">
+          <div class="mg-handheld__brand">
+            <p class="mg-handheld__logo">MIGNON<span> // soundlog</span></p>
+            <span class="mg-handheld__led" aria-hidden="true"></span>
+          </div>
       <header class="mg-hud">
         <div class="mg-hud__left">
-          <p class="mg-hud__kicker">Univers Mignon · simulateur musical</p>
+          <p class="mg-hud__kicker">▸ compagnon musical</p>
           <h1 class="mg-hud__title">${d().escapeHtml(m.name)}</h1>
           <div class="mg-hud__stats">
             <span class="mg-pill">Niv. ${m.level}</span>
@@ -921,14 +985,15 @@
         </div>
       </header>
       <nav class="mg-tabs" role="tablist">
-        <button type="button" class="mg-tab is-active" data-mg-tab="sanctuary" role="tab">Sanctuaire</button>
-        <button type="button" class="mg-tab" data-mg-tab="collection" role="tab">Collection</button>
-        <button type="button" class="mg-tab" data-mg-tab="arcade" role="tab">Arcade</button>
-        <button type="button" class="mg-tab" data-mg-tab="decor" role="tab">Déco</button>
+        <button type="button" class="mg-tab is-active" data-mg-tab="sanctuary" role="tab">◆ Sanctuaire</button>
+        <button type="button" class="mg-tab" data-mg-tab="collection" role="tab">◎ Dex</button>
+        <button type="button" class="mg-tab" data-mg-tab="arcade" role="tab">♫ Arcade</button>
+        <button type="button" class="mg-tab" data-mg-tab="decor" role="tab">▣ Déco</button>
       </nav>
       <div class="mg-panels">
         <section class="mg-panel mg-panel--sanctuary is-active" data-mg-panel="sanctuary">
-          <div class="mg-stage" data-mignon-pet-zone>
+          <div class="mg-stage" data-mignon-pet-zone data-mignon-decor-stage>
+            <div class="mg-stage__grid-overlay" aria-hidden="true"></div>
             ${environmentMarkup(m, profile)}
             <div class="mg-stage__creature">${creatureMarkup(m)}</div>
             <div class="mg-stage__hud">
@@ -948,10 +1013,10 @@
           <p class="feed-note mg-vibe-note">Vibe : <strong>${d().escapeHtml(vibe)}</strong>${arch ? ` · ${d().escapeHtml(arch.label)}` : ""}</p>
         </section>
         <section class="mg-panel" data-mg-panel="collection" hidden>
-          <h2 class="mg-section-title">Mondes</h2>
+          <h2 class="mg-section-title">▸ Mondes</h2>
           <div class="mignon-world-grid">${envOpts}</div>
-          <h2 class="mg-section-title">Archétypes inspirés</h2>
-          <p class="feed-note">Esthétiques musicales originales — sans likeness d'artiste.</p>
+          <h2 class="mg-section-title">▸ Encyclopédie</h2>
+          <p class="mg-dex-intro">Créatures audio originales — esthétiques inspirées, sans likeness.</p>
           <div class="mignon-skin-grid">${skinCards}</div>
           <h2 class="mg-section-title">Évolutions</h2>
           ${history}
@@ -960,37 +1025,38 @@
         </section>
         <section class="mg-panel" data-mg-panel="arcade" hidden>
           <div class="mg-arcade-grid">
-            <article class="mg-arcade-card">
-              <h3>Rythme</h3>
-              <div class="mignon-rhythm" id="mignon-rhythm">
-                <div class="mignon-rhythm__lane"><span class="mignon-rhythm__beat" id="mignon-rhythm-beat"></span></div>
-                <button type="button" class="btn btn-primary btn-sm" id="mignon-rhythm-tap">Tap !</button>
-                <p class="mignon-rhythm__score" id="mignon-rhythm-score">0 / 8</p>
-              </div>
-            </article>
-            <article class="mg-arcade-card">
-              <h3>Mémoire</h3>
+            <article class="mg-cabinet"><div class="mg-cabinet__marquee">RHYTHM TAP</div><div class="mg-cabinet__screen">
+              <div class="mignon-rhythm" id="mignon-rhythm"><div class="mignon-rhythm__lane"><span class="mignon-rhythm__beat" id="mignon-rhythm-beat"></span></div>
+              <button type="button" class="btn btn-primary btn-sm mg-retro-btn" id="mignon-rhythm-tap">TAP !</button>
+              <p class="mignon-rhythm__score" id="mignon-rhythm-score">0 / 8</p></div></div></article>
+            <article class="mg-cabinet"><div class="mg-cabinet__marquee">MEMORY</div><div class="mg-cabinet__screen">
               <div class="mg-memory" id="mignon-memory"></div>
-              <button type="button" class="btn btn-ghost btn-sm" id="mignon-memory-start">Jouer</button>
-            </article>
-            <article class="mg-arcade-card">
-              <h3>Crate digging</h3>
-              <button type="button" class="btn btn-primary btn-sm" id="mignon-crate-play">Chercher</button>
-              <p class="feed-note" id="mignon-crate-result"></p>
-            </article>
-            <article class="mg-arcade-card"><h3>Missions</h3><div class="mignon-missions">${missionsHtml(m)}</div></article>
+              <button type="button" class="btn btn-ghost btn-sm mg-retro-btn" id="mignon-memory-start">START</button></div></article>
+            <article class="mg-cabinet"><div class="mg-cabinet__marquee">CRATE DIG</div><div class="mg-cabinet__screen">
+              <button type="button" class="btn btn-primary btn-sm mg-retro-btn" id="mignon-crate-play">CHERCHER</button>
+              <p class="feed-note" id="mignon-crate-result"></p></div></article>
+            <article class="mg-cabinet"><div class="mg-cabinet__marquee">QUESTS</div><div class="mg-cabinet__screen mignon-missions">${missionsHtml(m)}</div></article>
           </div>
         </section>
-        <section class="mg-panel" data-mg-panel="decor" hidden>
-          <h2 class="mg-section-title">Déco</h2>
-          <div class="mignon-decor-bar">${furnitureCards}</div>
-          <button type="button" class="btn btn-ghost btn-sm" data-mignon-clear-decor>Vider</button>
+        <section class="mg-panel mg-panel--decor" data-mg-panel="decor" hidden>
+          <h2 class="mg-section-title">▸ Atelier déco</h2>
+          <p class="mg-dex-intro">Glisse un objet dans le sanctuaire (grille 8×5).</p>
+          <div class="mg-decor-layout">
+            <aside class="mg-decor-palette"><h3>Inventaire</h3>${furnitureCards}
+              <button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-clear-decor style="margin-top:8px;width:100%">Vider</button></aside>
+            <div class="mg-stage mg-stage--decor-preview" data-mignon-decor-stage data-mignon-pet-zone>
+              <div class="mg-stage__grid-overlay" aria-hidden="true"></div>
+              ${environmentMarkup(m, profile)}
+              <div class="mg-stage__creature">${creatureMarkup(m)}</div>
+            </div>
+          </div>
         </section>
       </div>
       <footer class="mg-footer">
-        <button type="button" class="btn btn-primary" data-nav-view="carnet">Logger une écoute</button>
-        <button type="button" class="btn btn-ghost" data-nav-view="social">Cercle</button>
+        <button type="button" class="btn btn-primary mg-retro-btn" data-nav-view="carnet">◎ Logger</button>
+        <button type="button" class="btn btn-ghost mg-retro-btn" data-nav-view="social">♥ Cercle</button>
       </footer>
+      </div></div>
     </div>`;
   }
 
@@ -1296,9 +1362,7 @@
     root.querySelectorAll("[data-mignon-equip-skin]").forEach((btn) => {
       btn.addEventListener("click", () => equipSkin(btn.getAttribute("data-mignon-equip-skin")));
     });
-    root.querySelectorAll("[data-mignon-place]").forEach((btn) => {
-      btn.addEventListener("click", () => placeDecor(btn.getAttribute("data-mignon-place")));
-    });
+    wireDecorDrag(root);
     const clearDecor = root.querySelector("[data-mignon-clear-decor]");
     if (clearDecor) {
       clearDecor.addEventListener("click", () => {

@@ -1,0 +1,847 @@
+/* =========================================================================
+   MIGNON RETRO — unified 16-bit music Tamagotchi universe
+   ========================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap");
+
+.app-content[data-route="mignon"] {
+  --mg-bg: #0c0a14;
+  --mg-panel: #1a1628;
+  --mg-panel-hi: #2a2440;
+  --mg-border: #4a3f6a;
+  --mg-border-hi: #8b7ec8;
+  --mg-text: #e8e0f8;
+  --mg-muted: #9a8ec4;
+  --mg-accent: #7cffb2;
+  --mg-accent-dim: #3d9a6a;
+  --mg-warm: #ffb86c;
+  --mg-hot: #ff6eb4;
+  --mg-crt: rgba(124, 255, 178, 0.12);
+  --mg-pixel: 4px;
+  background: var(--mg-bg) !important;
+  background-image:
+    radial-gradient(ellipse 80% 50% at 50% 0%, rgba(139, 126, 200, 0.15), transparent 55%),
+    repeating-linear-gradient(0deg, transparent, transparent 3px, rgba(0, 0, 0, 0.15) 3px, rgba(0, 0, 0, 0.15) 4px) !important;
+}
+
+.mg-page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0.5rem 0.75rem 2rem;
+  font-family: "VT323", "Courier New", monospace;
+  color: var(--mg-text);
+}
+
+/* —— Handheld shell —— */
+.mg-handheld {
+  padding: 12px;
+  background: linear-gradient(145deg, #3d3558 0%, #1e1a2e 40%, #12101c 100%);
+  border-radius: 20px;
+  border: 4px solid #2a2440;
+  box-shadow:
+    0 0 0 2px #5a4f82,
+    0 0 0 6px #0a0810,
+    0 24px 48px rgba(0, 0, 0, 0.65),
+    inset 0 2px 0 rgba(255, 255, 255, 0.08);
+}
+
+.mg-handheld__bezel {
+  padding: 10px;
+  background: #0a0812;
+  border-radius: 12px;
+  border: 3px solid #1e1a2e;
+  box-shadow: inset 0 0 40px rgba(0, 0, 0, 0.8);
+}
+
+.mg-handheld__brand {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 8px;
+  padding: 6px 8px;
+  background: var(--mg-panel);
+  border: 2px solid var(--mg-border);
+  image-rendering: pixelated;
+}
+
+.mg-handheld__logo {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.55rem;
+  line-height: 1.6;
+  color: var(--mg-accent);
+  text-shadow: 0 0 12px var(--mg-accent-dim);
+  margin: 0;
+  letter-spacing: 0.04em;
+}
+
+.mg-handheld__logo span {
+  color: var(--mg-muted);
+  font-size: 0.45rem;
+}
+
+.mg-handheld__led {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--mg-accent);
+  box-shadow: 0 0 8px var(--mg-accent);
+  animation: mg-led-pulse 1.2s steps(2) infinite;
+}
+
+@keyframes mg-led-pulse {
+  50% { opacity: 0.35; }
+}
+
+/* —— HUD / LCD stats —— */
+.mg-hud {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  margin-bottom: 0.5rem;
+  background: var(--mg-panel);
+  border: 3px solid var(--mg-border);
+  border-radius: 0;
+  box-shadow: 4px 4px 0 #0a0810;
+}
+
+.mg-hud__kicker {
+  font-size: 0.95rem;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+  color: var(--mg-hot);
+  margin: 0 0 0.2rem;
+}
+
+.mg-hud__title {
+  font-family: "Press Start 2P", monospace;
+  font-size: clamp(0.75rem, 2.8vw, 1rem);
+  line-height: 1.5;
+  margin: 0 0 0.4rem;
+  color: var(--mg-text);
+  text-shadow: 2px 2px 0 #0a0810;
+}
+
+.mg-hud__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+}
+
+.mg-pill {
+  font-size: 0.95rem;
+  padding: 2px 8px;
+  border-radius: 0;
+  background: #0f0d18;
+  border: 2px solid var(--mg-border);
+  color: var(--mg-muted);
+  text-transform: uppercase;
+}
+
+.mg-pill--aura { color: var(--mg-accent); border-color: var(--mg-accent-dim); }
+.mg-pill--gold { color: var(--mg-warm); border-color: #8a6a30; }
+
+.mg-hud__name {
+  padding: 4px 8px;
+  border: 2px solid var(--mg-border);
+  background: #0a0812;
+  color: var(--mg-accent);
+  font-family: "VT323", monospace;
+  font-size: 1.1rem;
+  min-width: 120px;
+}
+
+.mg-hud__right .btn {
+  font-family: "VT323", monospace;
+  font-size: 1rem;
+  border-radius: 0;
+  border-width: 2px;
+}
+
+.mg-ambient-btn.is-on {
+  border-color: var(--mg-accent) !important;
+  color: var(--mg-accent) !important;
+  box-shadow: 0 0 12px var(--mg-crt);
+}
+
+/* —— Retro tabs —— */
+.mg-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 4px;
+  margin-bottom: 0.5rem;
+  padding: 4px;
+  background: #0f0d18;
+  border: 3px solid var(--mg-border);
+}
+
+.mg-tab {
+  padding: 8px 4px;
+  border: 2px solid transparent;
+  border-radius: 0;
+  background: var(--mg-panel);
+  color: var(--mg-muted);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.42rem;
+  line-height: 1.4;
+  cursor: pointer;
+  text-transform: uppercase;
+  transition: none;
+}
+
+.mg-tab:hover {
+  border-color: var(--mg-border-hi);
+  color: var(--mg-text);
+}
+
+.mg-tab.is-active {
+  background: var(--mg-panel-hi);
+  border-color: var(--mg-accent);
+  color: var(--mg-accent);
+  box-shadow: inset 0 0 16px var(--mg-crt);
+}
+
+/* —— Stage / sanctuaire —— */
+.mg-stage {
+  position: relative;
+  min-height: 400px;
+  border-radius: 0;
+  overflow: hidden;
+  border: 4px solid var(--mg-border);
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.6),
+    4px 4px 0 #0a0810;
+  image-rendering: pixelated;
+}
+
+.mg-stage__grid-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(124, 255, 178, 0.06) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 255, 178, 0.06) 1px, transparent 1px);
+  background-size: calc(100% / 8) calc(100% / 5);
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+
+.mg-panel--decor.is-active .mg-stage__grid-overlay {
+  opacity: 1;
+  pointer-events: none;
+}
+
+.mg-stage__creature {
+  padding-bottom: 4.5rem;
+}
+
+.mg-stage__creature .px-mignon-buddy {
+  width: 148px;
+  height: 158px;
+}
+
+.mg-stage__hud {
+  border-radius: 0;
+  background: rgba(10, 8, 18, 0.88);
+  border: 2px solid var(--mg-border);
+  backdrop-filter: none;
+}
+
+.mignon-stat__head {
+  font-size: 0.95rem;
+  text-transform: uppercase;
+  color: var(--mg-muted);
+}
+
+.mignon-stat__fill {
+  border-radius: 0;
+  height: 8px;
+}
+
+.mignon-stat__fill--happy { background: var(--mg-hot); }
+.mignon-stat__fill--energy { background: var(--mg-accent); }
+.mignon-stat__fill--hunger { background: var(--mg-warm); }
+.mignon-stat__fill--affinity { background: #8b7ec8; }
+
+.mg-stage__actions {
+  background: linear-gradient(0deg, rgba(10, 8, 18, 0.95), transparent);
+  border-top: 2px solid var(--mg-border);
+}
+
+.mg-action {
+  border-radius: 0;
+  border: 2px solid var(--mg-border);
+  background: var(--mg-panel);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.4rem;
+  line-height: 1.5;
+  color: var(--mg-text);
+  box-shadow: 2px 2px 0 #0a0810;
+}
+
+.mg-action:active {
+  transform: translate(2px, 2px);
+  box-shadow: none;
+}
+
+.mg-action:hover {
+  border-color: var(--mg-accent);
+  background: var(--mg-panel-hi);
+}
+
+.mg-action span {
+  display: block;
+  font-size: 0.65rem;
+  color: var(--mg-accent);
+  margin-bottom: 2px;
+}
+
+.mg-vibe-note {
+  text-align: center;
+  font-size: 1.05rem;
+  color: var(--mg-muted);
+}
+
+.mg-vibe-note strong {
+  color: var(--mg-accent);
+}
+
+/* —— Room FX —— */
+.px-room__crt-glow {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background: radial-gradient(ellipse at 50% 80%, var(--mg-crt), transparent 55%);
+}
+
+.px-room__eq-wall {
+  position: absolute;
+  bottom: 22%;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 32px;
+  z-index: 7;
+  pointer-events: none;
+}
+
+.px-eq-wall-bar {
+  display: block;
+  width: 5px;
+  height: 8px;
+  background: var(--mg-accent);
+  opacity: 0.7;
+  animation: px-eq-bounce 0.6s ease-in-out infinite;
+  animation-delay: calc(var(--eq-i, 0) * 0.05s);
+}
+
+.px-room[data-vibe="rap"] .px-eq-wall-bar {
+  background: #ff4466;
+  animation-duration: 0.35s;
+}
+
+.px-room[data-vibe="techno"] .px-eq-wall-bar {
+  background: #c86cff;
+}
+
+.px-room__led-strip {
+  position: absolute;
+  top: 8%;
+  left: 0;
+  right: 0;
+  height: 4px;
+  z-index: 7;
+  background: linear-gradient(90deg, #ff6eb4, #7cffb2, #6eb4ff, #ffb86c, #ff6eb4);
+  background-size: 200% 100%;
+  animation: mg-led-scroll 4s linear infinite;
+  opacity: 0.65;
+}
+
+@keyframes mg-led-scroll {
+  to { background-position: 200% 0; }
+}
+
+@keyframes px-eq-bounce {
+  0%, 100% { height: 6px; }
+  50% { height: calc(8px + var(--eq-i, 0) * 1.5px); }
+}
+
+/* Env palettes */
+.px-room--lofi_bedroom { --room-sky: #1e2438; --room-floor: #2a2838; }
+.px-room--neon_studio { --room-sky: #180828; --room-floor: #1a0828; }
+.px-room--shoegaze_mist { --room-sky: #283038; --room-floor: #303840; }
+.px-room--rap_basement { --room-sky: #140808; --room-floor: #1a1010; }
+.px-room--dream_void { --room-sky: #182838; --room-floor: #142030; }
+.px-room--vinyl_lounge { --room-sky: #281c18; --room-floor: #302420; }
+.px-room--citypop_apt { --room-sky: #281838; --room-floor: #201028; }
+.px-room--glitch_rift { --room-sky: #280818; --room-floor: #180410; }
+.px-room--rainy_cafe { --room-sky: #1a2028; --room-floor: #222830; }
+
+.px-room--lofi_bedroom .px-room__layer--sky { background: linear-gradient(180deg, var(--room-sky), #101418) !important; }
+.px-room--neon_studio .px-room__layer--sky { background: linear-gradient(180deg, var(--room-sky), #08040c) !important; }
+.px-room--shoegaze_mist .px-room__layer--sky { background: linear-gradient(180deg, var(--room-sky), #181c24) !important; filter: saturate(0.7); }
+.px-room--rap_basement .px-room__layer--sky { background: linear-gradient(180deg, var(--room-sky), #080404) !important; }
+.px-room--dream_void .px-room__layer--sky { background: linear-gradient(180deg, var(--room-sky), #0a1018) !important; }
+
+.px-room__label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.4rem;
+  color: var(--mg-muted);
+  background: rgba(10, 8, 18, 0.75);
+  padding: 4px 8px;
+  border: 2px solid var(--mg-border);
+}
+
+/* —— Mignon buddy creature —— */
+.px-mignon-buddy {
+  animation: px-idle-sway 3.5s ease-in-out infinite;
+}
+
+.px-mignon-buddy .px-creature__body {
+  width: 72px;
+  height: 76px;
+  border-radius: 8px 8px 12px 12px;
+  background: #5cb88a;
+  border: 3px solid #2a5840;
+  box-shadow:
+    inset 0 -4px 0 #3a7858,
+    inset 0 4px 0 #7cd8a8,
+    4px 4px 0 rgba(0, 0, 0, 0.35);
+  animation: px-breathe 2.8s ease-in-out infinite;
+}
+
+.px-mignon-buddy[data-species="pulse"] .px-creature__body { background: #6a9ae8; border-color: #3a5a98; }
+.px-mignon-buddy[data-species="glitch"] .px-creature__body { background: #b07ae8; border-color: #6a3a98; }
+.px-mignon-buddy[data-species="vinyl"] .px-creature__body { background: #d8a86c; border-color: #8a6838; }
+.px-mignon-buddy[data-species="bloom"] .px-creature__body { background: #e89ab0; border-color: #985a6a; }
+.px-mignon-buddy[data-species="drift"] .px-creature__body { background: #7ab8d8; border-color: #3a6888; }
+.px-mignon-buddy[data-species="spark"] .px-creature__body { background: #e8d86a; border-color: #988a38; }
+
+.px-creature__ear {
+  position: absolute;
+  top: -14px;
+  width: 22px;
+  height: 22px;
+  background: #2a3848;
+  border: 3px solid #1a2838;
+  border-radius: 50% 50% 4px 4px;
+}
+
+.px-creature__ear--l { left: 4px; transform: rotate(-12deg); }
+.px-creature__ear--r { right: 4px; transform: rotate(12deg); }
+
+.px-creature__ear::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  background: #4a5868;
+}
+
+.px-creature__eye {
+  top: 32%;
+  width: 14px;
+  height: 14px;
+  background: #1a2030;
+  border: 2px solid #0a1018;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 3px #4a5060;
+}
+
+.px-creature__eye::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 30% 30%, #8a9aaa, #2a3040);
+}
+
+.px-creature__eye--l { left: 16%; }
+.px-creature__eye--r { right: 16%; }
+
+.px-creature__cassette {
+  position: absolute;
+  bottom: 18%;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 22px;
+  height: 10px;
+  background: #3a3848;
+  border: 2px solid #1a1828;
+  border-radius: 2px;
+}
+
+.px-creature__cassette::before,
+.px-creature__cassette::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: #1a1828;
+  border: 1px solid #5a5868;
+}
+
+.px-creature__cassette::before { left: 3px; }
+.px-creature__cassette::after { right: 3px; }
+
+.px-creature__eq-chest {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 14px;
+}
+
+.px-creature__eq-chest i {
+  display: block;
+  width: 4px;
+  height: 6px;
+  background: var(--mg-accent);
+  animation: px-eq-bounce 0.5s ease-in-out infinite;
+}
+
+.px-creature__eq-chest i:nth-child(2) { animation-delay: 0.08s; height: 8px; }
+.px-creature__eq-chest i:nth-child(3) { animation-delay: 0.16s; height: 12px; }
+.px-creature__eq-chest i:nth-child(4) { animation-delay: 0.24s; height: 9px; }
+.px-creature__eq-chest i:nth-child(5) { animation-delay: 0.32s; height: 7px; }
+
+.px-creature__tail {
+  position: absolute;
+  bottom: 20px;
+  left: 50%;
+  width: 48px;
+  height: 24px;
+  margin-left: -24px;
+  z-index: -1;
+  opacity: 0.85;
+}
+
+.px-creature__tail::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(
+    90deg,
+    transparent,
+    transparent 4px,
+    var(--mg-accent) 4px,
+    var(--mg-accent) 6px
+  );
+  mask-image: linear-gradient(90deg, transparent, #000 30%, #000 70%, transparent);
+  animation: px-wave-tail 1.2s ease-in-out infinite;
+}
+
+@keyframes px-wave-tail {
+  50% { transform: scaleX(1.15); opacity: 0.7; }
+}
+
+.px-creature__viz-ring {
+  position: absolute;
+  bottom: 30px;
+  left: 50%;
+  width: 100px;
+  height: 100px;
+  margin-left: -50px;
+  border: 2px solid rgba(124, 255, 178, 0.2);
+  border-radius: 50%;
+  animation: px-viz-ring 3s ease-in-out infinite;
+}
+
+@keyframes px-viz-ring {
+  50% { transform: scale(1.08); opacity: 0.5; }
+}
+
+.px-creature[data-anim="dance"] {
+  animation: px-dance 0.45s ease-in-out infinite;
+}
+
+.px-creature[data-anim="dance"] .px-creature__eq-chest i {
+  animation-duration: 0.25s;
+}
+
+.px-creature__tag {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.4rem;
+  color: var(--mg-muted);
+  text-align: center;
+  margin-top: 6px;
+}
+
+/* —— Dex / collection —— */
+.mg-section-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.55rem;
+  color: var(--mg-warm);
+  margin: 1rem 0 0.5rem;
+  text-shadow: 2px 2px 0 #0a0810;
+}
+
+.mg-dex-intro {
+  font-size: 1.05rem;
+  color: var(--mg-muted);
+  margin-bottom: 0.75rem;
+}
+
+.mignon-world-grid {
+  gap: 6px;
+}
+
+.mignon-world-card {
+  border-radius: 0;
+  border: 3px solid var(--mg-border);
+  background: var(--mg-panel);
+  box-shadow: 3px 3px 0 #0a0810;
+  font-family: "VT323", monospace;
+}
+
+.mignon-world-card.is-active {
+  border-color: var(--mg-accent);
+  background: var(--mg-panel-hi);
+  box-shadow: 0 0 16px var(--mg-crt), 3px 3px 0 #0a0810;
+}
+
+.mignon-world-card__icon {
+  font-size: 1.4rem;
+}
+
+.mignon-skin-grid {
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 8px;
+}
+
+.mg-dex-card {
+  padding: 0;
+  border: 3px solid var(--mg-border);
+  border-radius: 0;
+  background: var(--mg-panel);
+  box-shadow: 4px 4px 0 #0a0810;
+  overflow: hidden;
+}
+
+.mg-dex-card--rare { border-color: #8b7ec8; }
+.mg-dex-card--epic { border-color: var(--mg-warm); box-shadow: 4px 4px 0 #0a0810, 0 0 20px rgba(255, 184, 108, 0.2); }
+.mg-dex-card--uncommon { border-color: var(--mg-accent-dim); }
+.mg-dex-card.is-active { outline: 2px solid var(--mg-accent); }
+.mg-dex-card.is-locked { opacity: 0.55; filter: grayscale(0.6); }
+
+.mg-dex-card__head {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 8px;
+  background: #0f0d18;
+  border-bottom: 2px solid var(--mg-border);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.38rem;
+}
+
+.mg-dex-card__no { color: var(--mg-muted); }
+.mg-dex-card__rarity { text-transform: uppercase; color: var(--mg-warm); }
+
+.mg-dex-card__sprite {
+  height: 88px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: repeating-linear-gradient(
+    0deg,
+    #12101c,
+    #12101c 4px,
+    #0a0812 4px,
+    #0a0812 8px
+  );
+}
+
+.mg-dex-card__body {
+  padding: 8px;
+}
+
+.mg-dex-card__body h4 {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.45rem;
+  margin: 0 0 6px;
+  line-height: 1.5;
+}
+
+.mg-dex-card__lore {
+  font-size: 0.95rem;
+  color: var(--mg-muted);
+  margin: 0 0 4px;
+}
+
+.mg-dex-card__affinity {
+  font-size: 0.85rem;
+  color: var(--mg-accent);
+  margin: 0 0 8px;
+}
+
+/* —— Arcade cabinets —— */
+.mg-arcade-grid {
+  gap: 8px;
+}
+
+.mg-cabinet {
+  border: 3px solid var(--mg-border);
+  background: var(--mg-panel);
+  box-shadow: 4px 4px 0 #0a0810;
+  overflow: hidden;
+}
+
+.mg-cabinet__marquee {
+  padding: 8px;
+  background: linear-gradient(180deg, #ff6eb4, #c44a88);
+  border-bottom: 3px solid #0a0810;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.45rem;
+  text-align: center;
+  color: #fff;
+  text-shadow: 2px 2px 0 #4a1838;
+  animation: mg-marquee-glow 2s ease-in-out infinite;
+}
+
+@keyframes mg-marquee-glow {
+  50% { filter: brightness(1.15); }
+}
+
+.mg-cabinet__screen {
+  padding: 12px;
+  background: #0a1218;
+  border-bottom: 2px solid var(--mg-border);
+  min-height: 100px;
+}
+
+.mignon-rhythm__lane {
+  height: 48px;
+  background: #0f1820;
+  border: 2px solid var(--mg-border);
+  margin-bottom: 8px;
+}
+
+.mignon-rhythm__beat.is-on {
+  background: var(--mg-accent);
+  box-shadow: 0 0 12px var(--mg-accent);
+}
+
+/* —— Déco —— */
+.mg-decor-layout {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+
+@media (min-width: 720px) {
+  .mg-decor-layout {
+    grid-template-columns: 200px 1fr;
+  }
+}
+
+.mg-decor-palette {
+  padding: 8px;
+  border: 3px solid var(--mg-border);
+  background: var(--mg-panel);
+}
+
+.mg-decor-palette h3 {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.42rem;
+  margin: 0 0 8px;
+  color: var(--mg-warm);
+}
+
+.mignon-decor-chip {
+  display: block;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 6px;
+  border: 2px solid var(--mg-border);
+  background: #0f0d18;
+  color: var(--mg-text);
+  font-family: "VT323", monospace;
+  font-size: 1rem;
+  cursor: grab;
+  text-align: left;
+}
+
+.mignon-decor-chip:active {
+  cursor: grabbing;
+}
+
+.mignon-decor-chip.is-locked {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.px-decor {
+  cursor: grab;
+  z-index: 12;
+  transition: transform 0.1s;
+}
+
+.px-decor.is-dragging {
+  opacity: 0.85;
+  z-index: 20;
+  cursor: grabbing;
+}
+
+.mg-footer {
+  margin-top: 1rem;
+  padding-top: 0.75rem;
+  border-top: 2px dashed var(--mg-border);
+}
+
+.mg-footer .btn {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.42rem;
+  border-radius: 0;
+}
+
+/* Widget on home */
+.mignon-widget {
+  border: 3px solid var(--mg-border) !important;
+  background: var(--mg-panel) !important;
+  font-family: "VT323", monospace;
+}
+
+.mignon-widget__title {
+  font-family: "Press Start 2P", monospace !important;
+  font-size: 0.5rem !important;
+}
+
+@media (max-width: 720px) {
+  .mg-tab { font-size: 0.36rem; padding: 6px 2px; }
+  .mg-handheld { padding: 8px; }
+}
+
+.mg-stage--decor-preview {
+  min-height: 280px;
+}
+
+.mg-stage--decor-preview .mg-stage__creature,
+.mg-stage--decor-preview .mg-stage__hud,
+.mg-stage--decor-preview .mg-stage__actions {
+  display: none;
+}
+
+.mg-panel--decor.is-active ~ .mg-panel--sanctuary .mg-stage__grid-overlay,
+.mg-panel[data-mg-panel="decor"].is-active .mg-stage__grid-overlay {
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .px-mignon-buddy,
+  .px-eq-wall-bar,
+  .px-creature__eq-chest i,
+  .mg-led-scroll,
+  .mg-marquee-glow { animation: none !important; }
+}

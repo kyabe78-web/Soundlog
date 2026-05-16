@@ -120,6 +120,8 @@
       id: "default",
       label: "Mignon originel",
       desc: "Ton compagnon de base — pur et évolutif.",
+      lore: "Une étincelle audio née de tes premières écoutes.",
+      affinity: "Tous genres",
       rarity: "common",
       unlock: { type: "default" },
       speciesTint: null,
@@ -128,6 +130,8 @@
       id: "masked_verse",
       label: "Masque de verse",
       desc: "Archétype inspiré par l'esthétique rap/industriel masqué — flows sombres.",
+      lore: "Masque les basses, crache les vers — énergie de cave.",
+      affinity: "Rap · Hip-Hop",
       rarity: "rare",
       unlock: { type: "genre", genres: ["Rap", "Hip-Hop", "Metal"], min: 8 },
       speciesTint: "pulse",
@@ -137,6 +141,8 @@
       id: "dream_pop",
       label: "Silhouette onirique",
       desc: "Figure pop expérimentale et rêveuse — lumières pastel.",
+      lore: "Flotte entre synthés pastel et rêves lo-fi.",
+      affinity: "Pop · Indie",
       rarity: "rare",
       unlock: { type: "genre", genres: ["Pop", "Indie", "Electronic"], min: 10 },
       speciesTint: "bloom",
@@ -146,6 +152,8 @@
       id: "shoegaze_shadow",
       label: "Ombre shoegaze",
       desc: "Silhouette brumeuse et mélancolique — guitares noyées.",
+      lore: "Brouillard de reverb — une ombre qui écoute.",
+      affinity: "Shoegaze · Ambient",
       rarity: "uncommon",
       unlock: { type: "genre", genres: ["Shoegaze", "Ambient", "Indie"], min: 6 },
       speciesTint: "drift",
@@ -155,6 +163,8 @@
       id: "synth_architect",
       label: "Architecte synth",
       desc: "Producteur futuriste — néons et machines.",
+      lore: "Architecte de nappes synthétiques et néons.",
+      affinity: "Electronic",
       rarity: "rare",
       unlock: { type: "genre", genres: ["Electronic", "Experimental"], min: 8 },
       speciesTint: "glitch",
@@ -164,6 +174,8 @@
       id: "punk_underground",
       label: "Icône underground",
       desc: "Énergie punk & garage — attitude brute.",
+      lore: "Gratte les murs — garage sale, cœur punk.",
+      affinity: "Rock · Punk",
       rarity: "uncommon",
       unlock: { type: "reviews", min: 15 },
       speciesTint: "spark",
@@ -173,6 +185,8 @@
       id: "psych_traveler",
       label: "Voyageur psyché",
       desc: "Rock psychédélique — couleurs et chemins.",
+      lore: "Voyageur des timelines psyché — couleurs infinies.",
+      affinity: "Rock psyché",
       rarity: "epic",
       unlock: { type: "xp", min: 1200 },
       speciesTint: "vinyl",
@@ -353,7 +367,7 @@
     const decorHtml = placed
       .map(
         (d) =>
-          `<span class="px-decor px-decor--${esc(d.id)}" style="left:${esc(d.x)}%;bottom:${esc(d.y)}%" data-decor-id="${esc(d.id)}" aria-hidden="true"></span>`
+          `<span class="px-decor px-decor--${esc(d.id)}" style="left:${esc(d.x)}%;bottom:${esc(d.y)}%" data-decor-id="${esc(d.id)}" data-decor-x="${esc(d.x)}" data-decor-y="${esc(d.y)}" title="${esc(d.id)}" aria-hidden="true"></span>`
       )
       .join("");
 
@@ -365,6 +379,9 @@
       <div class="px-room__layer px-room__layer--floor" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--mid" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--decor" aria-hidden="true">${decorHtml}</div>
+      <div class="px-room__eq-wall" aria-hidden="true">${Array.from({ length: 14 }, (_, i) => `<span class="px-eq-wall-bar" style="--eq-i:${i}"></span>`).join("")}</div>
+      <div class="px-room__led-strip" aria-hidden="true"></div>
+      <div class="px-room__crt-glow" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--light" aria-hidden="true"></div>
       <div class="px-room__particles px-room__particles--${esc(particle)}" aria-hidden="true"></div>
       ${weather === "rain" ? '<div class="px-room__rain" aria-hidden="true"></div>' : ""}
@@ -384,19 +401,20 @@
     const mood = m.mood || "calm";
     const stage = m.stage || 0;
 
-    return `<div class="px-creature${compact ? " px-creature--compact" : ""}" data-species="${esc(species)}" data-skin="${esc(skin)}" data-stage="${stage}" data-mood="${esc(mood)}" data-anim="${esc(anim)}" role="img" aria-label="${esc(m.name)}">
-      <div class="px-creature__aura" aria-hidden="true"></div>
+    return `<div class="px-creature px-mignon-buddy${compact ? " px-creature--compact" : ""}" data-species="${esc(species)}" data-skin="${esc(skin)}" data-stage="${stage}" data-mood="${esc(mood)}" data-anim="${esc(anim)}" role="img" aria-label="${esc(m.name)}">
+      <div class="px-creature__viz-ring" aria-hidden="true"></div>
       <div class="px-creature__shadow" aria-hidden="true"></div>
+      <div class="px-creature__tail" aria-hidden="true"></div>
       <div class="px-creature__body">
         ${skin !== "default" ? `<span class="px-creature__skin px-creature__skin--${esc(skin)}" aria-hidden="true"></span>` : ""}
-        <span class="px-creature__ears" aria-hidden="true"></span>
+        <span class="px-creature__ear px-creature__ear--l" aria-hidden="true"></span>
+        <span class="px-creature__ear px-creature__ear--r" aria-hidden="true"></span>
         <span class="px-creature__face" aria-hidden="true">
           <span class="px-creature__eye px-creature__eye--l"></span>
           <span class="px-creature__eye px-creature__eye--r"></span>
-          <span class="px-creature__blush" aria-hidden="true"></span>
-          <span class="px-creature__mouth"></span>
+          <span class="px-creature__cassette" aria-hidden="true"></span>
         </span>
-        <span class="px-creature__core" aria-hidden="true"></span>
+        <span class="px-creature__eq-chest" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
         ${stage === 0 ? '<span class="px-creature__egg" aria-hidden="true"></span>' : ""}
         ${(m.cosmetics && m.cosmetics.equipped || []).includes("headphones") ? '<span class="px-creature__gear px-creature__gear--phones" aria-hidden="true"></span>' : ""}
         ${(m.cosmetics && m.cosmetics.equipped || []).includes("vinyl-hat") ? '<span class="px-creature__gear px-creature__gear--vinyl" aria-hidden="true"></span>' : ""}

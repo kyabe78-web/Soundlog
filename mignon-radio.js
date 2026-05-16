@@ -175,8 +175,16 @@
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
   }
 
-  function hookPreviewEnded() {
-    if (endedHooked || !d() || !d().getPreviewAudio) return;
+  function hookAudioEnded() {
+    if (endedHooked) return;
+    if (window.SLMignonAudio && window.SLMignonAudio.onEnded) {
+      window.SLMignonAudio.onEnded(() => {
+        if (getMignon() && getMignon().radioOn) scheduleNext(500);
+      });
+      endedHooked = true;
+      return;
+    }
+    if (!d() || !d().getPreviewAudio) return;
     const audio = d().getPreviewAudio();
     if (!audio) return;
     audio.addEventListener("ended", () => {
@@ -185,23 +193,48 @@
     endedHooked = true;
   }
 
+  function getAudioProgress() {
+    if (window.SLMignonAudio && window.SLMignonAudio.isActive && window.SLMignonAudio.isActive()) {
+      return window.SLMignonAudio.getProgress();
+    }
+    return getPreviewProgress();
+  }
+
   async function playCurrent() {
-    if (!d() || !d().playAlbumPreview || !queue.length) return;
-    const albumId = queue[queueIdx % queue.length];
-    const al = d().albumById(albumId);
+    if (!d() || !queue.length) return;
+    const id = queue[queueIdx % queue.length];
+    const al = d().albumById(id);
     if (!al) {
       queueIdx++;
       return playCurrent();
     }
     document.querySelector("[data-mignon-page]")?.setAttribute("data-radio-playing", "true");
     setCreatureDance(true);
-    playHistory.push(albumId);
+    playHistory.push(id);
     if (playHistory.length > 16) playHistory.shift();
-    await d().playAlbumPreview(albumId);
+
+    let ok = false;
+    if (window.SLMignonAudio && window.SLMignonAudio.play) {
+      ok = await window.SLMignonAudio.play(id);
+    } else if (d().playAlbumPreview) {
+      await d().playAlbumPreview(id);
+      ok = true;
+    }
+    if (!ok) {
+      queueIdx = (queueIdx + 1) % Math.max(1, queue.length);
+      return scheduleNext(200);
+    }
+
     setAudioVolume();
-    const audio = d().getPreviewAudio && d().getPreviewAudio();
-    if (window.SLMignonViz) window.SLMignonViz.start(audio || null);
+    syncViz();
     patchRadioUi();
+  }
+
+  function syncViz() {
+    if (!window.SLMignonViz) return;
+    const html5 = window.SLMignonAudio && window.SLMignonAudio.getHtml5 && window.SLMignonAudio.getHtml5();
+    const legacy = d() && d().getPreviewAudio && d().getPreviewAudio();
+    window.SLMignonViz.start(html5 || legacy || null);
   }
 
   function scheduleNext(delayMs) {
@@ -262,6 +295,11 @@
   }
 
   function setAudioVolume() {
+    if (window.SLMignonAudio && window.SLMignonAudio.isActive && window.SLMignonAudio.isActive()) {
+      window.SLMignonAudio.setVolume(radioVolume);
+      window.SLMignonAudio.setMuted(radioMuted);
+      return;
+    }
     const audio = d() && d().getPreviewAudio && d().getPreviewAudio();
     if (audio) audio.volume = radioMuted ? 0 : radioVolume;
   }
@@ -278,17 +316,25 @@
   function togglePause() {
     const m = getMignon();
     if (!m) return;
-    const audio = d() && d().getPreviewAudio && d().getPreviewAudio();
-    if (!audio) {
+    const prog = getAudioProgress();
+    if (!prog) {
       if (m.radioOn) boot(true);
       return;
     }
-    if (audio.paused) {
-      audio.play().catch(() => {});
+    if (prog.paused) {
+      if (window.SLMignonAudio && window.SLMignonAudio.isActive()) window.SLMignonAudio.resume();
+      else {
+        const audio = d().getPreviewAudio && d().getPreviewAudio();
+        if (audio) audio.play().catch(() => {});
+      }
       setCreatureDance(true);
       if (window.SLMignonSfx) window.SLMignonSfx.play("ui");
     } else {
-      audio.pause();
+      if (window.SLMignonAudio && window.SLMignonAudio.isActive()) window.SLMignonAudio.pause();
+      else {
+        const audio = d().getPreviewAudio && d().getPreviewAudio();
+        if (audio) audio.pause();
+      }
       setCreatureDance(false);
       if (window.SLMignonSfx) window.SLMignonSfx.play("pause");
     }
@@ -339,6 +385,11 @@
   }
 
   function seekProgress(pct) {
+    if (window.SLMignonAudio && window.SLMignonAudio.isActive()) {
+      window.SLMignonAudio.seek(pct);
+      patchRadioUi();
+      return;
+    }
     const audio = d() && d().getPreviewAudio && d().getPreviewAudio();
     if (!audio || !audio.duration || !Number.isFinite(audio.duration)) return;
     audio.currentTime = Math.max(0, Math.min(audio.duration, pct * audio.duration));
@@ -367,7 +418,11 @@
   }
 
   function currentTrackMeta() {
-    const prog = getPreviewProgress();
+    if (window.SLMignonAudio && window.SLMignonAudio.getMeta) {
+      const m = window.SLMignonAudio.getMeta();
+      if (m) return m;
+    }
+    const prog = getAudioProgress();
     if (!prog || !d().albumById) return null;
     const al = d().albumById(prog.albumId);
     if (!al) return null;
@@ -378,6 +433,7 @@
       artist: cached?.artistName || al.artist,
       album: al.title,
       artwork: al.artworkUrl || al.cover || "",
+      isFull: false,
     };
   }
 
@@ -406,7 +462,7 @@
     shuffleOn = prefs.shuffle;
     repeatMode = prefs.repeat;
     const meta = currentTrackMeta();
-    const prog = getPreviewProgress();
+    const prog = getAudioProgress();
     const esc = d().escapeHtml;
     const queuePreview = queue.slice(queueIdx, queueIdx + 5).map((id, i) => {
       const al = d().albumById(id);
@@ -438,7 +494,7 @@
       <div class="mg-radio-now${meta ? "" : " is-idle"}">
         ${meta ? `<div class="mg-radio-now__art" style="${meta.artwork ? `background-image:url('${esc(meta.artwork)}')` : ""}"></div>
         <div class="mg-radio-now__meta">
-          <p class="mg-radio-now__track">${esc(meta.title)}</p>
+          <p class="mg-radio-now__track">${esc(meta.title)}${meta.isFull ? '<span class="mg-radio-full-badge">FULL</span>' : ""}</p>
           <p class="mg-radio-now__artist">${esc(meta.artist)}</p>
           <p class="mg-radio-now__album">${esc(meta.album)}</p>
         </div>` : `<p class="mg-radio-now__idle">${on ? "▸ Tuning depuis tes logs…" : "Radio en veille — PWR pour démarrer"}</p>`}
@@ -480,7 +536,7 @@
     const vibe = resolveVibe(profile, m);
     const on = m.radioOn !== false;
     const meta = currentTrackMeta();
-    const prog = getPreviewProgress();
+    const prog = getAudioProgress();
     const prefs = getRadioPrefs(m);
 
     panel.classList.toggle("is-on", on);
@@ -518,7 +574,7 @@
         now.classList.remove("is-idle");
         now.innerHTML = `<div class="mg-radio-now__art" style="${meta.artwork ? `background-image:url('${meta.artwork.replace(/'/g, "%27")}')` : ""}"></div>
         <div class="mg-radio-now__meta">
-          <p class="mg-radio-now__track">${meta.title.replace(/</g, "&lt;")}</p>
+          <p class="mg-radio-now__track">${meta.title.replace(/</g, "&lt;")}${meta.isFull ? '<span class="mg-radio-full-badge">FULL</span>' : ""}</p>
           <p class="mg-radio-now__artist">${meta.artist.replace(/</g, "&lt;")}</p>
           <p class="mg-radio-now__album">${meta.album.replace(/</g, "&lt;")}</p>
         </div>`;
@@ -568,6 +624,10 @@
   }
 
   function updateRadioUi() {
+    patchRadioUi();
+  }
+
+  function renderRadioPanel() {
     rebuildRadioPanel();
   }
 
@@ -618,7 +678,7 @@
     const m = getMignon();
     if (!m || m.radioOn === false) return;
     if (!d()) return;
-    hookPreviewEnded();
+    hookAudioEnded();
     const profile = d().analyzeMusicProfile ? d().analyzeMusicProfile() : { genres: {}, listenCount: 0 };
     const vibe = resolveVibe(profile, m);
     const prefs = getRadioPrefs(m);
@@ -648,12 +708,12 @@
       progressTimer = setInterval(() => {
         if (!getMignon() || !getMignon().radioOn) return;
         patchRadioUi();
-        const prog = getPreviewProgress();
+        const prog = getAudioProgress();
         if (prog && !prog.paused) setCreatureDance(true);
         else if (prog && prog.paused) setCreatureDance(false);
       }, 400);
     }
-    if (window.SLMignonViz) window.SLMignonViz.start(d().getPreviewAudio && d().getPreviewAudio());
+    syncViz();
   }
 
   function stop() {
@@ -662,7 +722,8 @@
     clearInterval(progressTimer);
     progressTimer = null;
     booted = false;
-    if (d() && d().stopAlbumPreview) d().stopAlbumPreview();
+    if (window.SLMignonAudio && window.SLMignonAudio.stop) window.SLMignonAudio.stop();
+    else if (d() && d().stopAlbumPreview) d().stopAlbumPreview();
     setCreatureDance(false);
     if (window.SLMignonViz) window.SLMignonViz.start(null);
     document.querySelector("[data-mignon-page]")?.removeAttribute("data-radio-playing");
@@ -698,7 +759,8 @@
     stop,
     onPageMount,
     onPageUnmount,
-    updateRadioUi: rebuildRadioPanel,
+    updateRadioUi,
+    renderRadioPanel,
     radioPanelHtml,
     buildQueue,
     pickStation,

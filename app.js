@@ -970,7 +970,12 @@
     if (!previewAudio) {
       previewAudio = new Audio();
       previewAudio.preload = "none";
-      previewAudio.addEventListener("ended", () => stopAlbumPreview());
+      previewAudio.addEventListener("ended", () => {
+        if (window.SLMignonRadio && window.SLMignonAudio && window.SLMignonAudio.isActive && window.SLMignonAudio.isActive()) {
+          return;
+        }
+        stopAlbumPreview();
+      });
       previewAudio.addEventListener("timeupdate", () => syncPreviewProgress());
       previewAudio.addEventListener("error", () => {
         const id = previewAlbumId;
@@ -1110,15 +1115,34 @@
     )}</strong></p>`;
   }
 
-  async function tryYoutubeId(artist, title, apiKey) {
-    const u = `https://www.googleapis.com/youtube/v3/search?part=id&snippet&type=video&maxResults=1&q=${encodeURIComponent(
-      artist + " " + title + " full album"
+  async function searchYoutubeVideo(artist, title, apiKey) {
+    const q = `${artist} ${title || ""} official audio`.trim();
+    const u = `https://www.googleapis.com/youtube/v3/search?part=id&snippet&type=video&maxResults=3&videoCategoryId=10&q=${encodeURIComponent(
+      q
     )}&key=${encodeURIComponent(apiKey)}`;
     const r = await fetch(u);
     if (!r.ok) return null;
     const j = await r.json();
-    const id = j.items && j.items[0] && j.items[0].id && j.items[0].id.videoId;
-    return id || null;
+    const items = j.items || [];
+    for (const it of items) {
+      const id = it.id && it.id.videoId;
+      if (id) return id;
+    }
+    return null;
+  }
+
+  async function tryYoutubeId(artist, title, apiKey) {
+    return searchYoutubeVideo(artist, title, apiKey);
+  }
+
+  function getYoutubeApiKey() {
+    return (state.settings && state.settings.youtubeApiKey) || "";
+  }
+
+  function cacheAlbumPreviewPatch(albumId, patch) {
+    ensurePreviewCache();
+    const cur = state.previewByAlbumId[albumId] || {};
+    cacheAlbumPreview(albumId, { ...cur, ...patch, v: PREVIEW_CACHE_V });
   }
 
   async function mergeRemoteAlbums(q) {
@@ -7029,6 +7053,10 @@
       getPreviewAudio: () => previewAudio,
       getPreviewAlbumId: () => previewAlbumId,
       getCachedAlbumPreview,
+      resolveAlbumPreview,
+      cacheAlbumPreview: cacheAlbumPreviewPatch,
+      searchYoutubeVideo,
+      getYoutubeApiKey,
     });
     ensureMignon();
     try {

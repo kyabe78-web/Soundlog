@@ -920,8 +920,8 @@
   }
 
   function wireMignonRadio() {
-    if (!window.SLMignonRadio || !d()) return;
-    window.SLMignonRadio.install({
+    if (!d()) return;
+    const radioDeps = {
       state: d().state,
       escapeHtml: d().escapeHtml,
       albumById: d().albumById,
@@ -934,7 +934,17 @@
       getPreviewAudio: d().getPreviewAudio,
       getPreviewAlbumId: d().getPreviewAlbumId,
       getCachedAlbumPreview: d().getCachedAlbumPreview,
-    });
+    };
+    if (window.SLMignonAudio && window.SLMignonAudio.install) {
+      window.SLMignonAudio.install({
+        ...radioDeps,
+        resolveAlbumPreview: d().resolveAlbumPreview,
+        cacheAlbumPreview: d().cacheAlbumPreview,
+        searchYoutubeVideo: d().searchYoutubeVideo,
+        getYoutubeApiKey: d().getYoutubeApiKey,
+      });
+    }
+    if (window.SLMignonRadio) window.SLMignonRadio.install(radioDeps);
   }
 
   function dexStripHtml(m) {

@@ -34,8 +34,15 @@
 
   function loop() {
     const audio = audioEl;
-    const live = !!(audio && !audio.paused && audio.currentTime > 0);
-    const t = live ? audio.currentTime : fakePhase;
+    let live = !!(audio && !audio.paused && audio.currentTime > 0);
+    let t = live ? audio.currentTime : fakePhase;
+    if (window.SLMignonAudio && window.SLMignonAudio.isActive && window.SLMignonAudio.isActive()) {
+      const p = window.SLMignonAudio.getProgress();
+      if (p) {
+        live = !p.paused;
+        t = p.current || fakePhase;
+      }
+    }
     const vals = sample(16, live, t);
     document.querySelectorAll("[data-mignon-viz]").forEach((el) => setBars(el, vals, live));
     const page = document.querySelector("[data-mignon-page]");

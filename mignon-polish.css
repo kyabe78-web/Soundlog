@@ -1,0 +1,158 @@
+/* Mignon production polish — layout stability, pixel coherence, radio UX */
+
+.mignon-audio-mount {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  left: -9999px;
+  top: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  z-index: -1;
+}
+
+.mg-page.mg-ref,
+.mg-page.mg-ref * {
+  -webkit-font-smoothing: none;
+}
+
+.mg-page.mg-ref .px-room,
+.mg-page.mg-ref .px-creature,
+.mg-page.mg-ref .px-radiobot,
+.mg-page.mg-ref .mg-ref-mignon-slot__sprite {
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+.mg-ref-body {
+  align-items: stretch;
+}
+
+.mg-ref-radio-wrap {
+  min-width: 0;
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
+}
+
+.mg-ref-radio-wrap .mg-radio-panel {
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 120px);
+  overflow: hidden;
+  contain: layout style;
+}
+
+.mg-radio-panel .mg-radio-modes {
+  flex-shrink: 0;
+}
+
+.mg-radio-panel .mg-radio-now {
+  flex-shrink: 0;
+  min-height: 56px;
+}
+
+.mg-radio-panel .mg-radio-queue {
+  flex: 1;
+  min-height: 0;
+  max-height: 88px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+}
+
+.mg-radio-full-badge {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 4px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.22rem;
+  color: var(--ref-green, #6eff8a);
+  border: 1px solid currentColor;
+  vertical-align: middle;
+  letter-spacing: 0.04em;
+}
+
+.mg-radio-panel.mg-winamp--playing .mg-radio-tuner__led.is-live {
+  animation: mg-led-pulse 0.8s steps(2) infinite;
+}
+
+@keyframes mg-led-pulse {
+  50% { opacity: 0.35; }
+}
+
+.mg-radio-transport button {
+  transition: transform 0.05s steps(2);
+}
+
+.mg-radio-transport button:active {
+  transform: translate(1px, 1px);
+}
+
+.mg-ref-stage {
+  min-height: min(42vh, 320px);
+}
+
+.mg-ref-stage .px-mignon-buddy {
+  filter: drop-shadow(0 4px 0 rgba(0, 0, 0, 0.45));
+}
+
+.px-creature[data-anim="idle"] .px-creature__eye {
+  animation: px-blink 4.5s steps(1) infinite;
+}
+
+@keyframes px-blink {
+  0%, 96%, 100% { transform: scaleY(1); }
+  97% { transform: scaleY(0.12); }
+}
+
+.mg-page.is-music-live .px-radiobot[data-anim="dance"] {
+  animation: px-radiobot-bounce 0.45s steps(4) infinite;
+}
+
+@keyframes px-radiobot-bounce {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+@media (max-width: 1024px) {
+  .mg-ref-radio-wrap {
+    max-height: none;
+  }
+
+  .mg-ref-radio-wrap .mg-radio-panel {
+    max-height: none;
+    min-height: 360px;
+  }
+
+  .mg-ref-topbar {
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+  }
+
+  .mg-ref-topbar__vitals {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 640px) {
+  .mg-page.mg-ref {
+    font-size: 0.95rem;
+  }
+
+  .mg-ref-actions {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .mg-ref-mignon-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mg-radio-panel.mg-winamp--playing .mg-radio-tuner__led.is-live,
+  .mg-page.is-music-live .px-radiobot[data-anim="dance"],
+  .px-creature[data-anim="idle"] .px-creature__eye {
+    animation: none !important;
+  }
+}

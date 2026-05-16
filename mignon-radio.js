@@ -208,10 +208,15 @@
     clearTimeout(advanceTimer);
     advanceTimer = setTimeout(() => {
       if (!getMignon() || !getMignon().radioOn) return;
+      const page = document.querySelector("[data-mignon-page]");
+      if (page) {
+        page.classList.add("mg-radio-crossfade");
+        setTimeout(() => page.classList.remove("mg-radio-crossfade"), 400);
+      }
       const prefs = getRadioPrefs();
       if (prefs.repeat === "one") {
-        playStaticBurst(100);
-        setTimeout(() => playCurrent(), 180);
+        playStaticBurst(80);
+        setTimeout(() => playCurrent(), 120);
         return;
       }
       queueIdx = (queueIdx + 1) % Math.max(1, queue.length);
@@ -220,9 +225,9 @@
         const vibe = resolveVibe(profile, getMignon());
         queue = buildQueue(profile, vibe);
       }
-      playStaticBurst(120);
-      setTimeout(() => playCurrent(), 200);
-    }, delayMs || 400);
+      playStaticBurst(90);
+      setTimeout(() => playCurrent(), 150);
+    }, delayMs || 350);
   }
 
   function applyAmbiance(vibe) {
@@ -416,7 +421,7 @@
         <div class="mg-radio-panel__brand">
           <span class="mg-radio-panel__icon" aria-hidden="true"></span>
           <div>
-            <h2 class="mg-radio-panel__title">SOUNDLOG RADIO</h2>
+            <h2 class="mg-radio-panel__title">RADIO AUTOMATIQUE</h2>
             <p class="mg-radio-panel__station">${esc(station.label)}</p>
           </div>
         </div>

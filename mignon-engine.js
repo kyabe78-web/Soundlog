@@ -21,7 +21,7 @@
       unlockXp: 0,
       vibe: "lofi",
       weather: "none",
-      props: ["window_rain", "skyline", "bed", "desk", "lamp", "posters", "plant", "cassette", "boombox", "on_air", "cables", "vinyl_stack", "crt_small", "speaker_stack", "neon_sign", "shelf_vinyl"],
+      props: ["window_rain", "skyline", "moon", "couch", "rug", "bookshelf", "turntable_desk", "bed", "desk", "lamp", "posters", "plant", "cassette", "boombox", "on_air", "neon_bolt", "cables", "vinyl_stack", "crt_small", "speaker_stack", "neon_sign", "shelf_vinyl"],
     },
     vinyl_lounge: {
       id: "vinyl_lounge",
@@ -119,6 +119,7 @@
     default: {
       id: "default",
       label: "Mignon originel",
+      shortLabel: "Classic",
       desc: "Ton compagnon de base — pur et évolutif.",
       lore: "Une étincelle audio née de tes premières écoutes.",
       affinity: "Tous genres",
@@ -129,6 +130,7 @@
     masked_verse: {
       id: "masked_verse",
       label: "Masque de verse",
+      shortLabel: "Rapbot",
       desc: "Archétype inspiré par l'esthétique rap/industriel masqué — flows sombres.",
       lore: "Masque les basses, crache les vers — énergie de cave.",
       affinity: "Rap · Hip-Hop",
@@ -140,6 +142,7 @@
     dream_pop: {
       id: "dream_pop",
       label: "Silhouette onirique",
+      shortLabel: "Electro",
       desc: "Figure pop expérimentale et rêveuse — lumières pastel.",
       lore: "Flotte entre synthés pastel et rêves lo-fi.",
       affinity: "Pop · Indie",
@@ -151,6 +154,7 @@
     shoegaze_shadow: {
       id: "shoegaze_shadow",
       label: "Ombre shoegaze",
+      shortLabel: "Lofi",
       desc: "Silhouette brumeuse et mélancolique — guitares noyées.",
       lore: "Brouillard de reverb — une ombre qui écoute.",
       affinity: "Shoegaze · Ambient",
@@ -162,6 +166,7 @@
     synth_architect: {
       id: "synth_architect",
       label: "Architecte synth",
+      shortLabel: "Neon",
       desc: "Producteur futuriste — néons et machines.",
       lore: "Architecte de nappes synthétiques et néons.",
       affinity: "Electronic",
@@ -173,6 +178,7 @@
     punk_underground: {
       id: "punk_underground",
       label: "Icône underground",
+      shortLabel: "Rocky",
       desc: "Énergie punk & garage — attitude brute.",
       lore: "Gratte les murs — garage sale, cœur punk.",
       affinity: "Rock · Punk",
@@ -184,6 +190,7 @@
     psych_traveler: {
       id: "psych_traveler",
       label: "Voyageur psyché",
+      shortLabel: "Jazzy",
       desc: "Rock psychédélique — couleurs et chemins.",
       lore: "Voyageur des timelines psyché — couleurs infinies.",
       affinity: "Rock psyché",
@@ -373,12 +380,17 @@
       )
       .join("");
 
-    return `<div class="px-room px-room--${esc(envId)}" data-env="${esc(envId)}" data-vibe="${esc(vibe)}" data-weather="${esc(weather)}" data-particle="${esc(particle)}" data-time="${esc(timeOfDay)}" data-ambiance="${esc(vibe)}">
+    const cityLightsHtml =
+      timeOfDay === "night"
+        ? `<div class="px-room__city-lights" aria-hidden="true">${Array.from({ length: 12 }, (_, i) => `<span class="px-city-light" style="left:${8 + (i % 6) * 14}%;top:${12 + Math.floor(i / 6) * 18}%"></span>`).join("")}</div>`
+        : "";
+
+    return `<div class="px-room px-room--ref px-room--${esc(envId)}" data-env="${esc(envId)}" data-vibe="${esc(vibe)}" data-weather="${esc(weather)}" data-particle="${esc(particle)}" data-time="${esc(timeOfDay)}" data-ambiance="${esc(vibe)}" data-skin="${esc(m.equippedSkin || "default")}">
       <div class="px-room__scanlines" aria-hidden="true"></div>
       <div class="px-room__vignette" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--sky" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--walls" aria-hidden="true"></div>
-      <div class="px-room__layer px-room__layer--back" aria-hidden="true">${propsHtml}</div>
+      <div class="px-room__layer px-room__layer--back" aria-hidden="true">${propsHtml}${cityLightsHtml}</div>
       <div class="px-room__layer px-room__layer--floor" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--mid" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--decor" aria-hidden="true">${decorHtml}</div>

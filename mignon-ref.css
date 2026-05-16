@@ -1,0 +1,1010 @@
+/* =========================================================================
+   MIGNON REF — visual source of truth (16-bit cyber-lofi console)
+   ========================================================================= */
+
+@import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap");
+
+.app-content[data-route="mignon"] {
+  --ref-bg: #0c0a18;
+  --ref-panel: #14101f;
+  --ref-panel-hi: #1e1830;
+  --ref-border: #3a3058;
+  --ref-border-glow: #6a5a98;
+  --ref-pink: #ff6eb4;
+  --ref-pink-dim: #c84a88;
+  --ref-orange: #f0a030;
+  --ref-green: #6eff8a;
+  --ref-cyan: #6eb4ff;
+  --ref-purple: #9a7ec8;
+  --ref-text: #e8e4f8;
+  --ref-muted: #8a82a8;
+  --ref-crt-face: #c8e878;
+  --ref-crt-bg: #283818;
+}
+
+.mg-page.mg-ref {
+  max-width: 1280px;
+  margin: 0 auto;
+  color: var(--ref-text);
+  font-family: "VT323", monospace;
+  font-size: 1.05rem;
+  image-rendering: pixelated;
+}
+
+.mg-page.mg-ref .mg-handheld {
+  background: linear-gradient(165deg, #1a1430 0%, var(--ref-bg) 40%, #06050c 100%);
+  border: 4px solid #2a2040;
+  box-shadow:
+    0 0 0 2px #0a0810,
+    0 0 40px rgba(154, 126, 200, 0.15),
+    inset 0 0 60px rgba(0, 0, 0, 0.5);
+  padding: 6px;
+}
+
+.mg-page.mg-ref .mg-handheld__bezel {
+  background: var(--ref-bg);
+  border: 2px solid var(--ref-border);
+  padding: 6px;
+}
+
+/* ── Top bar (reference) ── */
+.mg-ref-topbar {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  margin-bottom: 6px;
+  background: linear-gradient(180deg, #1a1428, #100c18);
+  border: 3px solid var(--ref-border);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    4px 4px 0 #050408;
+}
+
+.mg-ref-topbar__lvl {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.45rem;
+  color: var(--ref-orange);
+  white-space: nowrap;
+}
+
+.mg-ref-topbar__xp {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 120px;
+}
+
+.mg-ref-topbar__xp label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.28rem;
+  color: var(--ref-muted);
+}
+
+.mg-ref-topbar__xp-bar {
+  height: 10px;
+  border: 2px solid var(--ref-border);
+  background: #0a0812;
+}
+
+.mg-ref-topbar__xp-bar span {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #8a6020, var(--ref-orange));
+  box-shadow: 0 0 8px rgba(240, 160, 48, 0.4);
+}
+
+.mg-ref-topbar__vitals {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.mg-ref-vital {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 2px solid var(--ref-border);
+  background: #0c0a14;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.3rem;
+}
+
+.mg-ref-vital__icon {
+  font-size: 0.55rem;
+}
+
+.mg-ref-vital__bar {
+  width: 48px;
+  height: 6px;
+  background: #1a1428;
+  border: 1px solid #2a2040;
+}
+
+.mg-ref-vital__bar i {
+  display: block;
+  height: 100%;
+}
+
+.mg-ref-vital--energy i { background: var(--ref-green); }
+.mg-ref-vital--happy i { background: var(--ref-pink); }
+.mg-ref-vital--music i { background: var(--ref-purple); }
+
+.mg-ref-topbar__meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.mg-ref-coins {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.35rem;
+  color: var(--ref-orange);
+}
+
+.mg-ref-settings {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--ref-border);
+  background: #1a1428;
+  color: var(--ref-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+}
+
+/* ── Body grid ── */
+.mg-ref-body {
+  display: grid;
+  grid-template-columns: 148px minmax(0, 1fr) minmax(240px, 272px);
+  gap: 6px;
+  align-items: start;
+}
+
+/* ── Sidebar ── */
+.mg-ref-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 6px;
+  background: var(--ref-panel);
+  border: 3px solid var(--ref-border);
+  box-shadow: 4px 4px 0 #050408;
+  position: sticky;
+  top: 0;
+}
+
+.mg-ref-brand {
+  padding: 4px 2px 8px;
+  border-bottom: 2px solid var(--ref-border);
+}
+
+.mg-ref-brand__title {
+  margin: 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.42rem;
+  line-height: 1.6;
+  color: var(--ref-pink);
+  text-shadow: 0 0 12px rgba(255, 110, 180, 0.4);
+}
+
+.mg-ref-brand__sub {
+  margin: 4px 0 0;
+  font-size: 0.75rem;
+  color: var(--ref-muted);
+}
+
+.mg-ref-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.mg-ref-nav__btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 5px;
+  border: 2px solid transparent;
+  background: #100c18;
+  color: var(--ref-muted);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.32rem;
+  line-height: 1.5;
+  text-align: left;
+  cursor: pointer;
+  transition: none;
+}
+
+.mg-ref-nav__btn:hover {
+  border-color: var(--ref-border-glow);
+  color: var(--ref-text);
+}
+
+.mg-ref-nav__btn.is-active {
+  border-color: var(--ref-pink);
+  color: var(--ref-pink);
+  background: #1a1428;
+  box-shadow:
+    inset 0 0 12px rgba(255, 110, 180, 0.12),
+    0 0 8px rgba(255, 110, 180, 0.2);
+}
+
+.mg-ref-nav__icon {
+  width: 14px;
+  text-align: center;
+  opacity: 0.9;
+}
+
+.mg-ref-nav__badge {
+  margin-left: auto;
+  padding: 1px 4px;
+  font-size: 0.28rem;
+  background: #1a3828;
+  color: var(--ref-green);
+  border: 1px solid var(--ref-green);
+}
+
+.mg-ref-sidebar-status {
+  padding: 6px;
+  border: 2px solid var(--ref-border);
+  background: #0c0a14;
+}
+
+.mg-ref-sidebar-status h3 {
+  margin: 0 0 6px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.3rem;
+  color: var(--ref-muted);
+}
+
+.mg-ref-mini-mignon {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.mg-ref-mini-mignon__sprite {
+  width: 40px;
+  height: 44px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid var(--ref-border);
+  background: #0a0812;
+}
+
+.mg-ref-mini-mignon__name {
+  margin: 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.32rem;
+  color: var(--ref-text);
+}
+
+.mg-ref-mini-stat {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 3px;
+  font-size: 0.7rem;
+}
+
+.mg-ref-mini-stat label {
+  width: 52px;
+  font-size: 0.65rem;
+  color: var(--ref-muted);
+}
+
+.mg-ref-mini-stat__bar {
+  flex: 1;
+  height: 5px;
+  background: #1a1428;
+  border: 1px solid #2a2040;
+}
+
+.mg-ref-mini-stat__bar i {
+  display: block;
+  height: 100%;
+  background: var(--ref-pink);
+}
+
+.mg-ref-vibe-box {
+  margin-top: 6px;
+  padding: 4px;
+  border: 2px dashed var(--ref-border);
+  font-size: 0.7rem;
+}
+
+.mg-ref-vibe-box strong {
+  display: block;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.28rem;
+  color: var(--ref-purple);
+  margin-bottom: 2px;
+}
+
+/* ── Sanctuary center ── */
+.mg-ref-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.mg-ref-sanctuary {
+  padding: 6px;
+  background: var(--ref-panel);
+  border: 3px solid var(--ref-border);
+  box-shadow: 4px 4px 0 #050408;
+}
+
+.mg-ref-sanctuary__title {
+  margin: 0 0 6px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.4rem;
+  color: var(--ref-pink);
+  letter-spacing: 0.06em;
+}
+
+.mg-ref-sanctuary__grid {
+  display: grid;
+  grid-template-columns: 1fr 72px;
+  gap: 6px;
+}
+
+.mg-ref-stage {
+  position: relative;
+  min-height: 280px;
+  border: 3px solid #2a2040;
+  background: #08060c;
+  overflow: hidden;
+}
+
+.mg-ref-stage .px-room {
+  position: absolute;
+  inset: 0;
+}
+
+.mg-ref-stage .mg-stage__creature,
+.mg-ref-stage .mg-stage__creature {
+  position: absolute;
+  left: 50%;
+  bottom: 18%;
+  transform: translateX(-50%);
+  z-index: 12;
+}
+
+.mg-ref-stats-col {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 4px;
+  border: 2px solid var(--ref-border);
+  background: #0c0a14;
+}
+
+.mg-ref-stat-v {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  min-height: 0;
+}
+
+.mg-ref-stat-v label {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.22rem;
+  color: var(--ref-muted);
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  text-align: center;
+}
+
+.mg-ref-stat-v__track {
+  flex: 1;
+  width: 14px;
+  min-height: 48px;
+  border: 2px solid var(--ref-border);
+  background: #0a0812;
+  display: flex;
+  align-items: flex-end;
+}
+
+.mg-ref-stat-v__track i {
+  display: block;
+  width: 100%;
+  background: var(--ref-pink);
+}
+
+.mg-ref-stat-v--energy i { background: var(--ref-green); }
+.mg-ref-stat-v--hunger i { background: var(--ref-orange); }
+.mg-ref-stat-v--affinity i { background: var(--ref-purple); }
+
+.mg-ref-actions {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.mg-ref-actions .mg-action {
+  padding: 6px 2px;
+  border: 2px solid var(--ref-border);
+  background: linear-gradient(180deg, #2a2040, #14101f);
+  color: var(--ref-text);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.26rem;
+  line-height: 1.4;
+  cursor: pointer;
+  box-shadow: 2px 2px 0 #050408;
+}
+
+.mg-ref-actions .mg-action:hover {
+  border-color: var(--ref-pink);
+  color: var(--ref-pink);
+}
+
+.mg-ref-actions .mg-action--accent {
+  border-color: var(--ref-purple);
+}
+
+.mg-ref-actions .mg-action span {
+  display: block;
+  font-size: 0.5rem;
+  margin-bottom: 2px;
+}
+
+/* ── Radio column ── */
+.mg-ref-radio-wrap {
+  position: sticky;
+  top: 0;
+}
+
+.mg-ref-radio-wrap .mg-radio-panel {
+  height: 100%;
+  min-height: 420px;
+}
+
+.mg-ref-radio-wrap .mg-radio-panel__title {
+  color: var(--ref-purple) !important;
+}
+
+.mg-ref-radio-wrap .mg-radio-panel.mg-winamp {
+  border-color: #4a3868;
+  background: linear-gradient(180deg, #1a1430, #0c0a14);
+}
+
+/* ── Bottom deck ── */
+.mg-ref-deck {
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr 0.9fr;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mg-ref-deck__panel {
+  padding: 6px;
+  background: var(--ref-panel);
+  border: 3px solid var(--ref-border);
+  box-shadow: 4px 4px 0 #050408;
+  min-height: 140px;
+}
+
+.mg-ref-deck__panel.is-highlight {
+  border-color: var(--ref-pink);
+  box-shadow:
+    4px 4px 0 #050408,
+    0 0 16px rgba(255, 110, 180, 0.2);
+}
+
+.mg-ref-deck__title {
+  margin: 0 0 6px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.35rem;
+  color: var(--ref-pink);
+}
+
+.mg-ref-collection-tabs {
+  display: flex;
+  gap: 3px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+
+.mg-ref-collection-tabs span {
+  padding: 2px 4px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.24rem;
+  color: var(--ref-muted);
+  border: 1px solid transparent;
+}
+
+.mg-ref-collection-tabs span.is-on {
+  color: var(--ref-pink);
+  border-color: var(--ref-pink);
+}
+
+.mg-ref-mignon-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.mg-ref-mignon-slot {
+  padding: 4px;
+  border: 2px solid var(--ref-border);
+  background: #0c0a14;
+  text-align: center;
+  cursor: pointer;
+}
+
+.mg-ref-mignon-slot.is-active {
+  border-color: var(--ref-orange);
+  box-shadow: 0 0 10px rgba(240, 160, 48, 0.25);
+}
+
+.mg-ref-mignon-slot.is-locked {
+  opacity: 0.45;
+  filter: grayscale(1);
+}
+
+.mg-ref-mignon-slot__sprite {
+  min-height: 48px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mg-ref-mignon-slot__label {
+  margin: 4px 0 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.26rem;
+  color: var(--ref-text);
+}
+
+.mg-ref-mignon-slot__tag {
+  font-size: 0.65rem;
+  color: var(--ref-green);
+}
+
+.mg-ref-quests .mignon-mission {
+  padding: 4px 0;
+  border-bottom: 1px solid #2a2040;
+  font-size: 0.85rem;
+}
+
+.mg-ref-arcade-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 4px;
+}
+
+.mg-ref-arcade-tile {
+  padding: 6px 4px;
+  border: 2px solid var(--ref-border);
+  background: #0c0a14;
+  text-align: center;
+  cursor: pointer;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.24rem;
+  color: var(--ref-muted);
+}
+
+.mg-ref-arcade-tile:hover {
+  border-color: var(--ref-cyan);
+  color: var(--ref-cyan);
+}
+
+.mg-ref-arcade-tile__art {
+  height: 36px;
+  margin-bottom: 4px;
+  background: linear-gradient(180deg, #1a2838, #0a1420);
+  border: 1px solid #2a3848;
+}
+
+.mg-ref-arcade-tile--rhythm .mg-ref-arcade-tile__art {
+  background: linear-gradient(180deg, #382040, #180c20);
+}
+
+.mg-ref-arcade-tile--vinyl .mg-ref-arcade-tile__art {
+  background: linear-gradient(180deg, #283828, #0c180c);
+}
+
+.mg-ref-arcade-tile--beat .mg-ref-arcade-tile__art {
+  background: linear-gradient(180deg, #203848, #0c1828);
+}
+
+.mg-ref-arcade-tile--crate .mg-ref-arcade-tile__art {
+  background: linear-gradient(180deg, #383020, #181008);
+}
+
+/* ── Worlds row ── */
+.mg-ref-worlds {
+  margin-top: 6px;
+  padding: 6px;
+  background: var(--ref-panel);
+  border: 3px solid var(--ref-border);
+}
+
+.mg-ref-worlds__title {
+  margin: 0 0 6px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.35rem;
+  color: var(--ref-muted);
+}
+
+.mg-ref-worlds__scroll {
+  display: flex;
+  gap: 6px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+}
+
+.mg-ref-worlds__scroll .mignon-world-card {
+  flex: 0 0 100px;
+  min-height: 72px;
+}
+
+/* ── Footer flavor ── */
+.mg-ref-footer {
+  display: grid;
+  grid-template-columns: 1fr minmax(200px, 280px);
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.mg-ref-footer__actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 6px;
+  border: 2px solid var(--ref-border);
+  background: var(--ref-panel);
+}
+
+.mg-ref-flavor {
+  position: relative;
+  padding: 10px;
+  border: 3px solid var(--ref-border);
+  background: linear-gradient(135deg, #14101f, #0c0a18);
+  overflow: hidden;
+}
+
+.mg-ref-flavor__silhouette {
+  position: absolute;
+  right: 8px;
+  bottom: 0;
+  width: 48px;
+  height: 56px;
+  opacity: 0.35;
+  background: linear-gradient(180deg, transparent, var(--ref-purple));
+  clip-path: polygon(30% 100%, 50% 40%, 70% 100%);
+}
+
+.mg-ref-flavor p {
+  margin: 0;
+  font-size: 0.95rem;
+  line-height: 1.35;
+  color: var(--ref-muted);
+  font-style: italic;
+  max-width: calc(100% - 56px);
+}
+
+.mg-ref-flavor em {
+  color: var(--ref-pink);
+  font-style: normal;
+}
+
+/* ── Overlays (collection / arcade / decor full) ── */
+.mg-ref-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  background: rgba(6, 5, 12, 0.92);
+  padding: 12px;
+  overflow: auto;
+}
+
+.mg-ref-overlay .mg-panel {
+  max-width: 900px;
+  margin: 0 auto;
+  border: 3px solid var(--ref-border);
+  background: var(--ref-panel);
+  padding: 12px;
+}
+
+.mg-ref-overlay__close {
+  float: right;
+  margin-bottom: 8px;
+}
+
+/* ── Room reference art (lofi bedroom) ── */
+.px-room--lofi_bedroom.px-room--ref .px-room__layer--sky {
+  background: linear-gradient(180deg, #1a1030 0%, #2a1848 45%, #1a1428 100%);
+}
+
+.px-room--lofi_bedroom.px-room--ref .px-room__layer--sky::after {
+  content: "";
+  position: absolute;
+  top: 8%;
+  right: 18%;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #e8e0c0;
+  box-shadow: 0 0 20px rgba(232, 224, 192, 0.4);
+}
+
+.px-prop--couch {
+  bottom: 20%;
+  left: 8%;
+  width: 56px;
+  height: 22px;
+  background: #4a3868;
+  border: 2px solid #2a2040;
+  border-radius: 4px 4px 0 0;
+}
+
+.px-prop--bookshelf {
+  bottom: 38%;
+  right: 6%;
+  width: 40px;
+  height: 48px;
+  background: #2a2838;
+  border: 2px solid #1a1828;
+  box-shadow: inset -4px 0 0 #3a3848;
+}
+
+.px-prop--neon_bolt {
+  top: 22%;
+  right: 22%;
+  width: 20px;
+  height: 28px;
+  background: transparent;
+  filter: drop-shadow(0 0 8px var(--ref-orange));
+}
+
+.px-prop--neon_bolt::before {
+  content: "⚡";
+  font-size: 1.2rem;
+  color: var(--ref-orange);
+  animation: px-neon-flicker 2s steps(3) infinite;
+}
+
+.px-prop--moon {
+  top: 10%;
+  right: 20%;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #e8e0c8;
+  box-shadow: -6px 0 0 rgba(232, 224, 200, 0.35);
+}
+
+.px-prop--rug {
+  bottom: 14%;
+  left: 20%;
+  width: 80px;
+  height: 12px;
+  background: #3a2850;
+  border: 2px solid #2a1838;
+  opacity: 0.85;
+}
+
+.px-prop--turntable_desk {
+  bottom: 34%;
+  left: 14%;
+  width: 36px;
+  height: 20px;
+  background: #2a2830;
+  border: 2px solid #1a1828;
+}
+
+.px-prop--turntable_desk::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 8px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #1a1828;
+  border: 2px solid #4a4858;
+  animation: px-vinyl-spin 4s linear infinite;
+}
+
+@keyframes px-neon-flicker {
+  50% { opacity: 0.6; }
+}
+
+@keyframes px-vinyl-spin {
+  to { transform: rotate(360deg); }
+}
+
+.px-room__city-lights {
+  position: absolute;
+  top: 20%;
+  left: 10%;
+  right: 10%;
+  height: 40%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.px-city-light {
+  position: absolute;
+  width: 3px;
+  height: 3px;
+  background: var(--ref-pink);
+  animation: px-city-blink 2s steps(2) infinite;
+}
+
+.px-city-light:nth-child(odd) {
+  background: var(--ref-cyan);
+  animation-delay: 0.5s;
+}
+
+@keyframes px-city-blink {
+  50% { opacity: 0.2; }
+}
+
+/* Radiobot — reference yellow CRT face */
+.mg-ref .px-radiobot__screen {
+  background: var(--ref-crt-bg) !important;
+  border-color: #4a5830 !important;
+  box-shadow:
+    inset 0 0 16px rgba(200, 232, 120, 0.35),
+    0 0 8px rgba(200, 232, 120, 0.15) !important;
+}
+
+.mg-ref .px-radiobot__eye {
+  background: var(--ref-crt-face) !important;
+  box-shadow: none !important;
+}
+
+.mg-ref .px-radiobot__eye::after {
+  background: var(--ref-crt-bg) !important;
+}
+
+.mg-ref .px-radiobot__mouth {
+  background: var(--ref-crt-face) !important;
+  border-color: #4a5830 !important;
+}
+
+.mg-ref .px-radiobot__body {
+  background: linear-gradient(180deg, #5a5868 0%, #3a3848 50%, #2a2838 100%) !important;
+}
+
+/* Music skin auras */
+.mg-page[data-equipped-skin="masked_verse"] {
+  --ref-accent: #e03030;
+}
+
+.mg-page[data-equipped-skin="masked_verse"] .px-radiobot__body {
+  filter: hue-rotate(-10deg) brightness(0.9);
+}
+
+.mg-page[data-equipped-skin="dream_pop"] .px-room__particles {
+  --particle-color: var(--ref-pink);
+}
+
+.mg-page[data-equipped-skin="shoegaze_shadow"] .px-room {
+  filter: saturate(0.85);
+}
+
+.mg-page[data-equipped-skin="shoegaze_shadow"] .px-room__fog {
+  opacity: 0.5;
+}
+
+.mg-page[data-equipped-skin="synth_architect"] .px-radiobot__screen {
+  box-shadow: 0 0 12px var(--ref-cyan) !important;
+}
+
+.mg-page[data-equipped-skin="punk_underground"] .px-radiobot__body::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 2px dashed #8a3030;
+  pointer-events: none;
+}
+
+.mg-page[data-equipped-skin="psych_traveler"] .px-creature__viz-ring {
+  box-shadow: 0 0 20px var(--ref-purple);
+  animation: px-aura-spin 6s linear infinite;
+}
+
+.mg-page[data-equipped-skin="glitch_rift"] .px-radiobot,
+.mg-page[data-equipped-skin="synth_architect"] .px-radiobot[data-anim="dance"] {
+  animation: px-glitch-jitter 0.15s steps(2) infinite;
+}
+
+@keyframes px-aura-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes px-glitch-jitter {
+  50% { transform: translateX(-50%) translate(2px, 0); }
+}
+
+.mg-page.is-music-live .px-room--ref .px-room__led-strip {
+  opacity: 1;
+  background: linear-gradient(90deg, var(--ref-pink), var(--ref-purple), var(--ref-cyan));
+  animation: px-led-scroll 2s linear infinite;
+}
+
+@keyframes px-led-scroll {
+  from { background-position: 0 0; }
+  to { background-position: 40px 0; }
+}
+
+/* Radio crossfade feel */
+.mg-page.mg-radio-crossfade .mg-ref-radio-wrap {
+  animation: mg-radio-fade 0.35s steps(4);
+}
+
+@keyframes mg-radio-fade {
+  0% { filter: brightness(0.7); }
+  50% { filter: brightness(1.2); }
+  100% { filter: none; }
+}
+
+@media (max-width: 1024px) {
+  .mg-ref-body {
+    grid-template-columns: 1fr;
+  }
+
+  .mg-ref-sidebar {
+    position: static;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .mg-ref-nav {
+    flex-direction: row;
+    flex-wrap: wrap;
+    flex: 1;
+  }
+
+  .mg-ref-deck {
+    grid-template-columns: 1fr;
+  }
+
+  .mg-ref-sanctuary__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mg-ref-stats-col {
+    flex-direction: row;
+  }
+
+  .mg-ref-stat-v {
+    flex-direction: column;
+  }
+
+  .mg-ref-stat-v label {
+    writing-mode: horizontal-tb;
+    transform: none;
+  }
+
+  .mg-ref-stat-v__track {
+    width: 100%;
+    min-height: 8px;
+    height: 8px;
+  }
+
+  .mg-ref-stat-v__track i {
+    height: 100% !important;
+    width: var(--w, 50%) !important;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .px-prop--turntable_desk::after,
+  .px-city-light,
+  .px-prop--neon_bolt::before { animation: none !important; }
+}

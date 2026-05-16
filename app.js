@@ -3598,7 +3598,9 @@
     if (view !== "inbox") closeNavOverlays();
     else if (document.body.classList.contains("sidebar-open")) closeSidebar();
 
-    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null, inboxDrawer: false, searchQuery: null }, extra);
+    const routeReset = { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null, inboxDrawer: false, searchQuery: null, mignonVisitUid: null };
+    Object.assign(route, routeReset, extra);
+    if (view === "mignon" && extra.mignonVisitUid) route.mignonVisitUid = extra.mignonVisitUid;
     if (!extra.keepSearch) {
       route.searchQuery = null;
       $search.value = "";
@@ -3647,7 +3649,10 @@
       return "#journal";
     }
     if (route.view === "social" && route.hubTab === "live") return "#i-was-there";
-    if (route.view === "mignon") return "#mignon";
+    if (route.view === "mignon") {
+      if (route.mignonVisitUid) return `#mignon/visite/${encodeURIComponent(route.mignonVisitUid)}`;
+      return "#mignon";
+    }
     const map = {
       home: "",
       discover: "decouvrir",
@@ -3669,6 +3674,7 @@
     route.dmThreadId = null;
     route.joinInviteRaw = null;
     route.searchQuery = null;
+    route.mignonVisitUid = null;
     const h = (window.location.hash || "#").slice(1);
     if (h.startsWith("album/")) {
       route.view = "album";
@@ -3713,8 +3719,17 @@
     } else if (h.startsWith("rejoindre/")) {
       route.view = "join";
       route.joinInviteRaw = h.slice("rejoindre/".length);
-    } else if (h === "mignon") route.view = "mignon";
-    else {
+    } else if (h === "mignon" || h.startsWith("mignon/")) {
+      route.view = "mignon";
+      route.mignonVisitUid = null;
+      if (h.startsWith("mignon/visite/")) {
+        try {
+          route.mignonVisitUid = decodeURIComponent(h.slice("mignon/visite/".length));
+        } catch (_) {
+          route.mignonVisitUid = h.slice("mignon/visite/".length);
+        }
+      }
+    } else {
       route.view = "home";
     }
     normalizeRouteToHubs();
@@ -6981,8 +6996,10 @@
   }
 
   if (window.SLMignon && window.SLMignon.install) {
+    window.__slMignonDeps = { state };
     window.SLMignon.install({
       state,
+      route,
       escapeHtml,
       albumById,
       persist,
@@ -6993,6 +7010,7 @@
       openLogListen: openListenModal,
       ensureMignon,
       getPeerMignon,
+      userById,
       scheduleCloudMignon,
       cloudSignedIn,
     });
@@ -8716,7 +8734,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=22")
+        .register("/sw.js?v=23")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();

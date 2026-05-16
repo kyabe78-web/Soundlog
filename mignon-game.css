@@ -695,15 +695,170 @@
 
 .mignon-widget__stage .px-room { border-radius: 8px; }
 
+.mg-page--visit .mg-stage__actions,
+.mg-page--visit .mg-stage__hud { display: none; }
+
+.mg-stage--visit { min-height: 380px; }
+
+.mg-ambient-btn.is-on { border-color: var(--forest-strong); color: var(--forest-strong); }
+
+.mg-achievements {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.mg-achievement {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.5rem 0.65rem;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  font-size: 0.85rem;
+}
+
+.mg-achievement.is-done { border-color: var(--forest-muted); opacity: 0.85; }
+.mg-achievement__ok { color: var(--forest-strong); }
+
+.px-decor {
+  position: absolute;
+  display: block;
+  width: 28px;
+  height: 28px;
+  image-rendering: pixelated;
+  z-index: 7;
+}
+
+.px-decor--poster_waves { background: linear-gradient(135deg, #4a6a8a, #2a3848); border: 2px solid #1a2030; }
+.px-decor--poster_city { background: linear-gradient(180deg, #ff6eb4, #3a2858); border: 2px solid #222; }
+.px-decor--lamp_pixel { background: #e8c878; box-shadow: 0 0 12px rgba(255, 200, 100, 0.5); }
+.px-decor--plant_lofi { background: #4a8a58; border-radius: 4px 4px 0 0; }
+.px-decor--speaker_stack { width: 20px; height: 36px; background: #222; box-shadow: 22px 0 0 #222; }
+.px-decor--vinyl_crate { width: 36px; height: 24px; background: #5a4030; }
+.px-decor--crt_mini { width: 32px; height: 26px; background: #333; border: 2px solid #555; }
+
+.px-prop--lamp {
+  bottom: 38%;
+  left: 28%;
+  width: 14px;
+  height: 28px;
+  background: #c9a85c;
+  box-shadow: 0 -8px 0 4px rgba(255, 220, 140, 0.35);
+}
+
+.px-prop--plant {
+  bottom: 20%;
+  right: 22%;
+  width: 20px;
+  height: 32px;
+  background: #3d7a4a;
+  border-radius: 6px 6px 0 0;
+}
+
+.px-prop--posters {
+  top: 28%;
+  left: 8%;
+  width: 48px;
+  height: 36px;
+  background: linear-gradient(90deg, #6a4a7a, #4a6a8a, #8a6a4a);
+  opacity: 0.85;
+}
+
+.px-prop--cassette {
+  bottom: 30%;
+  left: 52%;
+  width: 28px;
+  height: 16px;
+  background: #3a3530;
+  border: 2px solid #555;
+}
+
+.px-prop--shelf_vinyl {
+  bottom: 42%;
+  left: 12%;
+  width: 80px;
+  height: 8px;
+  background: #4a3828;
+  box-shadow: 0 -14px 0 0 #1a1a22, 8px -14px 0 0 #2a2840, 20px -14px 0 0 #3a2848;
+}
+
+.px-prop--armchair {
+  bottom: 18%;
+  right: 28%;
+  width: 44px;
+  height: 32px;
+  background: #6a3a48;
+  border-radius: 8px 8px 0 0;
+}
+
+.px-prop--mic {
+  bottom: 32%;
+  left: 45%;
+  width: 12px;
+  height: 40px;
+  background: #888;
+  box-shadow: -8px 8px 0 0 #333;
+}
+
+.px-prop--city_window {
+  top: 16%;
+  right: 10%;
+  width: 90px;
+  height: 70px;
+  background: linear-gradient(180deg, #283858 0%, #1a1028 100%);
+  border: 3px solid #3a4868;
+  box-shadow: inset 0 0 30px rgba(255, 100, 180, 0.15);
+}
+
+.px-prop--neon_pink {
+  top: 20%;
+  left: 40%;
+  width: 60px;
+  height: 8px;
+  background: #ff5ec8;
+  box-shadow: 0 0 16px #ff5ec8;
+}
+
+.px-room__particles--dust::before,
+.px-room__particles--dust::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.12) 1px, transparent 1px);
+  background-size: 48px 48px;
+  animation: px-dust 20s linear infinite;
+  opacity: 0.35;
+}
+
+.px-room__particles--neon::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(circle at 30% 70%, rgba(180, 80, 255, 0.15), transparent 50%);
+  animation: px-neon-pulse 3s ease-in-out infinite;
+}
+
+@keyframes px-dust {
+  from { transform: translateY(0); }
+  to { transform: translateY(-48px); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .px-room__rain,
   .px-prop--turntable,
   .px-creature,
   .px-room__layer--light,
+  .px-room__particles,
   .mg-page { animation: none !important; }
 }
 
 @media (max-width: 720px) {
   .mg-stage { min-height: 320px; }
   .mg-stage__hud { width: 100%; position: static; margin: 0.5rem; }
+  .px-room__scanlines { opacity: 0.2; }
+  .px-room__particles--dust::after { display: none; }
 }

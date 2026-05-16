@@ -362,6 +362,7 @@
       <div class="px-room__vignette" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--sky" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--back" aria-hidden="true">${propsHtml}</div>
+      <div class="px-room__layer px-room__layer--floor" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--mid" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--decor" aria-hidden="true">${decorHtml}</div>
       <div class="px-room__layer px-room__layer--light" aria-hidden="true"></div>

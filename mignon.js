@@ -127,6 +127,7 @@
       achievements: [],
       auraScore: 0,
       miniGameStats: {},
+      ambientOn: true,
       createdAt: new Date().toISOString(),
     };
   }
@@ -163,7 +164,32 @@
         ? { owned: m.cosmetics.owned || ["none"], equipped: m.cosmetics.equipped || [] }
         : { owned: ["none"], equipped: [] };
     if (!m.socialLog || typeof m.socialLog !== "object") m.socialLog = { day: "", count: 0 };
+    m.ambientOn = m.ambientOn !== false;
     return m;
+  }
+
+  function getRoute() {
+    return (d() && d().route) || {};
+  }
+
+  function getVisitUid() {
+    const r = getRoute();
+    return r.mignonVisitUid && r.mignonVisitUid !== "me" ? r.mignonVisitUid : null;
+  }
+
+  function peerDisplayName(uid) {
+    if (!d() || !d().userById) return "Ami·e";
+    const u = d().userById(uid);
+    return (u && (u.displayName || u.handle)) || "Ami·e";
+  }
+
+  function queryCreature(root) {
+    return root.querySelector(".px-creature, .mignon-creature");
+  }
+
+  function setCreatureAnim(root, anim) {
+    const c = queryCreature(root);
+    if (c) c.setAttribute("data-anim", anim);
   }
 
   function getMignon(uid) {
@@ -646,7 +672,53 @@
     }).join("");
   }
 
+  function achievementsHtml(m) {
+    if (!ENG()) return "";
+    return ENG().ACHIEVEMENTS.map((a) => {
+      const done = (m.achievements || []).includes(a.id);
+      return `<li class="mg-achievement${done ? " is-done" : ""}"><span>${d().escapeHtml(a.label)}</span>${done ? '<b class="mg-achievement__ok">✓</b>' : `<span class="feed-note">+${a.xp} XP</span>`}</li>`;
+    }).join("");
+  }
+
+  function renderVisitPage(uid) {
+    const m = getMignon(uid);
+    const name = peerDisplayName(uid);
+    const species = SPECIES[m.species] || SPECIES.pulse;
+    const mood = MOODS[m.mood] || MOODS.calm;
+    const arch = ENG() ? ENG().ARCHETYPES[m.equippedSkin] || ENG().ARCHETYPES.default : null;
+    return `<div class="mg-page mg-page--visit" data-mignon-page data-mignon-visit="${d().escapeHtml(uid)}">
+      <header class="mg-hud">
+        <div class="mg-hud__left">
+          <p class="mg-hud__kicker">Visite du sanctuaire</p>
+          <h1 class="mg-hud__title">${d().escapeHtml(name)}</h1>
+          <div class="mg-hud__stats">
+            <span class="mg-pill">${d().escapeHtml(m.name)}</span>
+            <span class="mg-pill">${d().escapeHtml(species.label)}</span>
+            <span class="mg-pill">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)}</span>
+            <span class="mg-pill mg-pill--aura">Aura ${m.auraScore || 0}</span>
+          </div>
+        </div>
+        <div class="mg-hud__right">
+          <button type="button" class="btn btn-primary btn-sm" data-mignon-back>Mon Mignon</button>
+          <button type="button" class="btn btn-ghost btn-sm" data-mignon-visit-profile="${d().escapeHtml(uid)}">Profil</button>
+        </div>
+      </header>
+      <div class="mg-stage mg-stage--visit" data-mignon-pet-zone>
+        ${environmentMarkup(m, { genres: {}, listenCount: 0 })}
+        <div class="mg-stage__creature">${creatureMarkup(m)}</div>
+        <p class="feed-note mg-vibe-note">${arch ? d().escapeHtml(arch.label) : d().escapeHtml(species.label)} · Niv. ${m.level}</p>
+      </div>
+      <footer class="mg-footer">
+        <button type="button" class="btn btn-ghost" data-mignon-react="sparkle">✦ Réagir</button>
+        <button type="button" class="btn btn-ghost" data-mignon-react="heart">♥ Admirer</button>
+      </footer>
+    </div>`;
+  }
+
   function renderPage() {
+    const visitUid = getVisitUid();
+    if (visitUid) return renderVisitPage(visitUid);
+
     const m = getMignon("me");
     syncFromActivity();
     const profile = analyzeMusicProfile();
@@ -718,6 +790,7 @@
           <label class="visually-hidden" for="mignon-name-input">Nom</label>
           <input type="text" id="mignon-name-input" class="mg-hud__name" maxlength="24" value="${d().escapeHtml(m.name)}" />
           <button type="button" class="btn btn-ghost btn-sm" id="mignon-rename-save">OK</button>
+          <button type="button" class="btn btn-ghost btn-sm mg-ambient-btn${m.ambientOn ? " is-on" : ""}" id="mignon-ambient-toggle" aria-pressed="${m.ambientOn ? "true" : "false"}">${m.ambientOn ? "🔊" : "🔇"}</button>
         </div>
       </header>
       <nav class="mg-tabs" role="tablist">
@@ -755,6 +828,8 @@
           <div class="mignon-skin-grid">${skinCards}</div>
           <h2 class="mg-section-title">Évolutions</h2>
           ${history}
+          <h2 class="mg-section-title">Succès</h2>
+          <ul class="mg-achievements">${achievementsHtml(m)}</ul>
         </section>
         <section class="mg-panel" data-mg-panel="arcade" hidden>
           <div class="mg-arcade-grid">
@@ -803,7 +878,7 @@
       </div>
       <div class="profile-mignon-card">
         <div class="profile-mignon-preview" data-mignon-pet-zone>
-          ${environmentMarkup(m, analyzeMusicProfile())}
+          ${environmentMarkup(m, isMe ? analyzeMusicProfile() : { genres: {}, listenCount: 0 })}
           ${creatureMarkup(m, { compact: true })}
         </div>
         <div class="profile-mignon-meta">
@@ -819,6 +894,79 @@
   let animFrame = null;
   let rhythmScore = 0;
   let rhythmBeat = 0;
+  let ambientNodes = null;
+
+  function stopAmbient() {
+    if (!ambientNodes) return;
+    try {
+      ambientNodes.nodes.forEach((n) => {
+        try {
+          n.stop && n.stop();
+          n.disconnect && n.disconnect();
+        } catch (_) {}
+      });
+      if (ambientNodes.ctx && ambientNodes.ctx.state !== "closed") ambientNodes.ctx.close();
+    } catch (_) {}
+    ambientNodes = null;
+  }
+
+  function startAmbientForRoom(m) {
+    stopAmbient();
+    if (!m || !m.ambientOn || getVisitUid()) return;
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    const envs = getEnvironments();
+    const env = envs[m.environment] || envs.lofi_bedroom;
+    const ctx = new Ctx();
+    const master = ctx.createGain();
+    master.gain.value = 0.04;
+    master.connect(ctx.destination);
+    const nodes = [];
+    const bufSize = 2 * ctx.sampleRate;
+    const buffer = ctx.createBuffer(1, bufSize, ctx.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufSize; i++) data[i] = (Math.random() * 2 - 1) * 0.35;
+    const noise = ctx.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+    const noiseGain = ctx.createGain();
+    noiseGain.gain.value = env.weather === "rain" ? 0.55 : 0.35;
+    if (env.weather === "rain") {
+      const hp = ctx.createBiquadFilter();
+      hp.type = "highpass";
+      hp.frequency.value = 900;
+      noise.connect(hp);
+      hp.connect(noiseGain);
+    } else {
+      noise.connect(noiseGain);
+    }
+    noiseGain.connect(master);
+    noise.start();
+    nodes.push(noise, noiseGain);
+    if (env.id === "crt_nostalgia" || env.id === "vinyl_lounge") {
+      const hum = ctx.createOscillator();
+      hum.type = "sine";
+      hum.frequency.value = 58;
+      const humGain = ctx.createGain();
+      humGain.gain.value = 0.08;
+      hum.connect(humGain);
+      humGain.connect(master);
+      hum.start();
+      nodes.push(hum, humGain);
+    }
+    ambientNodes = { ctx, nodes };
+    if (ctx.state === "suspended") ctx.resume().catch(() => {});
+  }
+
+  function toggleAmbient() {
+    let m = getMignon("me");
+    m.ambientOn = !m.ambientOn;
+    saveMignon(m);
+    if (m.ambientOn) startAmbientForRoom(m);
+    else stopAmbient();
+    if (d()) d().render();
+  }
 
   function startIdleLoop() {
     if (animFrame) return;
@@ -837,6 +985,7 @@
       cancelAnimationFrame(animFrame);
       animFrame = null;
     }
+    stopAmbient();
   }
 
   function wireRhythmGame() {
@@ -874,9 +1023,15 @@
       el._mignonPetWired = true;
       const handler = (e) => {
         if (e.type === "click" && el.hasAttribute("data-mignon-pet-zone") && e.target.closest("[data-mignon-pet]")) return;
-        if (e.type === "click" && el.hasAttribute("data-mignon-pet-zone") && !e.target.closest(".mignon-creature")) return;
+        if (
+          e.type === "click" &&
+          el.hasAttribute("data-mignon-pet-zone") &&
+          !e.target.closest(".mignon-creature, .px-creature")
+        )
+          return;
+        if (el.closest("[data-mignon-visit]")) return;
         onPetInteract();
-        const creature = (el.querySelector && el.querySelector(".mignon-creature")) || el.closest(".mignon-creature");
+        const creature = queryCreature(el) || (el.classList && (el.classList.contains("px-creature") || el.classList.contains("mignon-creature")) ? el : null);
         if (creature) {
           creature.setAttribute("data-anim", "pet");
           setTimeout(() => creature.setAttribute("data-anim", "idle"), 900);
@@ -889,7 +1044,7 @@
         el.addEventListener(
           "pointerenter",
           () => {
-            const c = el.querySelector(".mignon-creature");
+            const c = queryCreature(el);
             if (c && c.getAttribute("data-anim") === "idle") c.setAttribute("data-anim", "hover");
           },
           { passive: true }
@@ -897,7 +1052,7 @@
         el.addEventListener(
           "pointerleave",
           () => {
-            const c = el.querySelector(".mignon-creature");
+            const c = queryCreature(el);
             if (c && c.getAttribute("data-anim") === "hover") c.setAttribute("data-anim", "idle");
           },
           { passive: true }
@@ -911,14 +1066,32 @@
     root.querySelectorAll("[data-mignon-visit]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const uid = btn.getAttribute("data-mignon-visit");
+        if (uid && d()) d().navigate("mignon", { mignonVisitUid: uid });
+      });
+    });
+    root.querySelectorAll("[data-mignon-back]").forEach((btn) => {
+      btn.addEventListener("click", () => d() && d().navigate("mignon"));
+    });
+    root.querySelectorAll("[data-mignon-visit-profile]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const uid = btn.getAttribute("data-mignon-visit-profile");
         if (uid && d()) d().navigate("profile", { userId: uid });
       });
     });
+    root.querySelectorAll("[data-mignon-react]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const kind = btn.getAttribute("data-mignon-react");
+        setCreatureAnim(root, kind === "heart" ? "happy" : "excited");
+        if (d() && d().toast) d().toast(kind === "heart" ? "Tu as admiré ce sanctuaire ♥" : "Réaction envoyée ✦");
+        setTimeout(() => setCreatureAnim(root, "idle"), 1400);
+      });
+    });
+    const ambBtn = root.querySelector("#mignon-ambient-toggle");
+    if (ambBtn) ambBtn.addEventListener("click", () => toggleAmbient());
     root.querySelectorAll("[data-mignon-play]").forEach((btn) => {
       btn.addEventListener("click", () => {
         onPlayInteract();
-        const c = root.querySelector(".mignon-creature");
-        if (c) c.setAttribute("data-anim", "dance");
+        setCreatureAnim(root, "dance");
       });
     });
     root.querySelectorAll("[data-mignon-feed]").forEach((btn) => {
@@ -933,8 +1106,7 @@
         let m = getMignon("me");
         m.anim = "listening";
         saveMignon(m);
-        const c = root.querySelector(".mignon-creature");
-        if (c) c.setAttribute("data-anim", "listening");
+        setCreatureAnim(root, "listening");
         if (d() && d().toast) d().toast("Mode écoute — lance un extrait depuis ton carnet.");
       });
     });
@@ -992,13 +1164,12 @@
         let m = getMignon("me");
         m.anim = "stretch";
         saveMignon(m);
-        const c = root.querySelector(".px-creature");
-        if (c) c.setAttribute("data-anim", "stretch");
+        setCreatureAnim(root, "stretch");
         setTimeout(() => {
           m = getMignon("me");
           m.anim = "idle";
           saveMignon(m);
-          if (c) c.setAttribute("data-anim", "idle");
+          setCreatureAnim(root, "idle");
         }, 2000);
       });
     }
@@ -1020,6 +1191,7 @@
     if (root.querySelector("[data-mignon-page]")) {
       wireRhythmGame();
       startIdleLoop();
+      if (!getVisitUid()) startAmbientForRoom(getMignon("me"));
     }
   }
 
@@ -1109,5 +1281,8 @@
     equipSkin,
     placeDecor,
     getEnvironments,
+    renderVisitPage,
+    stopAmbient,
+    startAmbientForRoom,
   };
 })();

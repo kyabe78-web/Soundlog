@@ -1744,10 +1744,15 @@
   async function pushMignonToCloud() {
     if (!SLCloud || !SLCloud.isSignedIn() || !SLCloud.me || !window.SLMignon) return;
     ensureMignon();
+    const localSnap = SLMignon.normalizeMignon(state.mignon);
     const prev = SLCloud.me.settings && typeof SLCloud.me.settings === "object" ? { ...SLCloud.me.settings } : {};
-    prev.mignon = state.mignon;
-    await SLCloud.updateProfile({ settings: prev });
-    syncMeFromCloud();
+    prev.mignon = localSnap;
+    try {
+      await SLCloud.updateProfile({ settings: prev });
+      if (SLCloud.me) SLCloud.me.settings = prev;
+    } catch (e) {
+      console.warn("[mignon] cloud push", e);
+    }
   }
 
   function getFavoriteAlbumForUser(uid) {
@@ -6339,9 +6344,14 @@
     }
     $main.innerHTML = html;
     $main.setAttribute("data-route", getSearchQuery() ? "search" : route.view);
-    $main.classList.remove("view-enter");
-    void $main.offsetWidth;
-    $main.classList.add("view-enter");
+    const skipViewEnter = opts.skipViewEnter || route.view === "mignon";
+    if (!skipViewEnter) {
+      $main.classList.remove("view-enter");
+      void $main.offsetWidth;
+      $main.classList.add("view-enter");
+    } else {
+      $main.classList.remove("view-enter");
+    }
     bindMainEvents();
     if (window.SLMignon && SLMignon.bindEvents) SLMignon.bindEvents($main);
     if (route.view !== "mignon" && window.SLMignon && SLMignon.stopIdleLoop) SLMignon.stopIdleLoop();
@@ -7013,10 +7023,11 @@
       userById,
       scheduleCloudMignon,
       cloudSignedIn,
+      refreshMignonUI: () => window.SLMignon && SLMignon.refreshMignonUI && SLMignon.refreshMignonUI(),
     });
     ensureMignon();
     try {
-      SLMignon.syncFromActivity();
+      SLMignon.syncFromActivity({ force: true, notify: false });
     } catch (_) {}
   }
 
@@ -8734,7 +8745,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=23")
+        .register("/sw.js?v=24")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();
@@ -9807,6 +9818,7 @@
 
   let softRenderTimer = null;
   function scheduleSoftRender() {
+    if (route.view === "mignon") return;
     clearTimeout(softRenderTimer);
     softRenderTimer = setTimeout(() => { try { render(); } catch (_) {} }, 600);
   }

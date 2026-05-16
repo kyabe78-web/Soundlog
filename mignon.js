@@ -5,6 +5,12 @@
   let deps = null;
 
   const VERSION = 2;
+  const SYNC_COOLDOWN_MS = 45000;
+  const INTERACTION_ANIMS = new Set(["dance", "excited", "listening", "pet", "stretch", "hover", "happy"]);
+  const TAB_STORAGE_KEY = "sl_mignon_tab";
+  let lastActivitySyncAt = 0;
+  let rhythmCleanup = null;
+  let mignonPageLive = false;
 
   function ENG() {
     return window.SLMignonEngine || null;
@@ -203,11 +209,115 @@
     return defaultMignon();
   }
 
-  function saveMignon(m) {
-    if (!d()) return;
-    d().state.mignon = normalizeMignon(m);
-    d().persist();
-    if (typeof d().scheduleCloudMignon === "function") d().scheduleCloudMignon();
+  function saveMignon(m, opts) {
+    opts = opts || {};
+    if (!d()) return normalizeMignon(m);
+    const normalized = normalizeMignon(m);
+    d().state.mignon = normalized;
+    if (opts.persist !== false) {
+      if (opts.localOnly && d().persistLocalOnly) d().persistLocalOnly();
+      else d().persist();
+    }
+    if (opts.cloud !== false && typeof d().scheduleCloudMignon === "function") d().scheduleCloudMignon();
+    return normalized;
+  }
+
+  function isOnMignonRoute() {
+    return !!(d() && d().route && d().route.view === "mignon");
+  }
+
+  function getMignonPageRoot() {
+    return document.querySelector("[data-mignon-page]:not([data-mignon-visit])");
+  }
+
+  function restoreMignonTab(root) {
+    root = root || getMignonPageRoot();
+    if (!root) return;
+    let tab = "sanctuary";
+    try {
+      tab = sessionStorage.getItem(TAB_STORAGE_KEY) || tab;
+    } catch (_) {}
+    if (!["sanctuary", "collection", "arcade", "decor"].includes(tab)) tab = "sanctuary";
+    root.querySelectorAll("[data-mg-tab]").forEach((t) => {
+      const on = t.getAttribute("data-mg-tab") === tab;
+      t.classList.toggle("is-active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    root.querySelectorAll("[data-mg-panel]").forEach((p) => {
+      const on = p.getAttribute("data-mg-panel") === tab;
+      p.classList.toggle("is-active", on);
+      p.hidden = !on;
+      if (on) p.classList.add("is-active");
+    });
+  }
+
+  function refreshMignonUI(opts) {
+    opts = opts || {};
+    const root = getMignonPageRoot();
+    if (!root) {
+      if (isOnMignonRoute() && d() && d().render) d().render({ trustRoute: true, skipViewEnter: true });
+      return;
+    }
+    const m = getMignon("me");
+    const profile = analyzeMusicProfile();
+    const mood = MOODS[m.mood] || MOODS.calm;
+
+    if (opts.hud !== false) {
+      const title = root.querySelector(".mg-hud__title");
+      if (title) title.textContent = m.name;
+      const nameInput = root.querySelector("#mignon-name-input");
+      if (nameInput && document.activeElement !== nameInput) nameInput.value = m.name;
+      const pills = root.querySelector(".mg-hud__stats");
+      if (pills) {
+        pills.innerHTML = `<span class="mg-pill">Niv. ${m.level}</span>
+          <span class="mg-pill">${d().escapeHtml(STAGES[m.stage].name)}</span>
+          <span class="mg-pill">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)}</span>
+          <span class="mg-pill mg-pill--aura">Aura ${m.auraScore || 0}</span>
+          ${m.streak > 1 ? `<span class="mg-pill mg-pill--gold">${m.streak}j</span>` : ""}`;
+      }
+    }
+
+    if (opts.stats !== false) {
+      const hud = root.querySelector(".mg-stage__hud");
+      if (hud) {
+        hud.innerHTML =
+          statBar("Bonheur", m.happiness, "happy") +
+          statBar("Énergie", m.energy, "energy") +
+          statBar("Faim", m.hunger, "hunger") +
+          statBar("Affinité", m.affinity, "affinity");
+      }
+    }
+
+    if (opts.room) {
+      const stage = root.querySelector(".mg-stage");
+      const room = stage && stage.querySelector(".px-room");
+      if (room) room.outerHTML = environmentMarkup(m, profile);
+    }
+
+    if (opts.creature !== false) {
+      const wrap = root.querySelector(".mg-stage__creature");
+      if (wrap) wrap.innerHTML = creatureMarkup(m);
+    }
+
+    if (opts.vibe) {
+      const vibe = ENG() ? ENG().computeMusicVibe(profile) : "lofi";
+      root.setAttribute("data-music-vibe", vibe);
+      const note = root.querySelector(".mg-vibe-note");
+      if (note) {
+        const arch = ENG() ? ENG().ARCHETYPES[m.equippedSkin] || ENG().ARCHETYPES.default : null;
+        note.innerHTML = `Vibe : <strong>${d().escapeHtml(vibe)}</strong>${arch ? ` · ${d().escapeHtml(arch.label)}` : ""}`;
+      }
+    }
+
+    restoreMignonTab(root);
+  }
+
+  function requestMignonResync(force) {
+    const now = Date.now();
+    if (!force && now - lastActivitySyncAt < SYNC_COOLDOWN_MS) return;
+    syncFromActivity({ force: true, preserveAnim: isOnMignonRoute() });
+    lastActivitySyncAt = now;
+    if (isOnMignonRoute()) refreshMignonUI({ creature: false });
   }
 
   function parseFromSettings(settings) {
@@ -401,9 +511,14 @@
     return addXp(m, payload.xp || 28, "feed");
   }
 
-  function syncFromActivity() {
+  function syncFromActivity(opts) {
+    opts = opts || {};
     if (!d()) return;
+    const now = Date.now();
+    if (!opts.force && now - lastActivitySyncAt < SYNC_COOLDOWN_MS) return getMignon("me");
+
     let m = getMignon("me");
+    const prevAnim = m.anim;
     m = tickDecay(m);
     m = updateStreak(m);
     const profile = analyzeMusicProfile();
@@ -416,8 +531,11 @@
     m.personality = inferPersonality(profile, m);
     if (!m.traits.includes("env-lock")) m.environment = pickEnvironment(profile, computeMood(m, profile));
     m.mood = computeMood(m, profile);
-    if (m.anim !== "dance" && m.anim !== "excited" && m.anim !== "listening" && m.anim !== "pet") {
+    const preserveAnim = opts.preserveAnim !== false && isOnMignonRoute() && INTERACTION_ANIMS.has(prevAnim);
+    if (!preserveAnim && !INTERACTION_ANIMS.has(m.anim)) {
       m.anim = m.mood === "sleepy" ? "sleep" : "idle";
+    } else if (preserveAnim) {
+      m.anim = prevAnim;
     }
     if (m.streak >= 3 && !m.cosmetics.owned.includes("headphones")) m.cosmetics.owned.push("headphones");
     if (m.streak >= 7 && !m.cosmetics.owned.includes("vinyl-hat")) m.cosmetics.owned.push("vinyl-hat");
@@ -427,15 +545,17 @@
       const vibe = ENG().computeMusicVibe(profile);
       m._musicVibe = vibe;
       const snap = activitySnapshot();
-      if (ENG().checkUnlocks(m, profile)) {
+      if (opts.notify !== false && ENG().checkUnlocks(m, profile)) {
         if (d() && d().toast) d().toast("Nouveau déblocage dans ta collection !");
       }
-      if (ENG().checkAchievements(m, profile, snap)) {
+      if (opts.notify !== false && ENG().checkAchievements(m, profile, snap)) {
         if (d() && d().toast) d().toast("Succès débloqué !");
       }
       m.auraScore = ENG().computeAuraScore(m, profile);
     }
-    saveMignon(m);
+    saveMignon(m, { cloud: opts.cloud !== false, persist: opts.persist !== false });
+    lastActivitySyncAt = now;
+    return getMignon("me");
   }
 
   function onListeningSaved(payload) {
@@ -452,7 +572,8 @@
     });
     if (reviewLen > 0 && !m.traits.includes("scribe")) m.traits.push("scribe");
     saveMignon(m);
-    syncFromActivity();
+    syncFromActivity({ force: true, preserveAnim: isOnMignonRoute() });
+    if (isOnMignonRoute()) refreshMignonUI({ creature: true, stats: true, hud: true, vibe: true });
     return getMignon("me");
   }
 
@@ -466,7 +587,7 @@
     m.anim = "happy";
     addXp(m, 18, "social");
     saveMignon(m);
-    syncFromActivity();
+    syncFromActivity({ force: true, preserveAnim: false });
   }
 
   function onPetInteract() {
@@ -474,12 +595,13 @@
     m.stats.totalPets = (m.stats.totalPets || 0) + 1;
     m.happiness = clamp(m.happiness + 6, 0, MAX_STAT);
     m.anim = "pet";
-    saveMignon(m);
+    saveMignon(m, { cloud: false });
     setTimeout(() => {
       const cur = getMignon("me");
       if (cur.anim === "pet") {
         cur.anim = "idle";
-        saveMignon(cur);
+        saveMignon(cur, { cloud: false });
+        if (isOnMignonRoute()) refreshMignonUI({ creature: true, stats: true });
       }
     }, 1200);
   }
@@ -495,8 +617,8 @@
       const cur = getMignon("me");
       if (cur.anim === "dance") {
         cur.anim = "idle";
-        saveMignon(cur);
-        syncFromActivity();
+        saveMignon(cur, { cloud: false });
+        if (isOnMignonRoute()) refreshMignonUI({ creature: true, stats: true });
       }
     }, 2400);
   }
@@ -529,6 +651,11 @@
     m.traits.push("env-lock");
     saveMignon(m);
     if (d() && d().toast) d().toast("Monde : " + envs[envId].label);
+    if (isOnMignonRoute()) {
+      refreshMignonUI({ room: true, vibe: true, creature: true });
+      stopAmbient();
+      startAmbientForRoom(m);
+    }
   }
 
   function equipSkin(skinId) {
@@ -543,7 +670,8 @@
     m.anim = "excited";
     saveMignon(m);
     if (d() && d().toast) d().toast("Forme : " + eng.ARCHETYPES[skinId].label);
-    if (d()) d().render();
+    refreshMignonUI({ room: true, creature: true, vibe: true });
+    if (m.ambientOn) startAmbientForRoom(m);
   }
 
   function placeDecor(itemId) {
@@ -555,7 +683,7 @@
     if (m.roomLayout.placed.length >= 8) m.roomLayout.placed.shift();
     m.roomLayout.placed.push({ id: itemId, x, y });
     saveMignon(m);
-    if (d()) d().render();
+    refreshMignonUI({ room: true });
   }
 
   function renameMignon(name) {
@@ -720,7 +848,6 @@
     if (visitUid) return renderVisitPage(visitUid);
 
     const m = getMignon("me");
-    syncFromActivity();
     const profile = analyzeMusicProfile();
     const species = SPECIES[m.species] || SPECIES.pulse;
     const mood = MOODS[m.mood] || MOODS.calm;
@@ -962,18 +1089,28 @@
   function toggleAmbient() {
     let m = getMignon("me");
     m.ambientOn = !m.ambientOn;
-    saveMignon(m);
+    saveMignon(m, { cloud: false });
+    const btn = document.getElementById("mignon-ambient-toggle");
+    if (btn) {
+      btn.classList.toggle("is-on", m.ambientOn);
+      btn.setAttribute("aria-pressed", m.ambientOn ? "true" : "false");
+      btn.textContent = m.ambientOn ? "🔊" : "🔇";
+    }
     if (m.ambientOn) startAmbientForRoom(m);
     else stopAmbient();
-    if (d()) d().render();
   }
 
   function startIdleLoop() {
     if (animFrame) return;
     function loop() {
-      document.querySelectorAll(".px-creature[data-anim='idle'], .mignon-creature[data-anim='idle']").forEach((el) => {
-        el.classList.toggle("mignon-creature--blink", Math.random() < 0.012);
-        el.classList.toggle("px-creature--blink", Math.random() < 0.012);
+      const page = document.querySelector("[data-mignon-page]");
+      if (!page || !isOnMignonRoute()) {
+        stopIdleLoop();
+        return;
+      }
+      page.querySelectorAll(".px-creature[data-anim='idle'], .mignon-creature[data-anim='idle']").forEach((el) => {
+        if (Math.random() < 0.01) el.classList.add("px-creature--blink");
+        else if (Math.random() < 0.08) el.classList.remove("px-creature--blink");
       });
       animFrame = requestAnimationFrame(loop);
     }
@@ -985,20 +1122,27 @@
       cancelAnimationFrame(animFrame);
       animFrame = null;
     }
+    if (rhythmCleanup) {
+      rhythmCleanup();
+      rhythmCleanup = null;
+    }
+    mignonPageLive = false;
     stopAmbient();
   }
 
   function wireRhythmGame() {
+    if (rhythmCleanup) rhythmCleanup();
     const tap = document.getElementById("mignon-rhythm-tap");
     const scoreEl = document.getElementById("mignon-rhythm-score");
     const beatEl = document.getElementById("mignon-rhythm-beat");
     if (!tap || !scoreEl) return;
     rhythmScore = 0;
     rhythmBeat = 0;
-    let beatTimer = setInterval(() => {
+    const beatTimer = setInterval(() => {
       rhythmBeat = (rhythmBeat + 1) % 4;
       if (beatEl) beatEl.classList.toggle("is-on", rhythmBeat === 0);
     }, 480);
+    rhythmCleanup = () => clearInterval(beatTimer);
     tap.onclick = () => {
       const onBeat = rhythmBeat === 0 || rhythmBeat === 2;
       if (onBeat) rhythmScore++;
@@ -1013,7 +1157,6 @@
         scoreEl.textContent = "Complet !";
       }
     };
-    tap._mignonCleanup = () => clearInterval(beatTimer);
   }
 
   function bindEvents(root) {
@@ -1036,7 +1179,7 @@
           creature.setAttribute("data-anim", "pet");
           setTimeout(() => creature.setAttribute("data-anim", "idle"), 900);
         }
-        if (d() && d().renderMignonZones) d().renderMignonZones();
+        if (isOnMignonRoute()) refreshMignonUI({ creature: true, stats: true });
       };
       if (el.hasAttribute("data-mignon-pet")) el.addEventListener("click", handler);
       else {
@@ -1115,7 +1258,11 @@
     });
     root.querySelectorAll("[data-mignon-claim]").forEach((btn) => {
       btn.addEventListener("click", () => {
-        if (claimMission(btn.getAttribute("data-mignon-claim")) && d()) d().render();
+        if (claimMission(btn.getAttribute("data-mignon-claim"))) {
+          const missions = root.querySelector(".mignon-missions");
+          if (missions) missions.innerHTML = missionsHtml(getMignon("me"));
+          refreshMignonUI({ hud: true, stats: true });
+        }
       });
     });
 
@@ -1124,13 +1271,16 @@
     if (renameBtn && renameInput) {
       renameBtn.addEventListener("click", () => {
         renameMignon(renameInput.value);
-        if (d()) d().render();
+        refreshMignonUI({ hud: true });
       });
     }
 
     root.querySelectorAll("[data-mg-tab]").forEach((tab) => {
       tab.addEventListener("click", () => {
         const id = tab.getAttribute("data-mg-tab");
+        try {
+          sessionStorage.setItem(TAB_STORAGE_KEY, id);
+        } catch (_) {}
         root.querySelectorAll("[data-mg-tab]").forEach((t) => {
           const on = t.getAttribute("data-mg-tab") === id;
           t.classList.toggle("is-active", on);
@@ -1155,7 +1305,7 @@
         const m = getMignon("me");
         m.roomLayout.placed = [];
         saveMignon(m);
-        if (d()) d().render();
+        refreshMignonUI({ room: true });
       });
     }
     const stretch = root.querySelector("[data-mignon-stretch]");
@@ -1188,10 +1338,29 @@
         }
       });
     }
-    if (root.querySelector("[data-mignon-page]")) {
+    const page = root.querySelector("[data-mignon-page]");
+    if (page) {
       wireRhythmGame();
       startIdleLoop();
-      if (!getVisitUid()) startAmbientForRoom(getMignon("me"));
+      if (!page.hasAttribute("data-mignon-visit")) {
+        onMignonPageMount(page);
+        if (getMignon("me").ambientOn) startAmbientForRoom(getMignon("me"));
+      }
+    }
+  }
+
+  function onMignonPageMount(page) {
+    restoreMignonTab(page);
+    if (mignonPageLive) return;
+    mignonPageLive = true;
+    const now = Date.now();
+    if (now - lastActivitySyncAt > SYNC_COOLDOWN_MS) {
+      syncFromActivity({ force: true, preserveAnim: true, notify: false });
+      refreshMignonUI({ creature: false });
+    } else {
+      let m = tickDecay(getMignon("me"));
+      saveMignon(m, { cloud: false, persist: true });
+      refreshMignonUI({ creature: false, stats: true });
     }
   }
 
@@ -1282,7 +1451,9 @@
     placeDecor,
     getEnvironments,
     renderVisitPage,
+    refreshMignonUI,
     stopAmbient,
     startAmbientForRoom,
+    onMignonPageMount,
   };
 })();

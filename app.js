@@ -448,6 +448,34 @@
     return !!(SLCloud && SLCloud.isSignedIn && SLCloud.isSignedIn());
   }
 
+  function friendshipCtx() {
+    return {
+      state,
+      SLCloud,
+      cloudPeers,
+      persist,
+      render,
+      toast,
+      userById,
+      addNotification,
+      registerCloudPeerProfiles,
+      isLegacyDemoUserId,
+    };
+  }
+
+  function syncFriendshipFromCloud() {
+    if (!window.SLFriendship || !window.SLFriendship.syncFromCloud) return Promise.resolve(false);
+    return window.SLFriendship.syncFromCloud(friendshipCtx());
+  }
+
+  if (window.SLFriendship && window.SLFriendship.onChange) {
+    window.SLFriendship.onChange(() => {
+      try {
+        updateHeaderNotifications();
+      } catch (_) {}
+    });
+  }
+
   installLocalPreviewCircle();
 
   function cloudMeRow() {
@@ -2109,8 +2137,40 @@
     if (!state.friends.includes(userId)) state.friends.push(userId);
   }
 
-  function removeFriend(userId) {
+  function confirmRemoveFriend(userId) {
+    const u = userById(userId);
+    const name = u ? u.name : "cet·te utilisateur·trice";
+    openModal(
+      `<h2>Retirer des ami·es</h2>
+      <p class="feed-note">Tu ne seras plus connecté·e avec <strong>${escapeHtml(name)}</strong>. Vous pourrez vous renvoyer une demande plus tard.</p>
+      <p style="margin-top:1rem;display:flex;gap:0.5rem;flex-wrap:wrap">
+        <button type="button" class="btn btn-primary" id="friend-remove-confirm">Retirer</button>
+        <button type="button" class="btn btn-ghost" id="friend-remove-cancel">Annuler</button>
+      </p>`
+    );
+    document.getElementById("friend-remove-cancel").addEventListener("click", closeModal);
+    document.getElementById("friend-remove-confirm").addEventListener("click", () => {
+      closeModal();
+      void removeFriend(userId);
+    });
+  }
+
+  async function removeFriend(userId) {
     ensureSocialArrays();
+    if (window.SLFriendship && window.SLFriendship.removeFriend) {
+      const u = userById(userId);
+      await window.SLFriendship.removeFriend(friendshipCtx(), userId);
+      addNotification({
+        type: "friend",
+        title: "Ami·e retiré·e",
+        body: u ? `${u.name} a été retiré·e de ta liste.` : "",
+        meta: { userId },
+      });
+      persist();
+      toast("Retiré des ami·es.");
+      render();
+      return;
+    }
     state.friends = state.friends.filter((id) => id !== userId);
     state.follows = (state.follows || []).filter((id) => id !== userId);
     if (isCloudUuid(userId) && window.SLCloud && window.SLCloud.isSignedIn()) {
@@ -2159,6 +2219,7 @@
   function mapServerNotification(row) {
     const meta = row.meta && typeof row.meta === "object" ? { ...row.meta } : {};
     if (row.actor_id && !meta.userId) meta.userId = row.actor_id;
+    if (meta.friend_request_id && !meta.friendRequestId) meta.friendRequestId = meta.friend_request_id;
     if (meta.listening_id && !meta.listeningId) meta.listeningId = meta.listening_id;
     return {
       id: row.id,
@@ -2281,10 +2342,16 @@
     render();
   }
 
-  async function acceptIncomingFriendRequest(reqId) {
+  async function acceptIncomingFriendRequest(reqId, fromUserId) {
     ensureSocialArrays();
-    const req = state.incomingFriendRequests.find((r) => r.id === reqId);
-    if (!req) return;
+    if (window.SLFriendship && window.SLFriendship.accept) {
+      return window.SLFriendship.accept(friendshipCtx(), reqId, fromUserId);
+    }
+    const req = state.incomingFriendRequests.find((r) => r.id === reqId || (fromUserId && r.fromUserId === fromUserId));
+    if (!req) {
+      toast("Demande introuvable.");
+      return;
+    }
     try {
       if (isCloudUuid(req.id) && window.SLCloud && window.SLCloud.isSignedIn()) {
         await window.SLCloud.respondFriendRequest(req.id, true);
@@ -2293,34 +2360,31 @@
       toast("Erreur : " + (e.message || "impossible d’accepter"));
       return;
     }
-    state.incomingFriendRequests = state.incomingFriendRequests.filter((r) => r.id !== reqId);
+    state.incomingFriendRequests = state.incomingFriendRequests.filter((r) => r.fromUserId !== req.fromUserId);
     state.outgoingFriendRequests = (state.outgoingFriendRequests || []).filter((r) => r.toUserId !== req.fromUserId);
     addFriend(req.fromUserId);
     if (!(state.follows || []).includes(req.fromUserId)) state.follows.push(req.fromUserId);
-    const u = userById(req.fromUserId);
-    addNotification({
-      type: "friend",
-      title: "Demande d’ami acceptée",
-      body: u ? `Tu es maintenant ami·e avec ${u.name}.` : "Nouvelle connexion.",
-      meta: { userId: req.fromUserId },
-    });
     persist();
     toast("Demande acceptée.");
     render();
   }
 
-  async function declineIncomingFriendRequest(reqId) {
+  async function declineIncomingFriendRequest(reqId, fromUserId) {
     ensureSocialArrays();
-    const req = state.incomingFriendRequests.find((r) => r.id === reqId);
+    if (window.SLFriendship && window.SLFriendship.decline) {
+      return window.SLFriendship.decline(friendshipCtx(), reqId, fromUserId);
+    }
+    const req = state.incomingFriendRequests.find((r) => r.id === reqId || (fromUserId && r.fromUserId === fromUserId));
+    if (!req) return;
     try {
-      if (req && isCloudUuid(req.id) && window.SLCloud && window.SLCloud.isSignedIn()) {
+      if (isCloudUuid(req.id) && window.SLCloud && window.SLCloud.isSignedIn()) {
         await window.SLCloud.respondFriendRequest(req.id, false);
       }
     } catch (e) {
       toast("Erreur : " + (e.message || "impossible de refuser"));
       return;
     }
-    state.incomingFriendRequests = state.incomingFriendRequests.filter((r) => r.id !== reqId);
+    state.incomingFriendRequests = state.incomingFriendRequests.filter((r) => r.fromUserId !== req.fromUserId);
     persist();
     toast("Demande refusée.");
     render();
@@ -2328,6 +2392,9 @@
 
   async function cancelOutgoingFriendRequest(toUserId) {
     ensureSocialArrays();
+    if (window.SLFriendship && window.SLFriendship.cancelOutgoing) {
+      return window.SLFriendship.cancelOutgoing(friendshipCtx(), toUserId);
+    }
     try {
       if (isCloudUuid(toUserId) && window.SLCloud && window.SLCloud.isSignedIn()) {
         await window.SLCloud.cancelFriendRequest(toUserId);
@@ -2344,11 +2411,15 @@
 
   /** @param {string} uid */
   function sendFriendRequest(uid) {
-    if (uid === "me") return;
     ensureSocialArrays();
+    if (window.SLFriendship && window.SLFriendship.send) {
+      void window.SLFriendship.send(friendshipCtx(), uid);
+      return;
+    }
+    if (uid === "me") return;
     const inc = incomingRequestFrom(uid);
     if (inc) {
-      void acceptIncomingFriendRequest(inc.id);
+      void acceptIncomingFriendRequest(inc.id, uid);
       return;
     }
     if (isFriend(uid)) {
@@ -2357,18 +2428,6 @@
     }
     if (outgoingRequestTo(uid)) {
       toast("Demande déjà envoyée.");
-      return;
-    }
-    // Si target est un profil cloud (UUID dans cloudPeers Map), route via Supabase
-    const cloudPeer = window.__slCloudPeers && window.__slCloudPeers.get && window.__slCloudPeers.get(uid);
-    if (cloudPeer && window.SLCloud && window.SLCloud.isSignedIn && window.SLCloud.isSignedIn()) {
-      window.SLCloud.sendFriendRequest(uid).then(() => {
-        const id = "fr-cloud-" + Date.now().toString(36);
-        state.outgoingFriendRequests.push({ id, toUserId: uid, createdAt: new Date().toISOString(), cloudId: id });
-        persist();
-        toast("Demande envoyée.");
-        render();
-      }).catch((e) => { toast("Erreur cloud : " + (e.message || "inconnue")); });
       return;
     }
     if (isLegacyDemoUserId(uid)) {
@@ -2380,6 +2439,64 @@
     persist();
     toast("Demande envoyée (stockée en local).");
     render();
+  }
+
+  function bindFriendAction(btn) {
+    if (!btn || btn.dataset.friendBound) return;
+    btn.dataset.friendBound = "1";
+    const run = async (fn) => {
+      if (btn.disabled) return;
+      if (window.SLFriendship && window.SLFriendship.setButtonBusy) window.SLFriendship.setButtonBusy(btn, true);
+      try {
+        await fn();
+        btn.classList.add("sl-friend-btn--ok");
+        setTimeout(() => btn.classList.remove("sl-friend-btn--ok"), 500);
+      } finally {
+        if (window.SLFriendship && window.SLFriendship.setButtonBusy) window.SLFriendship.setButtonBusy(btn, false);
+      }
+    };
+    if (btn.hasAttribute("data-friend-req")) {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void run(() => Promise.resolve(sendFriendRequest(btn.getAttribute("data-friend-req"))));
+      });
+      return;
+    }
+    if (btn.hasAttribute("data-accept-friend")) {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const card = btn.closest(".soc-req-card");
+        if (card) card.classList.add("is-removing");
+        void run(() =>
+          acceptIncomingFriendRequest(btn.getAttribute("data-accept-friend"), btn.getAttribute("data-accept-friend-from"))
+        );
+      });
+      return;
+    }
+    if (btn.hasAttribute("data-decline-friend")) {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const card = btn.closest(".soc-req-card");
+        if (card) card.classList.add("is-removing");
+        void run(() =>
+          declineIncomingFriendRequest(btn.getAttribute("data-decline-friend"), btn.getAttribute("data-decline-friend-from"))
+        );
+      });
+      return;
+    }
+    if (btn.hasAttribute("data-cancel-friend-out")) {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        void run(() => cancelOutgoingFriendRequest(btn.getAttribute("data-cancel-friend-out")));
+      });
+      return;
+    }
+    if (btn.hasAttribute("data-friend-remove")) {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        confirmRemoveFriend(btn.getAttribute("data-friend-remove"));
+      });
+    }
   }
 
   function tourSeenKey(artist, whenIso, venueLine) {
@@ -5656,7 +5773,7 @@
       if (isFriend(uid)) {
         friendBlock = `<span class="friend-badge-inline">Ami·e</span> <button type="button" class="btn btn-ghost btn-sm" data-friend-remove="${uid}">Retirer</button>`;
       } else if (inc) {
-        friendBlock = `<button type="button" class="btn btn-primary btn-sm" data-accept-friend="${escapeHtml(inc.id)}">Accepter la demande</button> <button type="button" class="btn btn-ghost btn-sm" data-decline-friend="${escapeHtml(inc.id)}">Refuser</button>`;
+        friendBlock = `<button type="button" class="btn btn-primary btn-sm" data-accept-friend="${escapeHtml(inc.id)}" data-accept-friend-from="${escapeHtml(uid)}">Accepter la demande</button> <button type="button" class="btn btn-ghost btn-sm" data-decline-friend="${escapeHtml(inc.id)}" data-decline-friend-from="${escapeHtml(uid)}">Refuser</button>`;
       } else if (out) {
         friendBlock = `<span class="feed-note">Demande envoyée</span> <button type="button" class="btn btn-ghost btn-sm" data-cancel-friend-out="${uid}">Annuler</button>`;
       } else {
@@ -6916,9 +7033,26 @@
         it.meta && it.meta.userId
           ? ` <button type="button" class="link notif-profile" data-profile="${escapeHtml(it.meta.userId)}">Profil</button>`
           : "";
-      return `<li class="notif-item${unreadCls}" data-notif-id="${escapeHtml(it.id)}">
+      const frId = it.meta && (it.meta.friendRequestId || it.meta.friend_request_id);
+      const friendActions =
+        it.type === "friend_request" && frId && it.meta && it.meta.userId
+          ? '<div class="notif-friend-actions">' +
+            '<button type="button" class="btn btn-primary btn-sm" data-accept-friend="' +
+            escapeHtml(frId) +
+            '" data-accept-friend-from="' +
+            escapeHtml(it.meta.userId) +
+            '">Accepter</button>' +
+            '<button type="button" class="btn btn-ghost btn-sm" data-decline-friend="' +
+            escapeHtml(frId) +
+            '" data-decline-friend-from="' +
+            escapeHtml(it.meta.userId) +
+            '">Refuser</button></div>'
+          : "";
+      const friendCls = it.type === "friend_request" ? " notif-item--friend" : "";
+      return `<li class="notif-item${unreadCls}${friendCls}" data-notif-id="${escapeHtml(it.id)}">
         <strong>${escapeHtml(it.title)}</strong>
         <p>${escapeHtml(it.body)}</p>
+        ${friendActions}
         <div class="notif-item-meta"><span class="feed-note">${escapeHtml((it.at || "").slice(0, 16).replace("T", " "))}</span>${linkShow}${prof}</div>
       </li>`;
     });
@@ -6927,6 +7061,7 @@
         ? `<p class="notif-empty">Aucune notification pour l’instant.</p>`
         : `<ul class="notif-list">${rows.join("")}</ul>
         <p class="notif-footer"><button type="button" class="link" id="notif-mark-read">Tout marquer lu</button> · <button type="button" class="link" data-notif-nav="social">Communauté</button></p>`;
+    pop.querySelectorAll("[data-accept-friend],[data-decline-friend],[data-friend-req]").forEach((b) => bindFriendAction(b));
   }
 
   function bindNotifHub() {
@@ -6963,6 +7098,7 @@
         navigate("profile", { userId: pb.getAttribute("data-profile") });
         return;
       }
+      if (e.target.closest("[data-accept-friend],[data-decline-friend],[data-friend-req]")) return;
       const li = e.target.closest("[data-notif-id]");
       if (li && !e.target.closest("a")) {
         markNotificationRead(li.getAttribute("data-notif-id"));
@@ -7432,47 +7568,9 @@
         openCommentModal(b.getAttribute("data-comment-on"));
       });
     });
-    document.querySelectorAll("[data-friend-req]").forEach((b) => {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        sendFriendRequest(b.getAttribute("data-friend-req"));
-      });
-    });
-    document.querySelectorAll("[data-friend-remove]").forEach((b) => {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        const uid = b.getAttribute("data-friend-remove");
-        const u = userById(uid);
-        removeFriend(uid);
-        addNotification({
-          type: "friend",
-          title: "Ami·e retiré·e",
-          body: u ? `${u.name} a été retiré·e de ta liste.` : "",
-          meta: { userId: uid },
-        });
-        persist();
-        toast("Retiré des ami·es.");
-        render();
-      });
-    });
-    document.querySelectorAll("[data-accept-friend]").forEach((b) => {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        acceptIncomingFriendRequest(b.getAttribute("data-accept-friend"));
-      });
-    });
-    document.querySelectorAll("[data-decline-friend]").forEach((b) => {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        declineIncomingFriendRequest(b.getAttribute("data-decline-friend"));
-      });
-    });
-    document.querySelectorAll("[data-cancel-friend-out]").forEach((b) => {
-      b.addEventListener("click", (e) => {
-        e.stopPropagation();
-        cancelOutgoingFriendRequest(b.getAttribute("data-cancel-friend-out"));
-      });
-    });
+    document
+      .querySelectorAll("[data-friend-req],[data-friend-remove],[data-accept-friend],[data-decline-friend],[data-cancel-friend-out]")
+      .forEach((b) => bindFriendAction(b));
     document.querySelectorAll("[data-rm-fav]").forEach((b) => {
       b.addEventListener("click", (e) => {
         e.stopPropagation();
@@ -9080,44 +9178,47 @@
     state.follows = data.following || [];
     ensureSocialArrays();
     const fr = data.friendRequests || { incoming: [], outgoing: [] };
-    const cloudIncoming = (fr.incoming || []).map((r) => ({
-      id: r.id,
-      fromUserId: r.from_user_id,
-      createdAt: r.created_at || new Date().toISOString(),
-    }));
-    const cloudOut = (fr.outgoing || []).map((r) => ({
-      id: r.id,
-      toUserId: r.to_user_id,
-      createdAt: r.created_at || new Date().toISOString(),
-    }));
-    const incFrom = new Set(cloudIncoming.map((r) => r.fromUserId));
-    const outTo = new Set(cloudOut.map((r) => r.toUserId));
-    state.incomingFriendRequests = [
-      ...cloudIncoming,
-      ...(state.incomingFriendRequests || []).filter((r) => !incFrom.has(r.fromUserId)),
-    ];
-    state.outgoingFriendRequests = [
-      ...cloudOut,
-      ...(state.outgoingFriendRequests || []).filter((r) => !outTo.has(r.toUserId)),
-    ];
     const cloudFriendProfiles = data.friends || [];
-    const cloudFriendIds = cloudFriendProfiles.map((p) => p.id).filter(Boolean);
-    const localFriends = (state.friends || []).filter((id) => !isCloudUuid(id) && !isLegacyDemoUserId(id));
-    state.friends = [...new Set([...localFriends, ...cloudFriendIds])];
+    if (window.SLFriendship && window.SLFriendship.applyGraphToState) {
+      const applied = window.SLFriendship.applyGraphToState(
+        state,
+        {
+          incoming: fr.incoming || [],
+          outgoing: fr.outgoing || [],
+          friends: cloudFriendProfiles,
+        },
+        { authoritative: true, isLegacyDemoUserId }
+      );
+      registerCloudPeerProfiles(cloudFriendProfiles);
+      const needProf = new Set(applied.needProfileIds || []);
+      if (cloudId) needProf.delete(cloudId);
+      const missing = [...needProf].filter((uid) => uid && !cloudPeers.has(uid));
+      if (missing.length && SLCloud.client) {
+        try {
+          const { data: profs } = await SLCloud.client.from("profiles").select("*").in("id", missing.slice(0, 40));
+          registerCloudPeerProfiles(profs || []);
+        } catch (_) {}
+      }
+    } else {
+      const cloudIncoming = (fr.incoming || []).map((r) => ({
+        id: r.id,
+        fromUserId: r.from_user_id,
+        createdAt: r.created_at || new Date().toISOString(),
+      }));
+      const cloudOut = (fr.outgoing || []).map((r) => ({
+        id: r.id,
+        toUserId: r.to_user_id,
+        createdAt: r.created_at || new Date().toISOString(),
+      }));
+      state.incomingFriendRequests = cloudIncoming;
+      state.outgoingFriendRequests = cloudOut;
+      const cloudFriendIds = cloudFriendProfiles.map((p) => p.id).filter(Boolean);
+      const localFriends = (state.friends || []).filter((id) => !isCloudUuid(id) && !isLegacyDemoUserId(id));
+      state.friends = [...new Set([...localFriends, ...cloudFriendIds])];
+      registerCloudPeerProfiles(cloudFriendProfiles);
+    }
     if (cloudId) {
       state.follows = (state.follows || []).filter((id) => includeUserInCircle(id));
-    }
-    registerCloudPeerProfiles(cloudFriendProfiles);
-    const needProf = new Set();
-    cloudIncoming.forEach((r) => needProf.add(r.fromUserId));
-    cloudOut.forEach((r) => needProf.add(r.toUserId));
-    if (cloudId) needProf.delete(cloudId);
-    const missing = [...needProf].filter((uid) => uid && !cloudPeers.has(uid));
-    if (missing.length && SLCloud.client) {
-      try {
-        const { data: profs } = await SLCloud.client.from("profiles").select("*").in("id", missing);
-        registerCloudPeerProfiles(profs || []);
-      } catch (_) {}
     }
     state.cloudImportedPlaylists = data.importedPlaylists || [];
     state.cloudImportedTracks = data.importedTracks || [];
@@ -9523,13 +9624,29 @@
         refreshCloudShoutouts();
       },
       onFriendRequest: (p) => {
-        if (p.eventType !== "INSERT") return;
-        const newRow = p.new || {};
-        if (newRow.to_user_id === SLCloud.me.id) {
-          const peer = cloudPeers.get(newRow.from_user_id);
+        const row = p.new || p.old || {};
+        const me = SLCloud.me.id;
+        if (p.eventType === "INSERT" && row.to_user_id === me) {
+          const peer = cloudPeers.get(row.from_user_id);
           toast(`${peer ? peer.name : "Quelqu'un"} t'a envoyé une demande d'ami.`);
-          void syncNotificationsFromCloud();
-          scheduleSoftRender();
+        }
+        if (
+          row.to_user_id === me ||
+          row.from_user_id === me ||
+          (p.eventType === "UPDATE" && (row.status === "accepted" || row.status === "rejected"))
+        ) {
+          void syncFriendshipFromCloud().then(() => {
+            void syncNotificationsFromCloud();
+            scheduleSoftRender();
+          });
+        }
+      },
+      onFriendship: (p) => {
+        const row = p.new || p.old || {};
+        const me = SLCloud.me.id;
+        if (!row.a_id && !row.b_id) return;
+        if (row.a_id === me || row.b_id === me) {
+          void syncFriendshipFromCloud().then(() => scheduleSoftRender());
         }
       },
       onFollow: (p) => {
@@ -10539,4 +10656,7 @@
   window.__sl.cloudShoutouts = cloudShoutouts;
   window.__sl.renderCloudShoutoutsInto = renderCloudShoutoutsInto;
   window.__sl.openFavoriteAlbum = openFavoriteAlbumPicker;
+  window.__sl.openAlbumWallEditor = function () {
+    if (window.SLAlbumWall && window.SLAlbumWall.openEditor) SLAlbumWall.openEditor();
+  };
 })();

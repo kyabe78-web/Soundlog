@@ -523,10 +523,14 @@
 
     async sendFriendRequest(targetId) {
       if (!this.me) throw new Error("Pas connecté");
-      const { error } = await this.client
+      if (targetId === this.me.id) throw new Error("Impossible de s’ajouter soi-même");
+      const { data, error } = await this.client
         .from("friend_requests")
-        .insert({ from_user_id: this.me.id, to_user_id: targetId, status: "pending" });
+        .insert({ from_user_id: this.me.id, to_user_id: targetId, status: "pending" })
+        .select("id, from_user_id, to_user_id, status, created_at")
+        .single();
       if (error) throw error;
+      return data;
     },
 
     async cancelFriendRequest(targetId) {
@@ -546,12 +550,25 @@
         const { error } = await this.client.rpc("accept_friend_request", { req_id: reqId });
         if (error) throw error;
       } else {
-        const { error } = await this.client
-          .from("friend_requests")
-          .update({ status: "rejected", updated_at: new Date().toISOString() })
-          .eq("id", reqId);
-        if (error) throw error;
+        const { error } = await this.client.rpc("decline_friend_request", { req_id: reqId });
+        if (error) {
+          const fallback = await this.client
+            .from("friend_requests")
+            .update({ status: "rejected", updated_at: new Date().toISOString() })
+            .eq("id", reqId)
+            .eq("to_user_id", this.me.id);
+          if (fallback.error) throw fallback.error;
+        }
       }
+    },
+
+    async syncFriendGraph() {
+      const [friends, friendRequests] = await Promise.all([this.listFriends(), this.listFriendRequests()]);
+      return {
+        friends: friends || [],
+        incoming: (friendRequests && friendRequests.incoming) || [],
+        outgoing: (friendRequests && friendRequests.outgoing) || [],
+      };
     },
 
     async listFriends() {
@@ -1420,6 +1437,7 @@
       onComment,
       onShoutout,
       onFriendRequest,
+      onFriendship,
       onFollow,
       onDmMessage,
       onDmReaction,
@@ -1434,6 +1452,7 @@
       if (onComment)   ch.on("postgres_changes", { event: "*", schema: "public", table: "comments" }, (p) => onComment(p));
       if (onShoutout)  ch.on("postgres_changes", { event: "*", schema: "public", table: "shoutouts" }, (p) => onShoutout(p));
       if (onFriendRequest) ch.on("postgres_changes", { event: "*", schema: "public", table: "friend_requests" }, (p) => onFriendRequest(p));
+      if (onFriendship) ch.on("postgres_changes", { event: "*", schema: "public", table: "friends" }, (p) => onFriendship(p));
       if (onFollow)    ch.on("postgres_changes", { event: "*", schema: "public", table: "follows" }, (p) => onFollow(p));
       if (onDmMessage) ch.on("postgres_changes", { event: "*", schema: "public", table: "dm_messages" }, (p) => onDmMessage(p));
       if (onDmReaction) ch.on("postgres_changes", { event: "*", schema: "public", table: "dm_message_reactions" }, (p) => onDmReaction(p));

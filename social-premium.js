@@ -330,6 +330,11 @@
             .map((r) => {
               const u = d.userById(r.fromUserId);
               if (!u) return "";
+              const when = r.createdAt
+                ? '<span class="soc-req-card__time">' +
+                  d.escapeHtml(String(r.createdAt).slice(0, 16).replace("T", " ")) +
+                  "</span>"
+                : "";
               return (
                 '<div class="soc-req-card">' +
                 '<span class="soc-req-card__avatar" style="background:hsl(' +
@@ -339,13 +344,19 @@
                 "</span>" +
                 '<div class="soc-req-card__body"><strong>' +
                 d.escapeHtml(u.name) +
-                '</strong><span class="feed-note">veut rejoindre ton cercle</span></div>' +
+                '</strong><span class="feed-note">veut rejoindre ton cercle</span>' +
+                when +
+                '</div>' +
                 '<div class="soc-req-card__actions">' +
                 '<button type="button" class="btn btn-primary btn-sm" data-accept-friend="' +
                 d.escapeHtml(r.id) +
+                '" data-accept-friend-from="' +
+                d.escapeHtml(r.fromUserId) +
                 '">Accepter</button>' +
                 '<button type="button" class="btn btn-ghost btn-sm" data-decline-friend="' +
                 d.escapeHtml(r.id) +
+                '" data-decline-friend-from="' +
+                d.escapeHtml(r.fromUserId) +
                 '">Refuser</button></div></div>'
               );
             })

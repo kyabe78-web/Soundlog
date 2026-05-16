@@ -1,5 +1,5 @@
 /* Soundlog — service worker (offline shell, network-first for app code) */
-const CACHE = "soundlog-shell-v16";
+const CACHE = "soundlog-shell-v17";
 const SHELL = [
   "/",
   "/index.html",
@@ -14,6 +14,8 @@ const NETWORK_FIRST = [
   "/cloud.js",
   "/music-search.js",
   "/log-listen.js",
+  "/carnet-social.js",
+  "/carnet-social.css",
   "/social-premium.js",
   "/styles.css",
   "/ui-premium.css",

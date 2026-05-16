@@ -596,27 +596,6 @@
       return data;
     },
 
-    // ---------- Commentaires ----------
-    async listCommentsForListening(listeningId) {
-      const { data } = await this.client
-        .from("comments")
-        .select("id,listening_id,author_id,text,created_at,profiles:author_id(handle,name,hue)")
-        .eq("listening_id", listeningId)
-        .order("created_at", { ascending: true });
-      return data || [];
-    },
-
-    async postComment(listeningId, text) {
-      if (!this.me) throw new Error("Pas connecté");
-      const { data, error } = await this.client
-        .from("comments")
-        .insert({ listening_id: listeningId, author_id: this.me.id, text })
-        .select()
-        .maybeSingle();
-      if (error) throw error;
-      return data;
-    },
-
     // ---------- Likes ----------
     async toggleListeningLike(listeningId) {
       if (!this.me) throw new Error("Pas connecté");
@@ -665,6 +644,184 @@
           .eq("user_id", this.me.id)
           .in("listening_id", ids);
         (myRows || []).forEach((r) => mine.add(r.listening_id));
+      }
+      return { counts, mine };
+    },
+
+    async listReactionsForListenings(listeningIds) {
+      const ids = [...new Set((listeningIds || []).filter(Boolean))];
+      if (!ids.length) return {};
+      const { data, error } = await this.client
+        .from("listening_reactions")
+        .select("listening_id, emoji, user_id, profiles:user_id(id,name,handle,hue)")
+        .in("listening_id", ids);
+      if (error) {
+        console.warn("[SLCloud] listReactionsForListenings", error);
+        return {};
+      }
+      const out = {};
+      (data || []).forEach((row) => {
+        const lid = row.listening_id;
+        if (!out[lid]) out[lid] = { counts: {}, users: {}, mine: new Set() };
+        const em = row.emoji;
+        out[lid].counts[em] = (out[lid].counts[em] || 0) + 1;
+        if (!out[lid].users[em]) out[lid].users[em] = [];
+        if (row.profiles) out[lid].users[em].push(row.profiles);
+        if (this.me && row.user_id === this.me.id) out[lid].mine.add(em);
+      });
+      return out;
+    },
+
+    async toggleListeningReaction(listeningId, emoji) {
+      if (!this.me) throw new Error("Pas connecté");
+      const em = String(emoji || "").trim();
+      if (!em) throw new Error("Réaction invalide");
+      const { data: existing } = await this.client
+        .from("listening_reactions")
+        .select("emoji")
+        .eq("user_id", this.me.id)
+        .eq("listening_id", listeningId)
+        .eq("emoji", em)
+        .maybeSingle();
+      if (existing) {
+        const { error } = await this.client
+          .from("listening_reactions")
+          .delete()
+          .eq("user_id", this.me.id)
+          .eq("listening_id", listeningId)
+          .eq("emoji", em);
+        if (error) throw error;
+        return { active: false, emoji: em };
+      }
+      const { error } = await this.client.from("listening_reactions").insert({
+        user_id: this.me.id,
+        listening_id: listeningId,
+        emoji: em,
+      });
+      if (error) throw error;
+      return { active: true, emoji: em };
+    },
+
+    async fetchListeningSocialState(listeningIds) {
+      const ids = [...new Set((listeningIds || []).filter(Boolean))];
+      if (!ids.length) return { likes: { counts: {}, mine: new Set() }, reactions: {}, commentCounts: {} };
+      const [likes, reactions, commentRows] = await Promise.all([
+        this.fetchLikeState(ids),
+        this.listReactionsForListenings(ids),
+        this.client
+          .from("comments")
+          .select("listening_id")
+          .in("listening_id", ids),
+      ]);
+      const commentCounts = {};
+      if (!commentRows.error) {
+        (commentRows.data || []).forEach((r) => {
+          commentCounts[r.listening_id] = (commentCounts[r.listening_id] || 0) + 1;
+        });
+      }
+      return { likes, reactions, commentCounts };
+    },
+
+    async listCircleListenings(limit = 48) {
+      if (!this.me) return [];
+      const [following, friends] = await Promise.all([this.listFollowing(), this.listFriends()]);
+      const ids = new Set(following || []);
+      (friends || []).forEach((p) => {
+        if (p && p.id && p.id !== this.me.id) ids.add(p.id);
+      });
+      const userIds = [...ids];
+      if (!userIds.length) return [];
+      const { data, error } = await this.client
+        .from("listenings")
+        .select(
+          "id,user_id,album_id,rating,comment,comment_at,date,created_at, profiles:user_id(id,name,handle,hue), albums:album_id(id,title,artist,year,artwork_url)"
+        )
+        .in("user_id", userIds)
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) {
+        console.warn("[SLCloud] listCircleListenings", error);
+        return [];
+      }
+      return data || [];
+    },
+
+    async listCommentsForListening(listeningId, limit = 80) {
+      const { data } = await this.client
+        .from("comments")
+        .select(
+          "id,listening_id,author_id,text,created_at,parent_id, profiles:author_id(handle,name,hue)"
+        )
+        .eq("listening_id", listeningId)
+        .order("created_at", { ascending: true })
+        .limit(limit);
+      return data || [];
+    },
+
+    async postComment(listeningId, text, parentId) {
+      if (!this.me) throw new Error("Pas connecté");
+      const row = {
+        listening_id: listeningId,
+        author_id: this.me.id,
+        text: String(text || "").trim(),
+      };
+      if (parentId) row.parent_id = parentId;
+      const { data, error } = await this.client.from("comments").insert(row).select().maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+
+    async deleteComment(commentId) {
+      if (!this.me) throw new Error("Pas connecté");
+      const { error } = await this.client
+        .from("comments")
+        .delete()
+        .eq("id", commentId)
+        .eq("author_id", this.me.id);
+      if (error) throw error;
+      return { ok: true };
+    },
+
+    async toggleCommentLike(commentId) {
+      if (!this.me) throw new Error("Pas connecté");
+      const { data: existing } = await this.client
+        .from("comment_likes")
+        .select("comment_id")
+        .eq("user_id", this.me.id)
+        .eq("comment_id", commentId)
+        .maybeSingle();
+      if (existing) {
+        const { error } = await this.client
+          .from("comment_likes")
+          .delete()
+          .eq("user_id", this.me.id)
+          .eq("comment_id", commentId);
+        if (error) throw error;
+        return { liked: false };
+      }
+      const { error } = await this.client
+        .from("comment_likes")
+        .insert({ user_id: this.me.id, comment_id: commentId });
+      if (error) throw error;
+      return { liked: true };
+    },
+
+    async fetchCommentLikeState(commentIds) {
+      const ids = [...new Set((commentIds || []).filter(Boolean))];
+      if (!ids.length) return { counts: {}, mine: new Set() };
+      const { data: countRows } = await this.client.from("comment_likes").select("comment_id").in("comment_id", ids);
+      const counts = {};
+      (countRows || []).forEach((r) => {
+        counts[r.comment_id] = (counts[r.comment_id] || 0) + 1;
+      });
+      const mine = new Set();
+      if (this.me) {
+        const { data: myRows } = await this.client
+          .from("comment_likes")
+          .select("comment_id")
+          .eq("user_id", this.me.id)
+          .in("comment_id", ids);
+        (myRows || []).forEach((r) => mine.add(r.comment_id));
       }
       return { counts, mine };
     },
@@ -1269,6 +1426,7 @@
       onEventInterest,
       onNotification,
       onLike,
+      onListeningReaction,
     }) {
       if (!this.ready) return null;
       const ch = this.client.channel("soundlog-live");
@@ -1288,6 +1446,11 @@
         );
       }
       if (onLike) ch.on("postgres_changes", { event: "*", schema: "public", table: "listening_likes" }, (p) => onLike(p));
+      if (onListeningReaction) {
+        ch.on("postgres_changes", { event: "*", schema: "public", table: "listening_reactions" }, (p) =>
+          onListeningReaction(p)
+        );
+      }
       ch.subscribe();
       return ch;
     },

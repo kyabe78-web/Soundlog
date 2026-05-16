@@ -204,6 +204,7 @@
       feedHomeShown: 15,
       exploreTab: "albums",
       carnetTab: "journal",
+      carnetJournalTab: "mine",
       diaryFilter: "all",
       socialTab: "community",
       socialCircleTab: "feed",
@@ -271,6 +272,7 @@
         upcomingTourPreview: Array.isArray(parsed.upcomingTourPreview) ? parsed.upcomingTourPreview : base.upcomingTourPreview,
         feedHomeTab: parsed.feedHomeTab === "discover" ? "discover" : base.feedHomeTab,
         feedHomeShown: Math.min(80, Math.max(10, parseInt(parsed.feedHomeShown, 10) || base.feedHomeShown)),
+        carnetJournalTab: parsed.carnetJournalTab === "circle" ? "circle" : base.carnetJournalTab,
       };
       purgeLegacyDemoContent(merged);
       return merged;
@@ -2647,7 +2649,7 @@
       title = "Listes";
     } else {
       body = renderDiary();
-      title = "Journal";
+      title = "Carnet";
     }
     const sonarHint = tab === "journal" ? sonarChipHtml("carnet") : "";
     return `<div class="hub-page view-themed" data-hub-page="carnet"><header class="hub-page__head"><p class="hub-page__kicker">Mon carnet</p><h1 class="hub-page__title">${title}</h1>${tabs}${sonarHint}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
@@ -4625,43 +4627,11 @@
     return listenings;
   }
 
-  function renderDiaryCard(l) {
-    const al = albumById(l.albumId);
-    if (!al) return "";
-    const rating = Number(l.rating) || 0;
-    const ratingCls = rating >= 4 ? " diary-card__rating--high" : "";
-    const review = l.review && String(l.review).trim();
-    return `<article class="diary-card" data-album="${al.id}" data-preview-album="${escapeHtml(al.id)}">
-      <div class="diary-card__cover-wrap">
-        ${coverHtml(al, true)}
-        <span class="diary-card__rating${ratingCls}" title="Note">${rating ? rating.toFixed(1) : "—"}</span>
-      </div>
-      <div class="diary-card__body">
-        <p class="diary-card__date">${escapeHtml(diaryDateLabel(l.date))}</p>
-        <h3 class="diary-card__title"><button type="button" class="link" data-album="${al.id}">${escapeHtml(al.title)}</button></h3>
-        <p class="diary-card__artist">${escapeHtml(al.artist)}${al.year ? ` · ${al.year}` : ""}</p>
-        <div class="diary-card__meta">
-          <span class="diary-card__stars" aria-label="Note">${starString(l.rating)}</span>
-          ${al.genre ? `<span class="diary-card__genre">${escapeHtml(al.genre)}</span>` : ""}
-        </div>
-        <p class="diary-card__review${review ? "" : " diary-card__review--empty"}">${review ? escapeHtml(review) : "Pas de critique — ajoute ton avis depuis Modifier."}</p>
-        ${previewNoteHtml(al)}
-        <div class="diary-card__actions">
-          <button type="button" class="btn btn-ghost btn-sm feed-post__action-btn--preview" data-preview-play="${escapeHtml(al.id)}" aria-pressed="false">Extrait</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-edit-listen="${l.id}">Modifier</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-del-listen="${l.id}">Supprimer</button>
-        </div>
-      </div>
-    </article>`;
-  }
-
   function renderDiary() {
-    const mine = state.listenings
-      .filter((l) => l.userId === "me")
-      .sort((a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0));
-    const filtered = filterDiaryListenings(mine);
+    const mine = state.listenings.filter((l) => l.userId === "me");
     const stats = computeDiaryStats(mine);
     const filter = state.diaryFilter || "all";
+    const journalTab = state.carnetJournalTab === "circle" ? "circle" : "mine";
     const filters = [
       { id: "all", label: "Tout" },
       { id: "reviewed", label: "Avec critique" },
@@ -4673,41 +4643,18 @@
           `<button type="button" class="diary-filter${filter === f.id ? " is-active" : ""}" data-diary-filter="${f.id}">${f.label}</button>`
       )
       .join("");
+    const journalTabs =
+      window.SLCarnetSocial && SLCarnetSocial.renderJournalTabs
+        ? SLCarnetSocial.renderJournalTabs(journalTab)
+        : "";
+    const feedHtml =
+      window.SLCarnetSocial && SLCarnetSocial.renderFeedHtml
+        ? SLCarnetSocial.renderFeedHtml(journalTab)
+        : `<p class="feed-note">Fil social indisponible.</p>`;
 
-    let timelineHtml = "";
-    if (!filtered.length) {
-      timelineHtml = `<div class="diary-empty">
-        <p class="diary-empty__title">${mine.length ? "Aucune entrée pour ce filtre" : "Ton journal est vide"}</p>
-        <p class="feed-note">${mine.length ? "Essaie un autre filtre ou ajoute une nouvelle écoute." : "Logue un album pour commencer ton carnet daté."}</p>
-        <p style="margin-top:1rem"><button type="button" class="btn btn-primary" id="btn-add-listen">+ Logger une écoute</button></p>
-      </div>`;
-    } else {
-      const groups = new Map();
-      for (const l of filtered) {
-        const key = (l.date || "").slice(0, 7) || "0000-00";
-        if (!groups.has(key)) groups.set(key, []);
-        groups.get(key).push(l);
-      }
-      const keys = [...groups.keys()].sort((a, b) => (a < b ? 1 : -1));
-      timelineHtml = keys
-        .map((key) => {
-          const entries = groups.get(key);
-          const label = key === "0000-00" ? "Sans date" : diaryMonthLabel(entries[0].date);
-          const cards = entries.map((l) => renderDiaryCard(l)).join("");
-          return `<section class="diary-month" id="diary-month-${escapeHtml(key)}">
-            <header class="diary-month__head">
-              <h2 class="diary-month__title">${escapeHtml(label)}</h2>
-              <span class="diary-month__count">${entries.length} écoute${entries.length > 1 ? "s" : ""}</span>
-            </header>
-            <div class="diary-month__cards">${cards}</div>
-          </section>`;
-        })
-        .join("");
-    }
-
-    return `<div class="diary-carnet view-themed">
+    return `<div class="diary-carnet diary-carnet--social view-themed">
       <header class="diary-carnet__masthead">
-        <p class="diary-carnet__lead">Chaque carte est une page de ton agenda — date, note, critique et extrait.</p>
+        <p class="diary-carnet__lead">Ton carnet devient un fil social — likes, réactions et commentaires sur chaque écoute.</p>
         <button type="button" class="btn btn-primary" id="btn-add-listen">+ Logger</button>
         <div class="diary-stats" aria-label="Statistiques du journal">
           <div class="diary-stat"><b>${stats.total}</b><span>écoutes</span></div>
@@ -4717,13 +4664,13 @@
           <div class="diary-stat"><b>${stats.thisMonth}</b><span>ce mois</span></div>
         </div>
         <div class="diary-carnet__toolbar">
-          <div class="diary-filters" role="tablist" aria-label="Filtrer le journal">${filtersHtml}</div>
+          ${journalTab === "mine" ? `<div class="diary-filters" role="tablist" aria-label="Filtrer le journal">${filtersHtml}</div>` : ""}
         </div>
       </header>
-      <div class="diary-timeline diary-timeline--carnet">${timelineHtml}</div>
+      ${journalTabs}
+      <div class="diary-timeline diary-timeline--social">${feedHtml}</div>
     </div>`;
   }
-
 
   function renderLists() {
     const mine = state.lists.filter((l) => l.userId === "me");
@@ -5762,6 +5709,14 @@
     if (window.SLArtwork) {
       SLArtwork.wireCoverImages($main);
     }
+    const carnetHub = $main.querySelector('[data-hub-page="carnet"]');
+    if (carnetHub && window.SLCarnetSocial) {
+      SLCarnetSocial.bind(carnetHub);
+      void (async () => {
+        await SLCarnetSocial.hydrateFeed(carnetHub);
+        if (state.carnetJournalTab === "circle") await SLCarnetSocial.hydrateCircleStream();
+      })();
+    }
     if (window.__slSyncTopbarStack) requestAnimationFrame(window.__slSyncTopbarStack);
   }
 
@@ -6230,6 +6185,28 @@
     });
   }
 
+  if (window.SLCarnetSocial && window.SLCarnetSocial.install) {
+    window.SLCarnetSocial.install({
+      state,
+      persist,
+      escapeHtml,
+      coverHtml,
+      starString,
+      toast,
+      navigate,
+      albumById,
+      mergeCloudAlbumFromRow,
+      ensureAlbumFromPublicFeedRow,
+      filterDiaryListenings,
+      diaryDateLabel,
+      userById,
+      isCloudUuid,
+      toggleListeningLike,
+      SLCloud: window.SLCloud,
+      timeAgo,
+    });
+  }
+
   if (window.SLLogListen && window.SLLogListen.install) {
     window.__slMusicCountry = musicCountry;
     window.SLLogListen.install({
@@ -6600,6 +6577,17 @@
         }
         persist();
         if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
+        render();
+      });
+    });
+    $main.querySelectorAll("[data-carnet-journal-tab]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const tab = btn.getAttribute("data-carnet-journal-tab") || "mine";
+        state.carnetJournalTab = tab;
+        if (window.SLCarnetSocial && window.SLCarnetSocial.invalidateCircleCache) {
+          SLCarnetSocial.invalidateCircleCache();
+        }
+        persist();
         render();
       });
     });
@@ -8907,6 +8895,11 @@
       },
       onLike: () => {
         scheduleSoftRender();
+      },
+      onListeningReaction: () => {
+        if (route.view === "carnet" && (state.carnetTab === "journal" || route.hubTab === "journal")) {
+          scheduleSoftRender();
+        }
       },
       onDmMessage: () => {
         if (route.view !== "inbox" && !document.body.classList.contains("inbox-drawer-open")) return;

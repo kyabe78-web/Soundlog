@@ -106,9 +106,14 @@
   color: var(--text-on-accent, #fff);
 }
 
-.diary-timeline--carnet {
+.diary-timeline--carnet,
+.diary-timeline--social {
   position: relative;
   padding-left: 0;
+}
+
+.diary-carnet--social .diary-carnet__lead {
+  max-width: 52ch;
 }
 
 .diary-month {

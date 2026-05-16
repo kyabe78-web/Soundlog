@@ -367,3 +367,574 @@
   .mg-dex-card.is-active,
   .mg-panel.is-active { animation: none !important; }
 }
+
+/* =========================================================================
+   V4 polish — Winamp radio, Radiobot body, dense console, Dex, sanctuary
+   ========================================================================= */
+
+.app-content[data-route="mignon"] {
+  --mg-text: #e8e4f8;
+  --mg-muted: #9a92b8;
+  --mg-panel: #12101c;
+  --mg-border: #4a4068;
+  --mg-border-hi: #7a6ea8;
+}
+
+.mg-console__grid {
+  grid-template-columns: 120px minmax(0, 1fr) minmax(220px, 272px);
+  gap: 6px;
+}
+
+.mg-console .mg-panels {
+  min-height: 380px;
+  padding: 4px;
+}
+
+.mg-console .mg-stage {
+  min-height: 360px;
+}
+
+.mg-hud--tools {
+  padding: 4px 8px;
+  margin-bottom: 4px;
+  border: 2px solid var(--px-border);
+  background: #0c0a14;
+}
+
+.mg-hud--tools .mg-hud__status {
+  margin: 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.38rem;
+  line-height: 1.6;
+  color: var(--px-gold);
+}
+
+.mg-hud--tools .mg-hud__right {
+  gap: 4px;
+}
+
+.mg-hud__name {
+  min-width: 100px;
+  font-size: 0.75rem;
+}
+
+/* Winamp radio */
+.mg-radio-panel.mg-winamp {
+  padding: 6px;
+  background: linear-gradient(180deg, #1e1830 0%, #0a0812 45%, #06050a 100%);
+  border: 3px solid #3a3058;
+  font-size: 0.8rem;
+}
+
+.mg-radio-panel__brand {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.mg-radio-panel__icon {
+  width: 22px;
+  height: 22px;
+  background: linear-gradient(135deg, #4a3868, #2a2040);
+  border: 2px solid var(--px-border-hi);
+  box-shadow: inset 0 0 0 1px #6a5a88;
+}
+
+.mg-radio-panel__icon::after {
+  content: "♫";
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  font-size: 0.55rem;
+  color: var(--px-gold);
+}
+
+.mg-radio-modes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.mg-radio-mode {
+  flex: 1 1 30%;
+  min-width: 0;
+  padding: 4px 2px;
+  border: 2px solid var(--px-border);
+  background: #0f0d18;
+  color: var(--mg-muted);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.28rem;
+  cursor: pointer;
+}
+
+.mg-radio-mode.is-active {
+  border-color: var(--px-gold);
+  color: var(--px-gold);
+  background: #1a1428;
+  box-shadow: 0 0 8px rgba(232, 200, 120, 0.25);
+}
+
+.mg-radio-tuner__led {
+  width: 8px;
+  height: 8px;
+  margin-left: auto;
+  background: #3a3048;
+  border: 1px solid #1a1828;
+}
+
+.mg-radio-tuner__led.is-live {
+  background: #6eff8a;
+  box-shadow: 0 0 8px #6eff8a;
+  animation: px-led-blink 0.8s steps(2) infinite;
+}
+
+@keyframes px-led-blink {
+  50% { opacity: 0.4; }
+}
+
+.mg-radio-wave {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 20px;
+  margin-bottom: 6px;
+  padding: 2px 4px;
+  border: 1px solid var(--px-border);
+  background: #06050a;
+  opacity: 0.5;
+}
+
+.mg-radio-wave.is-live .mg-radio-wave__bar {
+  animation: mg-wave-pulse 0.4s steps(3) infinite;
+}
+
+.mg-radio-wave__bar {
+  flex: 1;
+  height: calc(var(--h, 4) * 1px);
+  max-height: 16px;
+  background: linear-gradient(180deg, var(--px-neon), #6a3868);
+}
+
+.mg-radio-wave.is-live .mg-radio-wave__bar:nth-child(odd) {
+  animation-delay: 0.1s;
+}
+
+@keyframes mg-wave-pulse {
+  50% { height: calc((var(--h, 4) + 6) * 1px); }
+}
+
+.mg-radio-progress {
+  position: relative;
+  height: 14px;
+  margin-bottom: 6px;
+  border: 2px solid var(--px-border);
+  background: #06050a;
+  cursor: pointer;
+}
+
+.mg-radio-progress__fill {
+  display: block;
+  height: 100%;
+  background: linear-gradient(90deg, #8a3868, var(--px-neon));
+  box-shadow: 0 0 8px rgba(255, 110, 180, 0.35);
+}
+
+.mg-radio-progress__time,
+.mg-radio-progress__dur {
+  position: absolute;
+  top: -13px;
+  font-family: "VT323", monospace;
+  font-size: 0.85rem;
+  color: var(--mg-muted);
+}
+
+.mg-radio-progress__time { left: 0; }
+.mg-radio-progress__dur { right: 0; }
+
+.mg-radio-transport {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 3px;
+  margin-bottom: 6px;
+}
+
+.mg-radio-transport button,
+.mg-radio-opt {
+  padding: 6px 2px;
+  min-height: 32px;
+  border: 2px solid var(--px-border);
+  background: linear-gradient(180deg, #2a2438, #14101c);
+  color: var(--mg-text);
+  font-size: 0.5rem;
+  cursor: pointer;
+}
+
+.mg-radio-play {
+  border-color: var(--px-gold);
+  color: var(--px-gold);
+}
+
+.mg-radio-opt.is-on {
+  border-color: var(--px-cyan);
+  color: var(--px-cyan);
+  box-shadow: inset 0 0 8px rgba(110, 180, 255, 0.2);
+}
+
+.mg-radio-volume-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.3rem;
+  color: var(--mg-muted);
+}
+
+.mg-radio-volume-row .mg-radio-volume {
+  flex: 1;
+}
+
+.mg-radio-volume__pct {
+  min-width: 2.2rem;
+  text-align: right;
+  color: var(--px-gold);
+}
+
+.mg-radio-now__track {
+  font-size: 0.42rem !important;
+  line-height: 1.6 !important;
+}
+
+.mg-radio-queue {
+  max-height: 56px;
+  font-size: 0.72rem;
+}
+
+.mg-winamp--playing .mg-radio-panel__title {
+  text-shadow: 0 0 10px var(--px-gold);
+}
+
+/* Radiobot extended */
+.px-radiobot__arm {
+  position: absolute;
+  top: 42%;
+  width: 10px;
+  height: 18px;
+  background: #3a3848;
+  border: 2px solid #1a1828;
+  z-index: 1;
+}
+
+.px-radiobot__arm--l { left: 8px; transform: rotate(12deg); }
+.px-radiobot__arm--r { right: 8px; transform: rotate(-12deg); }
+
+.px-radiobot__foot {
+  position: absolute;
+  bottom: 2px;
+  width: 14px;
+  height: 8px;
+  background: #2a2838;
+  border: 2px solid #1a1828;
+  border-radius: 0;
+}
+
+.px-radiobot__foot--l { left: 28px; }
+.px-radiobot__foot--r { right: 28px; }
+
+.px-radiobot__speaker {
+  position: absolute;
+  top: 52%;
+  width: 8px;
+  height: 10px;
+  background: #1a1828;
+  border: 1px solid #4a4858;
+}
+
+.px-radiobot__speaker--l { left: 4px; }
+.px-radiobot__speaker--r { right: 4px; }
+
+.px-radiobot__knob {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #4a4858;
+  border: 2px solid #2a2838;
+}
+
+.px-radiobot__knob--vol { top: 8px; left: 6px; }
+.px-radiobot__knob--tune { top: 8px; right: 6px; }
+
+.px-radiobot__cassette {
+  position: absolute;
+  bottom: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 28px;
+  height: 10px;
+  background: #2a2830;
+  border: 2px solid #1a1828;
+}
+
+.px-radiobot__headphones {
+  position: absolute;
+  top: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 52px;
+  height: 14px;
+  border: 3px solid #3a3848;
+  border-bottom: none;
+  border-radius: 26px 26px 0 0;
+  z-index: 3;
+}
+
+.px-radiobot__headphones::before,
+.px-radiobot__headphones::after {
+  content: "";
+  position: absolute;
+  bottom: -8px;
+  width: 12px;
+  height: 14px;
+  background: #3a3848;
+  border: 2px solid #1a1828;
+}
+
+.px-radiobot__headphones::before { left: -2px; }
+.px-radiobot__headphones::after { right: -2px; }
+
+.px-radiobot.is-radio-live .px-radiobot__note,
+.mg-page.is-music-live .px-radiobot__note {
+  opacity: 1;
+  animation: px-note-float 1.2s steps(4) infinite;
+}
+
+.px-radiobot__note--c {
+  right: -8px;
+  top: 50%;
+  animation-delay: 0.6s;
+}
+
+@keyframes px-note-float {
+  from { transform: translateY(0); opacity: 0.2; }
+  50% { transform: translateY(-10px); opacity: 1; }
+  to { transform: translateY(-18px); opacity: 0; }
+}
+
+.px-radiobot[data-anim="sad"] .px-radiobot__mouth {
+  height: 2px;
+  border-radius: 0;
+  transform: translateX(-50%) rotate(8deg);
+}
+
+.px-radiobot[data-anim="tired"] .px-radiobot__eye::after {
+  height: 1px;
+  top: 50%;
+}
+
+.px-radiobot[data-anim="happy"] .px-radiobot__mouth {
+  border-radius: 0 0 8px 8px;
+  height: 6px;
+}
+
+/* Sanctuary props — shared */
+.px-prop--posters {
+  top: 18%;
+  left: 8%;
+  width: 36px;
+  height: 48px;
+  background: #2a2040;
+  border: 2px solid #1a1828;
+  box-shadow: 12px 4px 0 #3a3050, 24px 8px 0 #4a4060;
+}
+
+.px-prop--crt_small,
+.px-prop--crt_big {
+  bottom: 32%;
+  left: 8%;
+  width: 44px;
+  height: 32px;
+  background: #1a1828;
+  border: 3px solid #3a3848;
+  box-shadow: inset 0 0 12px rgba(110, 255, 180, 0.15);
+}
+
+.px-prop--crt_small::after,
+.px-prop--crt_big::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  background: linear-gradient(180deg, rgba(80, 200, 140, 0.2), transparent);
+}
+
+.px-prop--speaker_stack,
+.px-prop--speakers {
+  bottom: 24%;
+  left: 6%;
+  width: 20px;
+  height: 40px;
+  background: #2a2838;
+  border: 2px solid #1a1828;
+  box-shadow: 24px 0 0 #3a3848;
+}
+
+.px-prop--neon_sign,
+.px-prop--neon_pink {
+  top: 20%;
+  right: 10%;
+  color: var(--px-neon);
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.28rem;
+  text-shadow: 0 0 8px var(--px-neon);
+}
+
+.px-prop--shelf_vinyl {
+  bottom: 42%;
+  right: 8%;
+  width: 48px;
+  height: 20px;
+  background: #2a2830;
+  border: 2px solid #1a1828;
+  box-shadow: 0 -8px 0 #3a3848, 0 -16px 0 #4a4858;
+}
+
+.px-prop--plant {
+  bottom: 22%;
+  right: 18%;
+  width: 16px;
+  height: 24px;
+  background: #3a6848;
+  border: 2px solid #1a3828;
+}
+
+.px-room__eq-wall {
+  position: absolute;
+  bottom: 30%;
+  right: 6%;
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 32px;
+  z-index: 2;
+}
+
+.px-eq-wall-bar {
+  width: 5px;
+  min-height: 4px;
+  height: 4px;
+  background: #4a4868;
+  transition: height 0.05s steps(2);
+}
+
+/* Dex Pokédex v2 */
+.mg-dex-card {
+  position: relative;
+  overflow: hidden;
+  min-height: 168px;
+  padding: 8px;
+  border: 3px solid var(--px-border);
+  background: #0f0d18;
+}
+
+.mg-dex-card__bg {
+  position: absolute;
+  inset: 0;
+  opacity: 0.35;
+  background:
+    radial-gradient(circle at 20% 20%, rgba(255, 110, 180, 0.12), transparent 50%),
+    repeating-linear-gradient(90deg, #12101c 0, #12101c 8px, #0c0a12 8px, #0c0a12 16px);
+  pointer-events: none;
+}
+
+.mg-dex-card--epic .mg-dex-card__bg {
+  background: radial-gradient(circle at 50% 0%, rgba(232, 200, 120, 0.2), transparent 55%);
+}
+
+.mg-dex-card__head,
+.mg-dex-card__sprite,
+.mg-dex-card__body {
+  position: relative;
+  z-index: 1;
+}
+
+.mg-dex-card__sprite {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 72px;
+  margin: 4px 0;
+  border: 2px dashed var(--px-border);
+  background: rgba(0, 0, 0, 0.35);
+}
+
+.mg-dex-card__stats {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin: 6px 0;
+  font-size: 0.68rem;
+  color: var(--mg-muted);
+}
+
+.mg-dex-card__evo i {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  background: #2a2838;
+  border: 1px solid #3a3848;
+}
+
+.mg-dex-card__evo i.is-lit {
+  background: var(--px-gold);
+  box-shadow: 0 0 4px var(--px-gold);
+}
+
+.mg-dex-card__locked {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.32rem;
+  color: var(--mg-muted);
+}
+
+.mg-dex-card--silhouette .mg-dex-card__sprite {
+  filter: brightness(0);
+  opacity: 0.35;
+}
+
+/* Arcade */
+.mg-arcade-hiscore {
+  margin: 4px 0 0;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.35rem;
+  color: var(--px-gold);
+}
+
+.mg-cabinet {
+  border: 3px solid var(--px-border);
+  box-shadow: 6px 6px 0 var(--px-shadow);
+}
+
+.mg-deck {
+  gap: 6px;
+  padding: 6px;
+}
+
+.mg-deck__block {
+  padding: 6px;
+}
+
+.mg-topbar__brand {
+  font-size: 0.48rem;
+}
+
+@media (max-width: 960px) {
+  .mg-console__grid {
+    grid-template-columns: 1fr;
+  }
+
+  .mg-radio-panel.mg-winamp {
+    order: -1;
+  }
+}

@@ -6,7 +6,7 @@
 
   const VERSION = 2;
   const SYNC_COOLDOWN_MS = 45000;
-  const INTERACTION_ANIMS = new Set(["dance", "excited", "listening", "pet", "stretch", "hover", "happy", "sleep"]);
+  const INTERACTION_ANIMS = new Set(["dance", "excited", "listening", "pet", "stretch", "hover", "happy", "sleep", "sad", "tired"]);
   const TAB_STORAGE_KEY = "sl_mignon_tab";
   let lastActivitySyncAt = 0;
   let rhythmCleanup = null;
@@ -139,6 +139,11 @@
       miniGameStats: {},
       ambientOn: true,
       radioOn: true,
+      radioMode: "auto",
+      radioShuffle: true,
+      radioRepeat: "off",
+      radioMuted: false,
+      radioVolume: 0.72,
       createdAt: new Date().toISOString(),
     };
   }
@@ -177,6 +182,12 @@
     if (!m.socialLog || typeof m.socialLog !== "object") m.socialLog = { day: "", count: 0 };
     m.ambientOn = m.ambientOn !== false;
     m.radioOn = m.radioOn !== false;
+    const radioModes = ["auto", "mood", "night", "lofi", "experimental"];
+    if (!radioModes.includes(m.radioMode)) m.radioMode = "auto";
+    m.radioShuffle = m.radioShuffle !== false;
+    if (!["off", "one", "all"].includes(m.radioRepeat)) m.radioRepeat = "off";
+    m.radioMuted = !!m.radioMuted;
+    if (m.radioVolume != null) m.radioVolume = Math.max(0, Math.min(1, Number(m.radioVolume) || 0.72));
     return m;
   }
 
@@ -210,11 +221,17 @@
     const idleAnim =
       m.mood === "sleepy"
         ? "sleep"
-        : m.mood === "excited" || m.mood === "bliss"
-          ? "dance"
-          : m.mood === "listening"
-            ? "listening"
-            : "idle";
+        : m.energy < 32
+          ? "tired"
+          : m.mood === "wistful"
+            ? "sad"
+            : m.mood === "excited" || m.mood === "bliss"
+              ? "dance"
+              : m.mood === "listening"
+                ? "listening"
+                : m.mood === "happy"
+                  ? "happy"
+                  : "idle";
     root.querySelectorAll(".px-radiobot, .px-mignon-buddy").forEach((el) => {
       el.setAttribute("data-mood", m.mood);
       if (!INTERACTION_ANIMS.has(el.getAttribute("data-anim")) && el.getAttribute("data-anim") !== "dance") {
@@ -292,13 +309,16 @@
       if (title) title.textContent = m.name;
       const nameInput = root.querySelector("#mignon-name-input");
       if (nameInput && document.activeElement !== nameInput) nameInput.value = m.name;
-      const pills = root.querySelector(".mg-hud__stats");
-      if (pills) {
-        pills.innerHTML = `<span class="mg-pill">Niv. ${m.level}</span>
-          <span class="mg-pill">${d().escapeHtml(STAGES[m.stage].name)}</span>
-          <span class="mg-pill">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)}</span>
-          <span class="mg-pill mg-pill--aura">Aura ${m.auraScore || 0}</span>
-          ${m.streak > 1 ? `<span class="mg-pill mg-pill--gold">${m.streak}j</span>` : ""}`;
+      const status = root.querySelector(".mg-hud__status");
+      if (status) {
+        status.textContent = `${mood.emoji} ${mood.label} · ${STAGES[m.stage].name} · Aura ${m.auraScore || 0}`;
+      }
+      const topBrand = root.querySelector(".mg-topbar__brand");
+      if (topBrand) {
+        const vibe = ENG() ? ENG().computeMusicVibe(profile) : "lofi";
+        topBrand.innerHTML = `${d().escapeHtml(m.name)}<small>MIGNON · NIV. ${m.level}</small>`;
+        const lvl = root.querySelector(".mg-topbar__lvl");
+        if (lvl) lvl.textContent = vibe.toUpperCase();
       }
     }
 
@@ -940,9 +960,10 @@
         ? 100
         : Math.round(((m.xp - xpCur.xp) / Math.max(1, xpNext.xp - xpCur.xp)) * 100);
     const musicality = Math.round(profile.listenCount ? Math.min(100, profile.listenCount * 2 + m.affinity * 0.4) : m.affinity);
+    const vibe = ENG() ? ENG().computeMusicVibe(profile) : "lofi";
     return `<header class="mg-topbar">
-      <h1 class="mg-topbar__brand">MIGNON<small>COMPAGNON MUSICAL</small></h1>
-      <span class="mg-topbar__lvl">NIV. ${m.level}</span>
+      <h1 class="mg-topbar__brand">${d().escapeHtml(m.name)}<small>MIGNON · NIV. ${m.level}</small></h1>
+      <span class="mg-topbar__lvl">${d().escapeHtml(vibe).toUpperCase()}</span>
       <div class="mg-topbar__xp"><label>EXP ${m.xp} / ${xpNext.xp}</label><span style="width:${xpPct}%"></span></div>
       <div class="mg-vitals">
         <div class="mg-vital mg-vital--energy"><span class="mg-vital__icon">⚡</span><div class="mg-vital__bar"><i style="width:${m.energy}%"></i></div></div>
@@ -1024,7 +1045,9 @@
             const active = m.equippedSkin === a.id;
             const lore = a.lore || a.desc;
             const aff = a.affinity || "—";
+            const evoDots = STAGES.map((_, si) => `<i class="mg-dex-card__evo${si <= m.stage ? " is-lit" : ""}"></i>`).join("");
             return `<article class="mg-dex-card mg-dex-card--${a.rarity}${active ? " is-active" : ""}${!owned ? " is-locked mg-dex-card--silhouette" : ""}" data-mignon-skin="${a.id}">
+              <div class="mg-dex-card__bg" aria-hidden="true"></div>
               <header class="mg-dex-card__head">
                 <span class="mg-dex-card__no">#${String(idx + 1).padStart(2, "0")}</span>
                 <span class="mg-dex-card__rarity">${d().escapeHtml(a.rarity)}</span>
@@ -1034,7 +1057,11 @@
                 <h4>${d().escapeHtml(a.label)}</h4>
                 <p class="mg-dex-card__lore">${d().escapeHtml(lore)}</p>
                 <p class="mg-dex-card__affinity">♫ ${d().escapeHtml(aff)}</p>
-                ${owned ? `<button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-equip-skin="${a.id}">${active ? "◆ Équipé" : "Équiper"}</button>` : '<span class="feed-note">Verrouillé</span>'}
+                <div class="mg-dex-card__stats">
+                  <span>Aura +${a.rarity === "epic" ? 25 : a.rarity === "rare" ? 15 : 8}</span>
+                  <span class="mg-dex-card__evo" title="Évolution">${evoDots}</span>
+                </div>
+                ${owned ? `<button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-equip-skin="${a.id}">${active ? "◆ Équipé" : "Équiper"}</button>` : '<span class="mg-dex-card__locked">◇ Verrouillé</span>'}
               </div>
             </article>`;
           })
@@ -1061,7 +1088,7 @@
             )
             .join("")}</ul>`;
 
-    const radioHtml = window.SLMignonRadio ? window.SLMignonRadio.radioPanelHtml(m, profile, vibe) : "";
+    const radioHtml = window.SLMignonRadio ? window.SLMignonRadio.radioPanelHtml(m, profile) : "";
     return `<div class="mg-page mg-universe mg-console" data-mignon-page data-music-vibe="${d().escapeHtml(vibe)}">
       <div class="mg-crt-overlay" aria-hidden="true"></div>
       <div class="mg-crt-chroma" aria-hidden="true"></div>
@@ -1075,17 +1102,9 @@
           <button type="button" class="mg-sidebar__tab" data-mg-tab="decor" role="tab"><span>▣</span> Déco</button>
         </nav>
         <div class="mg-main">
-      <header class="mg-hud mg-hud--compact">
+      <header class="mg-hud mg-hud--compact mg-hud--tools">
         <div class="mg-hud__left">
-          <p class="mg-hud__kicker">▸ compagnon musical</p>
-          <h1 class="mg-hud__title">${d().escapeHtml(m.name)}</h1>
-          <div class="mg-hud__stats">
-            <span class="mg-pill">Niv. ${m.level}</span>
-            <span class="mg-pill">${d().escapeHtml(STAGES[m.stage].name)}</span>
-            <span class="mg-pill">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)}</span>
-            <span class="mg-pill mg-pill--aura">Aura ${m.auraScore || 0}</span>
-            ${m.streak > 1 ? `<span class="mg-pill mg-pill--gold">${m.streak}j</span>` : ""}
-          </div>
+          <p class="mg-hud__status">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)} · ${d().escapeHtml(STAGES[m.stage].name)} · Aura ${m.auraScore || 0}</p>
         </div>
         <div class="mg-hud__right">
           <label class="visually-hidden" for="mignon-name-input">Nom</label>
@@ -1133,7 +1152,7 @@
             <article class="mg-cabinet"><div class="mg-cabinet__marquee">RHYTHM TAP</div><div class="mg-cabinet__screen">
               <div class="mignon-rhythm" id="mignon-rhythm"><div class="mignon-rhythm__lane"><span class="mignon-rhythm__beat" id="mignon-rhythm-beat"></span></div>
               <button type="button" class="btn btn-primary btn-sm mg-retro-btn" id="mignon-rhythm-tap">TAP !</button>
-              <p class="mignon-rhythm__score" id="mignon-rhythm-score">0 / 8</p></div></div></article>
+              <p class="mignon-rhythm__score" id="mignon-rhythm-score">0 / 8</p><p class="mg-arcade-hiscore" id="mignon-rhythm-hi">HI ${(m.miniGameStats && m.miniGameStats.rhythm) || 0}</p></div></div></article>
             <article class="mg-cabinet"><div class="mg-cabinet__marquee">MEMORY</div><div class="mg-cabinet__screen">
               <div class="mg-memory" id="mignon-memory"></div>
               <button type="button" class="btn btn-ghost btn-sm mg-retro-btn" id="mignon-memory-start">START</button></div></article>
@@ -1390,9 +1409,14 @@
         clearInterval(beatTimer);
         let m = getMignon("me");
         m.energy = clamp(m.energy + 18, 0, MAX_STAT);
+        m.miniGameStats = m.miniGameStats || {};
+        const prevHi = m.miniGameStats.rhythm || 0;
+        m.miniGameStats.rhythm = Math.max(prevHi, rhythmScore);
         addXp(m, 40, "rhythm");
         saveMignon(m);
         sfx("success");
+        const hiEl = document.getElementById("mignon-rhythm-hi");
+        if (hiEl) hiEl.textContent = "HI " + m.miniGameStats.rhythm;
         if (d() && d().toast) d().toast("Rythme parfait — énergie boostée !");
         scoreEl.textContent = "Complet !";
       }

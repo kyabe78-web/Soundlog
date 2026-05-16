@@ -21,7 +21,7 @@
       unlockXp: 0,
       vibe: "lofi",
       weather: "none",
-      props: ["window_rain", "skyline", "bed", "desk", "lamp", "posters", "plant", "cassette", "boombox", "on_air", "cables", "vinyl_stack"],
+      props: ["window_rain", "skyline", "bed", "desk", "lamp", "posters", "plant", "cassette", "boombox", "on_air", "cables", "vinyl_stack", "crt_small", "speaker_stack", "neon_sign", "shelf_vinyl"],
     },
     vinyl_lounge: {
       id: "vinyl_lounge",
@@ -404,30 +404,42 @@
     const mood = m.mood || "calm";
     const stage = m.stage || 0;
 
+    const hasPhones =
+      (m.cosmetics && m.cosmetics.equipped || []).includes("headphones") || stage > 0;
     return `<div class="px-creature px-radiobot px-mignon-buddy${compact ? " px-creature--compact" : ""}" data-species="${esc(species)}" data-skin="${esc(skin)}" data-stage="${stage}" data-mood="${esc(mood)}" data-anim="${esc(anim)}" role="img" aria-label="${esc(m.name)}">
       <div class="px-radiobot__shadow" aria-hidden="true"></div>
       <span class="px-radiobot__antenna px-radiobot__antenna--l" aria-hidden="true"></span>
       <span class="px-radiobot__antenna px-radiobot__antenna--r" aria-hidden="true"></span>
+      <span class="px-radiobot__arm px-radiobot__arm--l" aria-hidden="true"></span>
+      <span class="px-radiobot__arm px-radiobot__arm--r" aria-hidden="true"></span>
       <div class="px-radiobot__body">
         ${skin !== "default" ? `<span class="px-creature__skin px-creature__skin--${esc(skin)}" aria-hidden="true"></span>` : ""}
+        <span class="px-radiobot__knob px-radiobot__knob--vol" aria-hidden="true"></span>
+        <span class="px-radiobot__knob px-radiobot__knob--tune" aria-hidden="true"></span>
         <span class="px-radiobot__led px-radiobot__led--pwr" aria-hidden="true"></span>
         <span class="px-radiobot__led px-radiobot__led--tune" aria-hidden="true"></span>
+        <span class="px-radiobot__speaker px-radiobot__speaker--l" aria-hidden="true"></span>
+        <span class="px-radiobot__speaker px-radiobot__speaker--r" aria-hidden="true"></span>
         <div class="px-radiobot__screen" aria-hidden="true">
           <span class="px-radiobot__eye px-radiobot__eye--l"></span>
           <span class="px-radiobot__eye px-radiobot__eye--r"></span>
           <span class="px-radiobot__mouth"></span>
         </div>
         <span class="px-radiobot__grill" aria-hidden="true"></span>
+        <span class="px-radiobot__cassette" aria-hidden="true"></span>
         <span class="px-radiobot__wheel px-radiobot__wheel--l" aria-hidden="true"></span>
         <span class="px-radiobot__wheel px-radiobot__wheel--r" aria-hidden="true"></span>
         <span class="px-radiobot__eq" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i></span>
         ${stage === 0 ? '<span class="px-creature__egg" aria-hidden="true"></span>' : ""}
-        ${(m.cosmetics && m.cosmetics.equipped || []).includes("headphones") ? '<span class="px-creature__gear px-creature__gear--phones" aria-hidden="true"></span>' : ""}
+        ${hasPhones ? '<span class="px-radiobot__headphones" aria-hidden="true"></span>' : ""}
         ${(m.cosmetics && m.cosmetics.equipped || []).includes("vinyl-hat") ? '<span class="px-creature__gear px-creature__gear--vinyl" aria-hidden="true"></span>' : ""}
       </div>
+      <span class="px-radiobot__foot px-radiobot__foot--l" aria-hidden="true"></span>
+      <span class="px-radiobot__foot px-radiobot__foot--r" aria-hidden="true"></span>
       <span class="px-radiobot__bubble" aria-hidden="true">♪</span>
       <span class="px-radiobot__note px-radiobot__note--a" aria-hidden="true">♪</span>
       <span class="px-radiobot__note px-radiobot__note--b" aria-hidden="true">♫</span>
+      <span class="px-radiobot__note px-radiobot__note--c" aria-hidden="true">♩</span>
       <div class="px-creature__viz-ring" aria-hidden="true"></div>
       ${!compact ? `<p class="px-creature__tag">${esc(arch.label)}</p>` : ""}
     </div>`;

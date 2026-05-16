@@ -395,6 +395,20 @@
       }
       d.ensureAdaptive();
       d.state.adaptive.listenLogs = (d.state.adaptive.listenLogs || 0) + 1;
+      if (window.SLMignon && typeof SLMignon.onListeningSaved === "function") {
+        try {
+          const saved =
+            existing ||
+            d.state.listenings.find((l) => l.userId === "me" && l.albumId === selectedAlbumId);
+          SLMignon.onListeningSaved({
+            rating,
+            review,
+            albumId: selectedAlbumId,
+            thoughtful: review.length >= 80,
+          });
+          if (SLMignon.celebrationToast) SLMignon.celebrationToast(SLMignon.getMignon("me"));
+        } catch (_) {}
+      }
       d.persist();
       if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
       d.closeModal();

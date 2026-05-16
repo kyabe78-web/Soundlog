@@ -212,6 +212,7 @@
       socialCircleTab: "feed",
       socialFeedFilter: "following",
       socialReactions: {},
+      mignon: null,
     };
   }
 
@@ -286,6 +287,12 @@
               : parsed.socialFeedFilter === "all"
                 ? "all"
                 : base.socialFeedFilter,
+        mignon:
+          parsed.mignon && typeof parsed.mignon === "object"
+            ? window.SLMignon
+              ? SLMignon.normalizeMignon(parsed.mignon)
+              : parsed.mignon
+            : base.mignon,
       };
       purgeLegacyDemoContent(merged);
       return merged;
@@ -1706,6 +1713,43 @@
     return SLThemeEngine.parseFavoriteFromSettings(settings);
   }
 
+  function mergeMignonFromCloudSettings(settings) {
+    if (!window.SLMignon || !settings) return null;
+    return SLMignon.parseFromSettings(settings);
+  }
+
+  function ensureMignon() {
+    if (!window.SLMignon) return null;
+    if (!state.mignon) state.mignon = SLMignon.defaultMignon();
+    else state.mignon = SLMignon.normalizeMignon(state.mignon);
+    return state.mignon;
+  }
+
+  function getPeerMignon(uid) {
+    if (uid === "me") return ensureMignon();
+    const peer = (state.invitedPeers || []).find((p) => p.id === uid);
+    if (peer && peer.mignon) return SLMignon ? SLMignon.normalizeMignon(peer.mignon) : peer.mignon;
+    const cp = window.__slCloudPeers && window.__slCloudPeers.get && window.__slCloudPeers.get(uid);
+    if (cp && cp.settings) return mergeMignonFromCloudSettings(cp.settings);
+    return null;
+  }
+
+  let mignonCloudTimer = null;
+  function scheduleCloudMignon() {
+    if (!SLCloud || !SLCloud.isSignedIn || !SLCloud.isSignedIn()) return;
+    clearTimeout(mignonCloudTimer);
+    mignonCloudTimer = setTimeout(pushMignonToCloud, 500);
+  }
+
+  async function pushMignonToCloud() {
+    if (!SLCloud || !SLCloud.isSignedIn() || !SLCloud.me || !window.SLMignon) return;
+    ensureMignon();
+    const prev = SLCloud.me.settings && typeof SLCloud.me.settings === "object" ? { ...SLCloud.me.settings } : {};
+    prev.mignon = state.mignon;
+    await SLCloud.updateProfile({ settings: prev });
+    syncMeFromCloud();
+  }
+
   function getFavoriteAlbumForUser(uid) {
     if (uid === "me") {
       const cloudMe = cloudMeRow();
@@ -1774,6 +1818,7 @@
         updatedAt: state.profile.albumWall.updatedAt || new Date().toISOString(),
       };
     }
+    if (state.mignon && window.SLMignon) prev.mignon = SLMignon.normalizeMignon(state.mignon);
     const patch = { settings: prev };
     if (fav && fav.theme && fav.theme.hue != null) patch.hue = Math.round(fav.theme.hue);
     await SLCloud.updateProfile(patch);
@@ -2302,6 +2347,11 @@
           const base = "♥ J’aime";
           btn.textContent = base + likeCountSuffix(id);
         });
+        if (r.liked && window.SLMignon && SLMignon.onSocialAction) {
+          try {
+            SLMignon.onSocialAction();
+          } catch (_) {}
+        }
         return;
       } catch (e) {
         toast("Erreur : " + (e.message || "like"));
@@ -2313,6 +2363,11 @@
     const cur = state.socialReactions[id] || {};
     cur.like = !cur.like;
     state.socialReactions[id] = cur;
+    if (cur.like && window.SLMignon && SLMignon.onSocialAction) {
+      try {
+        SLMignon.onSocialAction();
+      } catch (_) {}
+    }
     persist();
     document.querySelectorAll('[data-soc-react="' + id + '"]').forEach((btn) => {
       btn.classList.toggle("is-on", !!cur.like);
@@ -3365,6 +3420,7 @@
     join: "Invitation",
     search: "Recherche",
     inbox: "Messages",
+    mignon: "Mignon",
   };
 
   function setNavActive() {
@@ -3591,6 +3647,7 @@
       return "#journal";
     }
     if (route.view === "social" && route.hubTab === "live") return "#i-was-there";
+    if (route.view === "mignon") return "#mignon";
     const map = {
       home: "",
       discover: "decouvrir",
@@ -3656,7 +3713,8 @@
     } else if (h.startsWith("rejoindre/")) {
       route.view = "join";
       route.joinInviteRaw = h.slice("rejoindre/".length);
-    } else {
+    } else if (h === "mignon") route.view = "mignon";
+    else {
       route.view = "home";
     }
     normalizeRouteToHubs();
@@ -4980,6 +5038,7 @@
     return `<div class="home-quick-strip" role="toolbar" aria-label="Actions rapides">
       <button type="button" class="home-quick-chip home-quick-chip--accent" id="home-log-listen">+ Logger</button>
       <button type="button" class="home-quick-chip" data-nav-view="explore">Explorer</button>
+      <button type="button" class="home-quick-chip${route.view === "mignon" ? " is-active" : ""}" data-nav-view="mignon">Compagnon</button>
       <button type="button" class="home-quick-chip" id="home-open-messages">Messages</button>
       <button type="button" class="home-quick-chip" data-nav-view="carnet">Carnet</button>
     </div>`;
@@ -5150,7 +5209,7 @@
       ${renderHomeMurmursBlock()}
       <div class="feed-layout feed-layout--unified">
         <div class="feed-stream feed-stream--main">${streamBody}</div>
-        <aside class="feed-rail">${railSonar}${railLive}</aside>
+        <aside class="feed-rail">${window.SLMignon && SLMignon.widgetMarkup ? SLMignon.widgetMarkup("me", { rail: true }) : ""}${railSonar}${railLive}</aside>
       </div>
     </div>`;  }
 
@@ -5946,6 +6005,7 @@
         <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">★</span><b>${stats.avg}</b><span class="feed-note">moyenne</span></div>
       </div>
       ${faatBlock}
+      ${window.SLMignon && SLMignon.profileCardMarkup ? SLMignon.profileCardMarkup(isMe ? "me" : uid, isMe) : ""}
       ${perfVideosBlock}
       <section class="profile-block profile-block--recent" aria-labelledby="profile-sec-recent">
       <h3 class="profile-section-title" id="profile-sec-recent">Écoutes récentes</h3>
@@ -6255,6 +6315,9 @@
         case "list":
           html = renderListDetail();
           break;
+        case "mignon":
+          html = window.SLMignon && SLMignon.renderPage ? SLMignon.renderPage() : renderHome();
+          break;
         default:
           html = renderHome();
       }
@@ -6265,6 +6328,8 @@
     void $main.offsetWidth;
     $main.classList.add("view-enter");
     bindMainEvents();
+    if (window.SLMignon && SLMignon.bindEvents) SLMignon.bindEvents($main);
+    if (route.view !== "mignon" && window.SLMignon && SLMignon.stopIdleLoop) SLMignon.stopIdleLoop();
     updateOgMetaForRoute();
     if (route.view === "home" || route.view === "social") {
       const likeIds = [...document.querySelectorAll("[data-soc-react]")]
@@ -6913,6 +6978,28 @@
       playAlbumPreview,
       stopAlbumPreview,
     });
+  }
+
+  if (window.SLMignon && window.SLMignon.install) {
+    window.SLMignon.install({
+      state,
+      escapeHtml,
+      albumById,
+      persist,
+      persistLocalOnly,
+      toast,
+      navigate,
+      render,
+      openLogListen: openListenModal,
+      ensureMignon,
+      getPeerMignon,
+      scheduleCloudMignon,
+      cloudSignedIn,
+    });
+    ensureMignon();
+    try {
+      SLMignon.syncFromActivity();
+    } catch (_) {}
   }
 
   if (window.SLLogListen && window.SLLogListen.install) {
@@ -8629,7 +8716,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=14")
+        .register("/sw.js?v=21")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();
@@ -8894,6 +8981,7 @@
     if (!SLCloud || !SLCloud.me) return;
     const favCloud = mergeFavoriteFromCloudSettings(SLCloud.me.settings);
     const wallCloud = parseAlbumWallFromSettings(SLCloud.me.settings);
+    const mignonCloud = mergeMignonFromCloudSettings(SLCloud.me.settings);
     state.profile = {
       ...state.profile,
       displayName: SLCloud.me.name,
@@ -8903,6 +8991,8 @@
       favoriteAlbum: favCloud || state.profile.favoriteAlbum || null,
       albumWall: wallCloud || state.profile.albumWall || null,
     };
+    if (mignonCloud) state.mignon = mignonCloud;
+    else ensureMignon();
     persistLocalOnly();
     updateHeaderUser();
     updateSidebarAccount();
@@ -9114,6 +9204,9 @@
     if (favPull) state.profile.favoriteAlbum = favPull;
     const wallPull = parseAlbumWallFromSettings(SLCloud.me.settings);
     if (wallPull) state.profile.albumWall = wallPull;
+    const mignonPull = mergeMignonFromCloudSettings(SLCloud.me.settings);
+    if (mignonPull) state.mignon = mignonPull;
+    else ensureMignon();
     // Albums référencés : on les ajoute en cache local (importedAlbums) si pas déjà connus
     const knownIds = new Set();
 

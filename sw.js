@@ -1,5 +1,5 @@
 /* Soundlog — service worker (offline shell, network-first for app code) */
-const CACHE = "soundlog-shell-v20";
+const CACHE = "soundlog-shell-v21";
 const SHELL = [
   "/",
   "/index.html",
@@ -33,7 +33,15 @@ const NETWORK_FIRST = [
   "/log-listen-carnet.css",
   "/profile-carnet.css",
   "/mobile-safe.css",
-  "/mobile-shell.css",
+  "/mignon.js",
+  "/mignon.css",
+  "/friendship.js",
+  "/friendship.css",
+  "/album-wall.js",
+  "/album-wall.css",
+  "/favorite-album.js",
+  "/favorite-album.css",
+  "/identity-theme.css",
 ];
 
 function isNetworkFirst(pathname) {

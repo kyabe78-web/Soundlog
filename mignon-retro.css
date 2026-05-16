@@ -806,16 +806,450 @@
   border-radius: 0;
 }
 
-/* Widget on home */
-.mignon-widget {
-  border: 3px solid var(--mg-border) !important;
-  background: var(--mg-panel) !important;
-  font-family: "VT323", monospace;
+/* —— Pocket widget (home rail) —— */
+.mignon-widget.mignon-widget--retro,
+.mg-widget-pocket {
+  --mg-bg: #0c0a14;
+  --mg-panel: #1a1628;
+  --mg-border: #4a3f6a;
+  --mg-accent: #7cffb2;
+  position: relative;
+  padding: 0.65rem 0.75rem 0.85rem !important;
+  border-radius: 0 !important;
+  border: 4px solid #2a2440 !important;
+  background: linear-gradient(145deg, #3d3558 0%, #1e1a2e 50%, #12101c 100%) !important;
+  box-shadow:
+    0 0 0 2px #5a4f82,
+    0 8px 24px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06) !important;
+  font-family: "VT323", "Courier New", monospace;
+  color: var(--mg-text, #e8e0f8);
+  overflow: hidden;
+}
+
+.mignon-widget--retro::before {
+  opacity: 0.12 !important;
+  background: radial-gradient(ellipse 80% 50% at 50% 0%, rgba(124, 255, 178, 0.35), transparent 70%) !important;
+}
+
+.mg-widget-pocket__shell {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+  margin-bottom: 0.45rem;
+  padding: 4px 6px;
+  background: #0a0812;
+  border: 2px solid var(--mg-border);
+}
+
+.mg-widget-pocket__brand {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.38rem;
+  color: var(--mg-accent);
+  letter-spacing: 0.06em;
+}
+
+.mg-widget-pocket__led {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--mg-accent);
+  box-shadow: 0 0 6px var(--mg-accent);
+  animation: mg-led-pulse 1.2s steps(2) infinite;
+}
+
+.mignon-widget__kicker {
+  font-size: 0.72rem !important;
+  letter-spacing: 0.14em !important;
+  color: #9a8ec4 !important;
 }
 
 .mignon-widget__title {
   font-family: "Press Start 2P", monospace !important;
-  font-size: 0.5rem !important;
+  font-size: 0.48rem !important;
+  line-height: 1.7 !important;
+  color: #e8e0f8 !important;
+}
+
+.mignon-widget__head {
+  position: relative;
+  padding-right: 1.4rem;
+}
+
+.mignon-widget__env {
+  position: absolute;
+  top: 0;
+  right: 0;
+  font-size: 1rem;
+  opacity: 0.85;
+}
+
+.mignon-widget__badge {
+  border-radius: 0 !important;
+  border: 2px solid var(--mg-border) !important;
+  background: #0a0812 !important;
+  font-family: "VT323", monospace;
+}
+
+.mignon-widget__stage {
+  height: 168px !important;
+  border: 3px solid var(--mg-border) !important;
+  border-radius: 0 !important;
+  box-shadow: inset 0 0 24px rgba(0, 0, 0, 0.65);
+}
+
+.mignon-widget__stage .px-room {
+  border-radius: 0 !important;
+}
+
+.mignon-widget__xp {
+  border: 2px solid var(--mg-border);
+  border-radius: 0;
+  background: #0a0812;
+}
+
+.mignon-widget__xp span {
+  background: linear-gradient(90deg, var(--mg-accent-dim, #3d9a6a), var(--mg-accent)) !important;
+}
+
+.mignon-widget__actions .mg-retro-btn,
+.mignon-widget .mg-retro-btn {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.38rem;
+  border-radius: 0;
+}
+
+.feed-rail .mg-widget-pocket {
+  margin-bottom: 0.85rem;
+}
+
+/* —— Visit mode handheld —— */
+.mg-page--visit .mg-handheld__logo span {
+  color: var(--mg-hot);
+}
+
+.mg-handheld__led--visit {
+  background: var(--mg-hot);
+  box-shadow: 0 0 8px var(--mg-hot);
+}
+
+.mg-visit-banner {
+  margin: 0 0 8px;
+  padding: 4px 8px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.38rem;
+  color: var(--mg-muted);
+  background: #0a0812;
+  border: 2px dashed var(--mg-border);
+  text-align: center;
+  letter-spacing: 0.04em;
+}
+
+.mg-hud--visit {
+  margin-bottom: 0.5rem;
+}
+
+.mg-stage--visit {
+  min-height: 360px;
+  border: 3px solid var(--mg-border);
+  box-shadow: inset 0 0 32px rgba(0, 0, 0, 0.55);
+}
+
+.mg-stage--visit .mg-vibe-note {
+  position: absolute;
+  bottom: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 4px 10px;
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.38rem;
+  color: var(--mg-muted);
+  background: rgba(10, 8, 18, 0.8);
+  border: 2px solid var(--mg-border);
+  z-index: 8;
+}
+
+.mg-footer--visit {
+  display: flex;
+  gap: 0.5rem;
+  justify-content: center;
+}
+
+.mg-sfx-btn.is-on {
+  border-color: var(--mg-warm);
+  color: var(--mg-warm);
+  box-shadow: 0 0 8px rgba(255, 184, 108, 0.35);
+}
+
+/* —— Profile card retro —— */
+.profile-block--mignon-retro .profile-section-title {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.55rem;
+  letter-spacing: 0.06em;
+}
+
+.profile-mignon-card--retro {
+  display: grid;
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+  gap: 0.75rem;
+  padding: 0.65rem;
+  border: 4px solid #2a2440;
+  background: linear-gradient(160deg, #1a1628, #0c0a14);
+  box-shadow: 4px 4px 0 #0a0810;
+}
+
+.profile-mignon-card--retro .profile-mignon-preview {
+  position: relative;
+  min-height: 140px;
+  border: 3px solid var(--mg-border, #4a3f6a);
+  overflow: hidden;
+}
+
+.profile-mignon-card--retro .profile-mignon-name {
+  font-family: "Press Start 2P", monospace;
+  font-size: 0.55rem;
+  line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  .profile-mignon-card--retro {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* —— Per-world animated props —— */
+.px-room--lofi_bedroom .px-prop--lamp {
+  animation: mg-lamp-warm 3s steps(2) infinite;
+}
+
+.px-room--lofi_bedroom .px-prop--cassette::after {
+  content: "";
+  position: absolute;
+  inset: 2px 4px auto;
+  height: 2px;
+  background: #8a7868;
+  animation: mg-tape-roll 2s linear infinite;
+}
+
+.px-room--rainy_cafe .px-prop--window_rain,
+.px-room--lofi_bedroom .px-prop--window_rain {
+  box-shadow: inset -4px 0 0 rgba(120, 160, 220, 0.15);
+}
+
+.px-room--rainy_cafe .px-prop--window_rain::after,
+.px-room--lofi_bedroom .px-prop--window_rain::after {
+  content: "";
+  position: absolute;
+  inset: 4px;
+  background: repeating-linear-gradient(180deg, transparent, transparent 3px, rgba(140, 180, 220, 0.25) 3px, rgba(140, 180, 220, 0.25) 4px);
+  animation: mg-rain-streak 0.6s linear infinite;
+  opacity: 0.7;
+}
+
+.px-room--neon_studio .px-prop--synth {
+  box-shadow: 0 0 12px rgba(180, 100, 255, 0.45);
+  animation: mg-synth-glow 1.5s ease-in-out infinite;
+}
+
+.px-room--neon_studio .px-prop--neon_sign {
+  animation: mg-neon-flicker 1.2s steps(3) infinite;
+}
+
+.px-room--neon_studio .px-room__led-strip {
+  opacity: 1;
+  animation: mg-led-scroll 2s linear infinite;
+}
+
+.px-room--neon_studio .px-room__crt-glow {
+  opacity: 0.5;
+  animation: mg-crt-pulse 2s steps(2) infinite;
+}
+
+.px-room--shoegaze_mist .px-room__fog {
+  animation: mg-fog-drift 8s ease-in-out infinite;
+}
+
+.px-room--shoegaze_mist .px-prop--guitar {
+  bottom: 28%;
+  left: 18%;
+  width: 56px;
+  height: 20px;
+  background: #4a3848;
+  transform: rotate(-8deg);
+  opacity: 0.85;
+}
+
+.px-room--shoegaze_mist .px-prop--amp {
+  bottom: 22%;
+  left: 12%;
+  width: 36px;
+  height: 32px;
+  background: #2a2830;
+  border: 2px solid #4a4858;
+}
+
+.px-room--rap_basement .px-prop--speakers,
+.px-room--underground_club .px-prop--speakers {
+  animation: mg-bass-thump 0.45s steps(2) infinite;
+}
+
+.px-room--rap_basement .px-room__layer--light {
+  background: radial-gradient(circle at 30% 80%, rgba(200, 40, 40, 0.25), transparent 50%) !important;
+  animation: mg-red-pulse 1s steps(2) infinite;
+}
+
+.px-room--rap_basement .px-prop--red_light {
+  top: 24%;
+  right: 18%;
+  width: 10px;
+  height: 10px;
+  background: #e03030;
+  border-radius: 50%;
+  box-shadow: 0 0 16px #e03030;
+  animation: mg-red-pulse 0.8s steps(2) infinite;
+}
+
+.px-room--vinyl_lounge .px-prop--turntable {
+  animation: px-spin 6s linear infinite;
+}
+
+.px-room--vinyl_lounge .px-prop--shelf_vinyl::before {
+  content: "";
+  position: absolute;
+  top: -20px;
+  left: 8px;
+  width: 6px;
+  height: 14px;
+  background: #6a4a7a;
+  box-shadow: 12px 0 0 #4a6a8a, 24px 0 0 #8a6a4a;
+}
+
+.px-room--crt_nostalgia .px-prop--crt_big::after {
+  animation: px-crt-flicker 1.5s steps(5) infinite;
+}
+
+.px-room--citypop_apt .px-prop--neon_pink {
+  animation: mg-neon-flicker 1.8s ease-in-out infinite;
+}
+
+.px-room--citypop_apt .px-prop--fan {
+  top: 30%;
+  right: 20%;
+  width: 28px;
+  height: 28px;
+  border: 3px solid #5a4868;
+  border-radius: 50%;
+  animation: px-spin 2s linear infinite;
+}
+
+.px-room--glitch_rift .px-prop--static {
+  inset: 20% 15%;
+  background: repeating-linear-gradient(0deg, rgba(255, 0, 128, 0.1), rgba(255, 0, 128, 0.1) 2px, rgba(0, 255, 200, 0.1) 2px, rgba(0, 255, 200, 0.1) 4px);
+  animation: mg-glitch-scan 0.15s steps(4) infinite;
+}
+
+.px-room--glitch_rift .px-room__layer--light {
+  animation: px-glitch-light 1.5s steps(3) infinite;
+}
+
+.px-room--dream_void .px-prop--aurora {
+  top: 10%;
+  left: 5%;
+  right: 5%;
+  height: 40px;
+  background: linear-gradient(90deg, transparent, rgba(120, 200, 255, 0.2), rgba(200, 120, 255, 0.2), transparent);
+  animation: mg-aurora-shift 6s ease-in-out infinite;
+}
+
+.px-room--underground_club .px-prop--strobe {
+  position: absolute;
+  inset: 0;
+  background: rgba(255, 255, 255, 0.04);
+  animation: px-strobe 0.35s steps(2) infinite;
+  pointer-events: none;
+}
+
+.px-room--underground_club .px-prop--smoke {
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 40%;
+  background: linear-gradient(0deg, rgba(80, 80, 100, 0.35), transparent);
+  animation: mg-fog-drift 10s ease-in-out infinite;
+}
+
+.px-room--rainy_cafe .px-prop--espresso {
+  bottom: 28%;
+  right: 22%;
+  width: 20px;
+  height: 24px;
+  background: #4a3830;
+  border: 2px solid #2a2018;
+}
+
+.px-room--rainy_cafe .px-prop--espresso::after {
+  content: "";
+  position: absolute;
+  top: -8px;
+  left: 50%;
+  width: 8px;
+  height: 8px;
+  margin-left: -4px;
+  background: rgba(200, 200, 200, 0.35);
+  border-radius: 50%;
+  animation: mg-steam-rise 2s ease-in-out infinite;
+}
+
+@keyframes mg-lamp-warm {
+  50% { filter: brightness(1.25); }
+}
+
+@keyframes mg-tape-roll {
+  to { transform: translateX(4px); }
+}
+
+@keyframes mg-rain-streak {
+  to { transform: translateY(6px); }
+}
+
+@keyframes mg-synth-glow {
+  50% { filter: brightness(1.35); }
+}
+
+@keyframes mg-neon-flicker {
+  0%, 100% { opacity: 1; }
+  40% { opacity: 0.65; }
+  70% { opacity: 0.9; }
+}
+
+@keyframes mg-crt-pulse {
+  50% { opacity: 0.35; }
+}
+
+@keyframes mg-fog-drift {
+  50% { opacity: 0.55; transform: translateX(8px); }
+}
+
+@keyframes mg-bass-thump {
+  50% { transform: scaleY(1.08); }
+}
+
+@keyframes mg-red-pulse {
+  50% { opacity: 0.45; }
+}
+
+@keyframes mg-glitch-scan {
+  50% { transform: translateX(4px); filter: hue-rotate(90deg); }
+}
+
+@keyframes mg-aurora-shift {
+  50% { transform: translateX(12px); opacity: 0.85; }
+}
+
+@keyframes mg-steam-rise {
+  50% { transform: translateY(-6px); opacity: 0.2; }
 }
 
 @media (max-width: 720px) {

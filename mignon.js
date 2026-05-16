@@ -15,6 +15,10 @@
   function ENG() {
     return window.SLMignonEngine || null;
   }
+
+  function sfx(id, opts) {
+    if (window.SLMignonSfx && window.SLMignonSfx.play) window.SLMignonSfx.play(id, opts);
+  }
   const MAX_STAT = 100;
   const DAY_MS = 86400000;
 
@@ -591,6 +595,7 @@
   }
 
   function onPetInteract() {
+    sfx("pet");
     let m = getMignon("me");
     m.stats.totalPets = (m.stats.totalPets || 0) + 1;
     m.happiness = clamp(m.happiness + 6, 0, MAX_STAT);
@@ -607,6 +612,7 @@
   }
 
   function onPlayInteract() {
+    sfx("tick");
     let m = getMignon("me");
     m.stats.totalPlays = (m.stats.totalPlays || 0) + 1;
     m.energy = clamp(m.energy + 8, 0, MAX_STAT);
@@ -634,6 +640,7 @@
     addXp(m, mission.xp, "mission");
     m.happiness = clamp(m.happiness + 10, 0, MAX_STAT);
     saveMignon(m);
+    sfx("success");
     if (d() && d().toast) d().toast("Mission accomplie — +" + mission.xp + " XP");
     return true;
   }
@@ -643,9 +650,11 @@
     const envs = getEnvironments();
     if (!envs[envId]) return;
     if (m.unlockedEnvs && !m.unlockedEnvs.includes(envId)) {
+      sfx("error");
       if (d() && d().toast) d().toast("Monde verrouillé — continue à jouer pour le débloquer.");
       return;
     }
+    sfx("world");
     m.environment = envId;
     m.traits = m.traits.filter((t) => t !== "env-lock");
     m.traits.push("env-lock");
@@ -663,9 +672,11 @@
     if (!eng || !eng.ARCHETYPES[skinId]) return;
     let m = getMignon("me");
     if (!m.unlockedSkins.includes(skinId)) {
+      sfx("error");
       if (d() && d().toast) d().toast("Archétype non débloqué.");
       return;
     }
+    sfx("equip");
     m.equippedSkin = skinId;
     m.anim = "excited";
     saveMignon(m);
@@ -691,6 +702,7 @@
     if (m.roomLayout.placed.length >= 8) m.roomLayout.placed.shift();
     m.roomLayout.placed.push({ id: itemId, x, y });
     saveMignon(m);
+    sfx("decor");
     refreshMignonUI({ room: true });
     if (d() && d().toast) d().toast("Objet placé dans le sanctuaire");
   }
@@ -810,11 +822,17 @@
         ? 100
         : Math.round(((m.xp - xpCur.xp) / Math.max(1, xpNext.xp - xpCur.xp)) * 100);
 
-    return `<aside class="mignon-widget${opts.rail ? " mignon-widget--rail" : ""}" data-mignon-widget="${isMe ? "me" : d().escapeHtml(uid)}">
+    const env = getEnvironments()[m.environment] || getEnvironments().lofi_bedroom;
+    return `<aside class="mignon-widget mignon-widget--retro mg-widget-pocket${opts.rail ? " mignon-widget--rail" : ""}" data-mignon-widget="${isMe ? "me" : d().escapeHtml(uid)}">
+      <div class="mg-widget-pocket__shell" aria-hidden="true">
+        <span class="mg-widget-pocket__brand">MIGNON</span>
+        <span class="mg-widget-pocket__led"></span>
+      </div>
       <header class="mignon-widget__head">
-        <p class="mignon-widget__kicker">Compagnon musical</p>
+        <p class="mignon-widget__kicker">▸ pocket pet</p>
         <h3 class="mignon-widget__title">${d().escapeHtml(m.name)}</h3>
         <span class="mignon-widget__badge">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)}</span>
+        <span class="mignon-widget__env" title="${d().escapeHtml(env.label)}">${env.icon}</span>
       </header>
       <div class="mignon-widget__stage">
         ${environmentMarkup(m, profile)}
@@ -829,9 +847,9 @@
       </div>
       <div class="mignon-widget__xp" aria-label="Progression"><span style="width:${xpPct}%"></span></div>
       ${isMe ? `<div class="mignon-widget__actions">
-        <button type="button" class="btn btn-ghost btn-sm" data-mignon-pet>Caresser</button>
-        <button type="button" class="btn btn-primary btn-sm" data-mignon-open>Salon Mignon</button>
-      </div>` : `<button type="button" class="btn btn-ghost btn-sm" data-mignon-visit="${d().escapeHtml(uid)}">Visiter</button>`}
+        <button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-pet>♥ Caresser</button>
+        <button type="button" class="btn btn-primary btn-sm mg-retro-btn" data-mignon-open>◆ Salon</button>
+      </div>` : `<button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-visit="${d().escapeHtml(uid)}">◎ Visiter</button>`}
     </aside>`;
   }
 
@@ -865,32 +883,40 @@
     const species = SPECIES[m.species] || SPECIES.pulse;
     const mood = MOODS[m.mood] || MOODS.calm;
     const arch = ENG() ? ENG().ARCHETYPES[m.equippedSkin] || ENG().ARCHETYPES.default : null;
-    return `<div class="mg-page mg-page--visit" data-mignon-page data-mignon-visit="${d().escapeHtml(uid)}">
-      <header class="mg-hud">
-        <div class="mg-hud__left">
-          <p class="mg-hud__kicker">Visite du sanctuaire</p>
-          <h1 class="mg-hud__title">${d().escapeHtml(name)}</h1>
-          <div class="mg-hud__stats">
-            <span class="mg-pill">${d().escapeHtml(m.name)}</span>
-            <span class="mg-pill">${d().escapeHtml(species.label)}</span>
-            <span class="mg-pill">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)}</span>
-            <span class="mg-pill mg-pill--aura">Aura ${m.auraScore || 0}</span>
+    const env = getEnvironments()[m.environment] || getEnvironments().lofi_bedroom;
+    return `<div class="mg-page mg-page--visit mg-universe" data-mignon-page data-mignon-visit="${d().escapeHtml(uid)}">
+      <div class="mg-handheld"><div class="mg-handheld__bezel">
+        <div class="mg-handheld__brand">
+          <p class="mg-handheld__logo">VISITE<span> // ${d().escapeHtml(name)}</span></p>
+          <span class="mg-handheld__led mg-handheld__led--visit" aria-hidden="true"></span>
+        </div>
+        <p class="mg-visit-banner" aria-hidden="true">◎ sanctuaire invité · ${d().escapeHtml(env.icon)} ${d().escapeHtml(env.label)}</p>
+        <header class="mg-hud mg-hud--visit">
+          <div class="mg-hud__left">
+            <p class="mg-hud__kicker">▸ compagnon de</p>
+            <h1 class="mg-hud__title">${d().escapeHtml(m.name)}</h1>
+            <div class="mg-hud__stats">
+              <span class="mg-pill">${d().escapeHtml(species.label)}</span>
+              <span class="mg-pill">${d().escapeHtml(mood.emoji)} ${d().escapeHtml(mood.label)}</span>
+              <span class="mg-pill mg-pill--aura">Aura ${m.auraScore || 0}</span>
+              <span class="mg-pill">Niv. ${m.level}</span>
+            </div>
           </div>
+          <div class="mg-hud__right">
+            <button type="button" class="btn btn-primary btn-sm mg-retro-btn" data-mignon-back>◀ Mon Mignon</button>
+            <button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-visit-profile="${d().escapeHtml(uid)}">Profil</button>
+          </div>
+        </header>
+        <div class="mg-stage mg-stage--visit" data-mignon-pet-zone>
+          ${environmentMarkup(m, { genres: {}, listenCount: 0 })}
+          <div class="mg-stage__creature">${creatureMarkup(m)}</div>
+          <p class="mg-vibe-note">${arch ? d().escapeHtml(arch.label) : d().escapeHtml(species.label)} · chez ${d().escapeHtml(name)}</p>
         </div>
-        <div class="mg-hud__right">
-          <button type="button" class="btn btn-primary btn-sm" data-mignon-back>Mon Mignon</button>
-          <button type="button" class="btn btn-ghost btn-sm" data-mignon-visit-profile="${d().escapeHtml(uid)}">Profil</button>
-        </div>
-      </header>
-      <div class="mg-stage mg-stage--visit" data-mignon-pet-zone>
-        ${environmentMarkup(m, { genres: {}, listenCount: 0 })}
-        <div class="mg-stage__creature">${creatureMarkup(m)}</div>
-        <p class="feed-note mg-vibe-note">${arch ? d().escapeHtml(arch.label) : d().escapeHtml(species.label)} · Niv. ${m.level}</p>
-      </div>
-      <footer class="mg-footer">
-        <button type="button" class="btn btn-ghost" data-mignon-react="sparkle">✦ Réagir</button>
-        <button type="button" class="btn btn-ghost" data-mignon-react="heart">♥ Admirer</button>
-      </footer>
+        <footer class="mg-footer mg-footer--visit">
+          <button type="button" class="btn btn-ghost mg-retro-btn" data-mignon-react="sparkle">✦ Réagir</button>
+          <button type="button" class="btn btn-ghost mg-retro-btn" data-mignon-react="heart">♥ Admirer</button>
+        </footer>
+      </div></div>
     </div>`;
   }
 
@@ -905,6 +931,7 @@
     const pers = PERSONALITIES[m.personality] || m.personality;
     const vibe = ENG() ? ENG().computeMusicVibe(profile) : "lofi";
     const arch = ENG() ? ENG().ARCHETYPES[m.equippedSkin] || ENG().ARCHETYPES.default : null;
+    const sfxOn = window.SLMignonSfx ? window.SLMignonSfx.getSettings().enabled : true;
     const envOpts = Object.values(getEnvironments())
       .map((e) => {
         const locked = m.unlockedEnvs && !m.unlockedEnvs.includes(e.id);
@@ -982,6 +1009,7 @@
           <input type="text" id="mignon-name-input" class="mg-hud__name" maxlength="24" value="${d().escapeHtml(m.name)}" />
           <button type="button" class="btn btn-ghost btn-sm" id="mignon-rename-save">OK</button>
           <button type="button" class="btn btn-ghost btn-sm mg-ambient-btn${m.ambientOn ? " is-on" : ""}" id="mignon-ambient-toggle" aria-pressed="${m.ambientOn ? "true" : "false"}">${m.ambientOn ? "🔊" : "🔇"}</button>
+          <button type="button" class="btn btn-ghost btn-sm mg-sfx-btn${sfxOn ? " is-on" : ""}" id="mignon-sfx-toggle" aria-pressed="${sfxOn ? "true" : "false"}" title="Bips UI">♪</button>
         </div>
       </header>
       <nav class="mg-tabs" role="tablist">
@@ -1064,12 +1092,12 @@
     const m = getMignon(uid);
     const species = SPECIES[m.species] || SPECIES.pulse;
     const mood = MOODS[m.mood] || MOODS.calm;
-    return `<section class="profile-block profile-block--mignon" aria-labelledby="profile-sec-mignon">
+    return `<section class="profile-block profile-block--mignon profile-block--mignon-retro" aria-labelledby="profile-sec-mignon">
       <div class="profile-mignon-head">
-        <h3 class="profile-section-title" id="profile-sec-mignon">Mignon</h3>
-        ${isMe ? '<button type="button" class="btn btn-ghost btn-sm" data-mignon-open>Salon complet</button>' : ""}
+        <h3 class="profile-section-title" id="profile-sec-mignon">◎ Mignon</h3>
+        ${isMe ? '<button type="button" class="btn btn-ghost btn-sm mg-retro-btn" data-mignon-open>◆ Salon</button>' : ""}
       </div>
-      <div class="profile-mignon-card">
+      <div class="profile-mignon-card profile-mignon-card--retro">
         <div class="profile-mignon-preview" data-mignon-pet-zone>
           ${environmentMarkup(m, isMe ? analyzeMusicProfile() : { genres: {}, listenCount: 0 })}
           ${creatureMarkup(m, { compact: true })}
@@ -1148,6 +1176,46 @@
       hum.start();
       nodes.push(hum, humGain);
     }
+    if (env.id === "neon_studio" || env.id === "citypop_apt") {
+      const pad = ctx.createOscillator();
+      pad.type = "triangle";
+      pad.frequency.value = env.id === "neon_studio" ? 110 : 146;
+      const padGain = ctx.createGain();
+      padGain.gain.value = 0.05;
+      pad.connect(padGain);
+      padGain.connect(master);
+      pad.start();
+      nodes.push(pad, padGain);
+    }
+    if (env.id === "rap_basement" || env.id === "underground_club") {
+      const sub = ctx.createOscillator();
+      sub.type = "sine";
+      sub.frequency.value = 42;
+      const subGain = ctx.createGain();
+      subGain.gain.value = 0.06;
+      const lfo = ctx.createOscillator();
+      lfo.frequency.value = 2.2;
+      const lfoGain = ctx.createGain();
+      lfoGain.gain.value = 0.03;
+      lfo.connect(lfoGain);
+      lfoGain.connect(subGain.gain);
+      sub.connect(subGain);
+      subGain.connect(master);
+      sub.start();
+      lfo.start();
+      nodes.push(sub, subGain, lfo, lfoGain);
+    }
+    if (env.id === "shoegaze_mist" || env.id === "dream_void") {
+      const wash = ctx.createOscillator();
+      wash.type = "sine";
+      wash.frequency.value = 196;
+      const washGain = ctx.createGain();
+      washGain.gain.value = 0.04;
+      wash.connect(washGain);
+      washGain.connect(master);
+      wash.start();
+      nodes.push(wash, washGain);
+    }
     ambientNodes = { ctx, nodes };
     if (ctx.state === "suspended") ctx.resume().catch(() => {});
   }
@@ -1211,7 +1279,10 @@
     rhythmCleanup = () => clearInterval(beatTimer);
     tap.onclick = () => {
       const onBeat = rhythmBeat === 0 || rhythmBeat === 2;
-      if (onBeat) rhythmScore++;
+      if (onBeat) {
+        rhythmScore++;
+        sfx("tick");
+      } else sfx("miss");
       scoreEl.textContent = rhythmScore + " / 8";
       if (rhythmScore >= 8) {
         clearInterval(beatTimer);
@@ -1219,6 +1290,7 @@
         m.energy = clamp(m.energy + 18, 0, MAX_STAT);
         addXp(m, 40, "rhythm");
         saveMignon(m);
+        sfx("success");
         if (d() && d().toast) d().toast("Rythme parfait — énergie boostée !");
         scoreEl.textContent = "Complet !";
       }
@@ -1270,11 +1342,15 @@
     });
 
     root.querySelectorAll("[data-mignon-open]").forEach((btn) => {
-      btn.addEventListener("click", () => d() && d().navigate("mignon"));
+      btn.addEventListener("click", () => {
+        sfx("open");
+        if (d()) d().navigate("mignon");
+      });
     });
     root.querySelectorAll("[data-mignon-visit]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const uid = btn.getAttribute("data-mignon-visit");
+        sfx("visit");
         if (uid && d()) d().navigate("mignon", { mignonVisitUid: uid });
       });
     });
@@ -1290,6 +1366,7 @@
     root.querySelectorAll("[data-mignon-react]").forEach((btn) => {
       btn.addEventListener("click", () => {
         const kind = btn.getAttribute("data-mignon-react");
+        sfx("react");
         setCreatureAnim(root, kind === "heart" ? "happy" : "excited");
         if (d() && d().toast) d().toast(kind === "heart" ? "Tu as admiré ce sanctuaire ♥" : "Réaction envoyée ✦");
         setTimeout(() => setCreatureAnim(root, "idle"), 1400);
@@ -1297,6 +1374,17 @@
     });
     const ambBtn = root.querySelector("#mignon-ambient-toggle");
     if (ambBtn) ambBtn.addEventListener("click", () => toggleAmbient());
+    const sfxBtn = root.querySelector("#mignon-sfx-toggle");
+    if (sfxBtn) {
+      sfxBtn.addEventListener("click", () => {
+        if (!window.SLMignonSfx) return;
+        const next = !window.SLMignonSfx.getSettings().enabled;
+        window.SLMignonSfx.setEnabled(next);
+        sfxBtn.classList.toggle("is-on", next);
+        sfxBtn.setAttribute("aria-pressed", next ? "true" : "false");
+        if (next) sfx("ui");
+      });
+    }
     root.querySelectorAll("[data-mignon-play]").forEach((btn) => {
       btn.addEventListener("click", () => {
         onPlayInteract();
@@ -1337,6 +1425,7 @@
     if (renameBtn && renameInput) {
       renameBtn.addEventListener("click", () => {
         renameMignon(renameInput.value);
+        sfx("ui");
         refreshMignonUI({ hud: true });
       });
     }
@@ -1344,6 +1433,7 @@
     root.querySelectorAll("[data-mg-tab]").forEach((tab) => {
       tab.addEventListener("click", () => {
         const id = tab.getAttribute("data-mg-tab");
+        sfx("tab");
         try {
           sessionStorage.setItem(TAB_STORAGE_KEY, id);
         } catch (_) {}
@@ -1399,13 +1489,15 @@
           let m = getMignon("me");
           addXp(m, 25, "crate");
           saveMignon(m);
-        }
+          sfx("surprise");
+        } else sfx("miss");
       });
     }
     const page = root.querySelector("[data-mignon-page]");
     if (page) {
       wireRhythmGame();
       startIdleLoop();
+      if (page.hasAttribute("data-mignon-visit")) sfx("visit");
       if (!page.hasAttribute("data-mignon-visit")) {
         onMignonPageMount(page);
         if (getMignon("me").ambientOn) startAmbientForRoom(getMignon("me"));
@@ -1447,6 +1539,7 @@
         if (flipped.length >= 2) return;
         btn.classList.add("is-flipped");
         btn.textContent = btn.getAttribute("data-mem-sym");
+        sfx("tick");
         flipped.push(btn);
         if (flipped.length === 2) {
           const [a, b] = flipped;
@@ -1459,6 +1552,7 @@
               let m = getMignon("me");
               addXp(m, 35, "memory");
               saveMignon(m);
+              sfx("success");
               if (d() && d().toast) d().toast("Mémoire parfaite !");
             }
           } else {

@@ -358,21 +358,37 @@
       if (existing) {
         existing.albumId = selectedAlbumId;
         existing.date = date;
-        existing.rating = rating;
+        existing.rating =
+          window.SLPersistence && typeof SLPersistence.normalizeRating === "function"
+            ? SLPersistence.normalizeRating(rating)
+            : rating;
         existing.review = review;
       } else {
         const dup = d.state.listenings.find((l) => l.userId === "me" && l.albumId === selectedAlbumId);
         if (dup) {
           dup.date = date;
-          dup.rating = rating;
+          dup.rating =
+            window.SLPersistence && typeof SLPersistence.normalizeRating === "function"
+              ? SLPersistence.normalizeRating(rating)
+              : rating;
           dup.review = review;
         } else {
+          const normRating =
+            window.SLPersistence && typeof SLPersistence.normalizeRating === "function"
+              ? SLPersistence.normalizeRating(rating)
+              : rating;
+          const newId =
+            window.SLPersistence && typeof SLPersistence.generateId === "function"
+              ? SLPersistence.generateId()
+              : typeof crypto !== "undefined" && crypto.randomUUID
+                ? crypto.randomUUID()
+                : "l" + Date.now();
           d.state.listenings.push({
-            id: "l" + Date.now(),
+            id: newId,
             userId: "me",
             albumId: selectedAlbumId,
             date,
-            rating,
+            rating: normRating,
             review,
           });
         }

@@ -48,7 +48,7 @@ create table if not exists public.listenings (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.profiles(id) on delete cascade,
   album_id text not null references public.albums(id) on delete cascade,
-  rating int check (rating between 1 and 5),
+  rating numeric(3,1) check (rating is null or (rating >= 0.5 and rating <= 5)),
   comment text default '',
   comment_at timestamptz,
   date date default current_date,

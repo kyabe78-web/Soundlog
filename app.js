@@ -280,6 +280,14 @@
   }
 
   let state = loadState();
+  if (window.SLPersistence) {
+    const mig = SLPersistence.ensureCloudListeningIds(state.listenings, state.socialReactions);
+    if (mig.changed) {
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+      } catch (_) {}
+    }
+  }
   if (purgeLegacyDemoContent(state)) {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
@@ -297,7 +305,12 @@
   }
 
   function persist() {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+    } catch (e) {
+      console.warn("[persist] localStorage", e);
+      if (typeof window.__slOnPersistError === "function") window.__slOnPersistError(e);
+    }
     if (typeof window.__slSchedulePushCloud === "function") window.__slSchedulePushCloud();
   }
 
@@ -1452,10 +1465,17 @@
   }
 
   function isCloudUuid(id) {
+    if (window.SLPersistence && typeof SLPersistence.isUuid === "function") return SLPersistence.isUuid(id);
     return (
       typeof id === "string" &&
       /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(id)
     );
+  }
+
+  function ensureMineListeningCloudIds() {
+    if (!window.SLPersistence) return false;
+    const mig = SLPersistence.ensureCloudListeningIds(state.listenings, state.socialReactions);
+    return mig.changed;
   }
 
   function ensureProfileExtras() {
@@ -2478,6 +2498,10 @@
       </div>
     </div>`;
   }
+
+  window.__slOnPersistError = function () {
+    toast("Stockage local plein ou indisponible — sauvegarde cloud si connecté·e.");
+  };
 
   function toast(msg) {
     $toast.innerHTML = `<div class="toast">${escapeHtml(msg)}</div>`;
@@ -6498,6 +6522,9 @@
         const id = b.getAttribute("data-del-listen");
         state.listenings = state.listenings.filter((l) => l.id !== id);
         persist();
+        if (isCloudUuid(id) && SLCloud && SLCloud.isSignedIn() && typeof SLCloud.deleteListening === "function") {
+          void SLCloud.deleteListening(id);
+        }
         if (typeof window.__slFlushCloudPush === "function") void window.__slFlushCloudPush();
         toast("Entrée supprimée.");
         render();
@@ -8126,18 +8153,27 @@
         const al = albumById(aid);
         if (al) await SLCloud.upsertAlbum(al);
       }
-      // 2. Écoutes (l'UI utilise `review`; la base utilise `comment`)
-      for (const l of state.listenings.filter((l) => l.userId === "me")) {
-        const text = l.comment != null && l.comment !== "" ? l.comment : (l.review || "");
-        await SLCloud.upsertListening({
-          id: l.id,
-          userId: cloudId,
-          albumId: l.albumId,
-          rating: l.rating,
-          comment: text,
-          commentAt: l.commentAt != null ? l.commentAt : null,
-          date: l.date,
-        });
+      // 2. Écoutes — UUID obligatoire côté Supabase ; review → comment
+      if (ensureMineListeningCloudIds()) persistLocalOnly();
+      const mineListenings = state.listenings.filter((l) => l.userId === "me" && l.albumId);
+      for (const l of mineListenings) {
+        const row = window.SLPersistence
+          ? SLPersistence.listeningToCloudRow(l, cloudId)
+          : {
+              id: l.id,
+              userId: cloudId,
+              albumId: l.albumId,
+              rating: l.rating,
+              comment: l.comment != null && l.comment !== "" ? l.comment : l.review || "",
+              commentAt: l.commentAt != null ? l.commentAt : null,
+              date: l.date,
+            };
+        if (!row || !isCloudUuid(row.id)) continue;
+        const res = await SLCloud.upsertListening(row);
+        if (res && res.ok === false) console.warn("[cloud push] listening", row.id, res.error);
+      }
+      if (typeof SLCloud.syncListeningsSnapshot === "function") {
+        await SLCloud.syncListeningsSnapshot(cloudId, mineListenings);
       }
       // 3. Listes
       for (const lst of state.lists.filter((l) => l.userId === "me")) {
@@ -8294,21 +8330,24 @@
     // Albums référencés : on les ajoute en cache local (importedAlbums) si pas déjà connus
     const knownIds = new Set();
 
-    const remoteMineListenings = (data.listenings || []).map((l) => {
-      const text = l.comment != null ? l.comment : "";
-      return {
-        id: l.id,
-        userId: "me",
-        albumId: l.album_id,
-        rating: l.rating,
-        review: text,
-        comment: text,
-        commentAt: l.comment_at,
-        date: l.date,
-      };
-    });
+    const remoteMineListenings = (data.listenings || [])
+      .map((l) => (window.SLPersistence ? SLPersistence.listeningFromCloudRow(l) : null))
+      .filter(Boolean);
     const remoteListeningIds = new Set(remoteMineListenings.map((l) => l.id));
-    const localOnlyListenings = prevMineListenings.filter((l) => !remoteListeningIds.has(l.id));
+    const remoteListeningSigs = new Set(
+      remoteMineListenings.map((l) =>
+        window.SLPersistence ? SLPersistence.listeningSignature(l) : l.albumId + "|" + l.date
+      )
+    );
+    const localOnlyListenings = prevMineListenings.filter((l) => {
+      if (remoteListeningIds.has(l.id)) return false;
+      const sig = window.SLPersistence ? SLPersistence.listeningSignature(l) : l.albumId + "|" + l.date;
+      if (remoteListeningSigs.has(sig)) return false;
+      return true;
+    });
+    if (window.SLPersistence) {
+      SLPersistence.ensureCloudListeningIds(localOnlyListenings, state.socialReactions);
+    }
     state.listenings = [...otherListenings, ...remoteMineListenings, ...localOnlyListenings];
     state.listenings.forEach((l) => knownIds.add(l.albumId));
 
@@ -8728,6 +8767,7 @@
       } else if (evt === "auth") {
         syncAccountChrome();
         if (SLCloud.isSignedIn()) {
+          void pullCloudIntoState();
           void syncNotificationsFromCloud();
           setupRealtimeHooks();
         }

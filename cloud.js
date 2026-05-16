@@ -316,13 +316,14 @@
     },
 
     // ---------- Écoutes ----------
-    async listListeningsByUser(userId) {
-      const { data } = await this.client
+    async listListeningsByUser(userId, limit = 2000) {
+      const { data, error } = await this.client
         .from("listenings")
         .select("id,user_id,album_id,rating,comment,comment_at,date,created_at")
         .eq("user_id", userId)
-        .order("date", { ascending: false })
-        .limit(500);
+        .order("created_at", { ascending: false })
+        .limit(limit);
+      if (error) console.warn("[SLCloud] listListeningsByUser", error);
       return data || [];
     },
 
@@ -342,22 +343,56 @@
     },
 
     async upsertListening(l) {
+      const P = window.SLPersistence;
+      if (!l || !l.id || !l.userId || !l.albumId) {
+        return { ok: false, error: "missing_fields" };
+      }
+      if (!P || !P.isUuid(l.id)) {
+        console.warn("[SLCloud] upsertListening: id invalide (UUID requis)", l.id);
+        return { ok: false, error: "invalid_id" };
+      }
+      const rating = P ? P.normalizeRating(l.rating) : l.rating || null;
       const row = {
         id: l.id,
         user_id: l.userId,
         album_id: l.albumId,
-        rating: l.rating || null,
-        comment: l.comment || "",
+        rating,
+        comment: l.comment != null ? String(l.comment) : "",
         comment_at: l.commentAt || null,
         date: l.date || null,
       };
       const { error } = await this.client.from("listenings").upsert(row, { onConflict: "id" });
-      if (error) console.warn("[SLCloud] upsertListening", error);
+      if (error) {
+        console.warn("[SLCloud] upsertListening", error.message || error, row.id);
+        return { ok: false, error };
+      }
+      return { ok: true };
     },
 
     async deleteListening(id) {
+      const P = window.SLPersistence;
+      if (!id || (P && !P.isUuid(id))) return { ok: false, error: "invalid_id" };
       const { error } = await this.client.from("listenings").delete().eq("id", id);
-      if (error) console.warn("[SLCloud] deleteListening", error);
+      if (error) {
+        console.warn("[SLCloud] deleteListening", error);
+        return { ok: false, error };
+      }
+      return { ok: true };
+    },
+
+    /** Supprime côté cloud les écoutes absentes du snapshot local (ids UUID uniquement). */
+    async syncListeningsSnapshot(cloudUserId, localRows) {
+      if (!cloudUserId) return { ok: false };
+      const remote = await this.listListeningsByUser(cloudUserId);
+      const keep = new Set(
+        (localRows || [])
+          .map((l) => l && l.id)
+          .filter((id) => id && (!window.SLPersistence || window.SLPersistence.isUuid(id)))
+      );
+      for (const r of remote) {
+        if (r.id && !keep.has(r.id)) await this.deleteListening(r.id);
+      }
+      return { ok: true };
     },
 
     // ---------- Listes ----------

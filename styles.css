@@ -1,119 +1,8 @@
 /* =========================================================================
-   Soundlog — design system unifié
-   Une seule couche, pas d'!important, tokens centralisés.
+   Soundlog — composants & layout (tokens : design-system.css)
    ========================================================================= */
 
-/* ---------- 1. Tokens — « Vinyl Bar After Hours » ---------- */
-:root {
-  color-scheme: dark;
-
-  /* Surfaces — noir desaturé chaud, layering subtle */
-  --bg-app: #0a0a0d;
-  --bg-surface: #0e0f13;
-  --bg-elevated: #161820;
-  --bg-card: #181a23;
-  --bg-hover: #21232c;
-  --bg-sunken: #08090c;
-  --bg-overlay: rgba(8, 9, 12, 0.7);
-
-  /* Texte */
-  --text: #f3f1ec;
-  --text-muted: #a8a6b0;
-  --text-faint: #6e6e78;
-  --text-on-accent: #1a120c;
-
-  /* Bordures (alpha sur fond noir) */
-  --border: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.12);
-
-  /* Accent — ambre miel (signature Soundlog) */
-  --accent: #e8a86b;
-  --accent-strong: #f0bc7e;
-  --accent-soft: rgba(232, 168, 107, 0.12);
-  --accent-glow: rgba(232, 168, 107, 0.28);
-  --accent-gradient: linear-gradient(135deg, #f0bc7e 0%, #e8a86b 45%, #c97c4a 100%);
-  --accent-gradient-soft: linear-gradient(135deg, rgba(240, 188, 126, 0.18) 0%, rgba(201, 124, 74, 0.08) 100%);
-
-  /* Or — étoiles, notes */
-  --gold: #f4c469;
-  --gold-soft: rgba(244, 196, 105, 0.16);
-  --gold-glow: rgba(244, 196, 105, 0.35);
-
-  /* Couleurs s\u00e9mantiques */
-  --success: #4cd58a;
-  --danger: #ff6b6b;
-  --warning: #f0a040;
-  --love: #ff5a7a;
-
-  /* Sidebar — true noir avec lueur ambre */
-  --sidebar-bg: #08090c;
-  --sidebar-text: rgba(255, 255, 255, 0.72);
-  --sidebar-text-strong: #ffffff;
-  --sidebar-accent: rgba(232, 168, 107, 0.16);
-  --sidebar-accent-strong: rgba(232, 168, 107, 0.28);
-  --sidebar-divider: rgba(255, 255, 255, 0.06);
-
-  /* G\u00e9om\u00e9trie — un peu plus serr\u00e9, sensation premium */
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius: 12px;
-  --radius-lg: 18px;
-  --radius-xl: 24px;
-  --radius-pill: 999px;
-
-  /* Ombres profondes (fond noir → ombres color\u00e9es noires sur noir) */
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.5);
-  --shadow-sm: 0 4px 14px rgba(0, 0, 0, 0.35);
-  --shadow: 0 12px 32px rgba(0, 0, 0, 0.55);
-  --shadow-lg: 0 24px 60px rgba(0, 0, 0, 0.65);
-  --shadow-glow: 0 0 0 1px rgba(232, 168, 107, 0.22), 0 24px 60px rgba(232, 168, 107, 0.10);
-  --shadow-inner: inset 0 1px 0 rgba(255, 255, 255, 0.04);
-
-  --space-1: 0.25rem;
-  --space-2: 0.5rem;
-  --space-3: 0.75rem;
-  --space-4: 1rem;
-  --space-5: 1.25rem;
-  --space-6: 1.5rem;
-  --space-7: 2rem;
-  --space-8: 2.5rem;
-
-  /* Typo — aligné sur les polices chargées dans index.html */
-  --font: "Source Sans 3", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --font-display: "Fraunces", "Source Sans 3", Georgia, serif;
-  --font-mono: ui-monospace, "SF Mono", "Menlo", monospace;
-
-  /* Layout */
-  --sidebar-w: 248px;
-  --topbar-h: 64px;
-  --bottom-nav-h: 64px;
-  --content-max: 1240px;
-
-  /* Easing & timing (Apple-style) */
-  --ease: cubic-bezier(0.16, 1, 0.3, 1);
-  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
-  --ease-in: cubic-bezier(0.55, 0, 0.68, 0.19);
-  --duration-quick: 0.12s;
-  --duration: 0.22s;
-  --duration-slow: 0.42s;
-
-  /* Alias r\u00e9trocompatibles avec templates app.js */
-  --ink: var(--text);
-  --ink-soft: var(--text-muted);
-  --paper: var(--bg-surface);
-  --paper-card: var(--bg-card);
-  --paper-deep: var(--bg-hover);
-  --cream: var(--bg-elevated);
-  --line: var(--border);
-  --line-strong: var(--border-strong);
-  --rust: var(--accent);
-  --rust-bright: var(--accent-strong);
-  --forest: var(--success);
-  --shadow-deep: rgba(0, 0, 0, 0.6);
-  --header-h: var(--topbar-h);
-}
-
-/* ---------- 2. Reset & base ---------- */
+/* ---------- 1. Reset & base ---------- */
 *,
 *::before,
 *::after { box-sizing: border-box; }
@@ -138,17 +27,12 @@ body {
   margin: 0;
   min-height: 100vh;
   font-family: var(--font);
-  font-size: 1rem;
-  line-height: 1.55;
-  color: var(--text);
-  background: var(--bg-app);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  letter-spacing: -0.005em;
   position: relative;
 }
 
-/* Grain SVG subtil sur toute la page — cin\u00e9matique pellicule */
+/* Grain SVG subtil — design-system.css règle l’opacité */
 body::before {
   content: "";
   position: fixed;
@@ -163,11 +47,9 @@ body::before {
 img { max-width: 100%; display: block; }
 
 a {
-  color: var(--accent);
   text-decoration: none;
   transition: color var(--duration-quick) var(--ease);
 }
-a:hover { color: var(--accent-strong); }
 
 button { font-family: inherit; cursor: pointer; }
 button:disabled { cursor: not-allowed; opacity: 0.45; }
@@ -186,8 +68,8 @@ button:disabled { cursor: not-allowed; opacity: 0.45; }
   box-shadow: 0 0 0 3px var(--accent-glow);
 }
 
-::selection { background: var(--accent); color: var(--text-on-accent); }
-::-moz-selection { background: var(--accent); color: var(--text-on-accent); }
+::selection { background: rgba(93, 143, 108, 0.38); color: var(--text); }
+::-moz-selection { background: rgba(93, 143, 108, 0.38); color: var(--text); }
 
 /* Scrollbars dark */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
@@ -2414,19 +2296,18 @@ input[type="radio"] {
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   overflow: hidden;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.35);
-  transition: box-shadow var(--duration) var(--ease),
-              transform var(--duration) var(--ease),
-              border-color var(--duration-quick) var(--ease);
+  box-shadow: var(--shadow-sm);
+  transition:
+    box-shadow var(--duration) var(--ease),
+    border-color var(--duration-quick) var(--ease);
 }
 .feed-post:hover {
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
-  transform: translateY(-3px);
+  box-shadow: var(--shadow);
   border-color: var(--border-strong);
 }
 .feed-post.is-preview-active {
-  box-shadow: 0 0 0 1px var(--accent), 0 24px 60px rgba(232, 168, 107, 0.18);
-  border-color: var(--accent);
+  box-shadow: var(--shadow-glow);
+  border-color: var(--forest-muted);
 }
 
 .feed-post__head {
@@ -3585,7 +3466,7 @@ input[type="radio"] {
   border: 1px solid currentColor;
   white-space: nowrap;
 }
-.venue-stamp--msg { color: #6ba8d5; background: rgba(107, 168, 213, 0.06); border-color: #6ba8d5; }
+.venue-stamp--msg { color: var(--forest-strong); background: var(--forest-soft); border-color: var(--forest-muted); }
 .venue-stamp--albert { color: #ff7a6b; background: rgba(255, 122, 107, 0.06); border-color: #ff7a6b; }
 .venue-stamp--wembley { color: var(--success); background: rgba(76, 213, 138, 0.06); border-color: var(--success); }
 .venue-stamp--olympia { color: var(--accent); background: rgba(232, 168, 107, 0.08); border-color: var(--accent); }

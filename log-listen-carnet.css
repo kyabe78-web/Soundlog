@@ -22,7 +22,7 @@ body.modal-open--log-listen {
   border: 0;
   display: flex;
   flex-direction: column;
-  background: var(--bg, #08090e);
+  background: var(--bg-app, #0b0c0a);
   animation: logListenIn 0.38s cubic-bezier(0.22, 1, 0.36, 1) both;
 }
 

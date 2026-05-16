@@ -137,7 +137,7 @@
   top: calc(var(--topbar-h, 56px) + 0.35rem);
   z-index: 2;
   padding: 0.35rem 0;
-  background: linear-gradient(180deg, var(--bg, #0a0a0d) 70%, transparent);
+  background: linear-gradient(180deg, var(--bg-app, #0b0c0a) 70%, transparent);
 }
 
 .diary-month__title {

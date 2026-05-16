@@ -1,101 +1,11 @@
 /* =========================================================================
-   Soundlog — Premium UI layer (Letterboxd × Spotify × iOS dark)
-   Chargé après styles.css : tokens, pochettes, cartes, navigation.
+   Soundlog — Premium UI layer (composants ; tokens → design-system.css)
    ========================================================================= */
-
-:root {
-  --font-display: "Plus Jakarta Sans", "Inter", system-ui, sans-serif;
-
-  --bg-app: #09090b;
-  --bg-surface: #0c0c0f;
-  --bg-elevated: #131316;
-  --bg-card: #16161a;
-  --bg-hover: #1f1f24;
-  --bg-sunken: #050506;
-  --bg-overlay: rgba(0, 0, 0, 0.72);
-
-  --text: #fafafa;
-  --text-muted: #a1a1aa;
-  --text-faint: #71717a;
-  --text-on-accent: #09090b;
-
-  --border: rgba(255, 255, 255, 0.06);
-  --border-strong: rgba(255, 255, 255, 0.1);
-
-  /* Accent principal : neutre premium (CTA) */
-  --accent: #f4f4f5;
-  --accent-strong: #ffffff;
-  --accent-soft: rgba(255, 255, 255, 0.07);
-  --accent-glow: rgba(255, 255, 255, 0.14);
-  --accent-gradient: linear-gradient(180deg, #ffffff 0%, #e4e4e7 100%);
-  --accent-gradient-soft: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, transparent 100%);
-
-  /* Marque chaude — étoiles, détails (usage parcimonieux) */
-  --brand: #d4a574;
-  --brand-soft: rgba(212, 165, 116, 0.14);
-  --brand-glow: rgba(212, 165, 116, 0.22);
-
-  --gold: #fbbf24;
-  --gold-soft: rgba(251, 191, 36, 0.12);
-  --gold-glow: rgba(251, 191, 36, 0.2);
-
-  --link: #a1a1aa;
-  --link-hover: #fafafa;
-
-  --sidebar-bg: #09090b;
-  --sidebar-accent: rgba(255, 255, 255, 0.06);
-  --sidebar-accent-strong: rgba(255, 255, 255, 0.1);
-
-  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-sm: 0 4px 16px rgba(0, 0, 0, 0.35);
-  --shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 24px 64px rgba(0, 0, 0, 0.55);
-  --shadow-glow: 0 0 0 1px rgba(255, 255, 255, 0.08);
-  --shadow-cover: 0 20px 50px rgba(0, 0, 0, 0.55);
-
-  --radius-xs: 6px;
-  --radius-sm: 10px;
-  --radius: 12px;
-  --radius-lg: 16px;
-  --radius-xl: 20px;
-  --radius-cover: 10px;
-
-  --space-section: 2.5rem;
-  --content-max: 1160px;
-  --sidebar-w: 252px;
-
-  --rust: var(--brand);
-  --rust-bright: #e8c9a8;
-}
-
-/* ---------- Base & atmosphère ---------- */
-body {
-  background: var(--bg-app);
-  letter-spacing: -0.011em;
-}
-
-body::before {
-  opacity: 0.02;
-}
-
-a {
-  color: var(--link);
-}
-a:hover {
-  color: var(--link-hover);
-}
-
-::selection {
-  background: rgba(255, 255, 255, 0.2);
-  color: var(--text);
-}
 
 .page-title {
   background: none;
   -webkit-text-fill-color: var(--text);
   color: var(--text);
-  font-weight: 700;
-  letter-spacing: -0.03em;
 }
 
 .kicker {

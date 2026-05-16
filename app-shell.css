@@ -159,7 +159,7 @@ body.inbox-drawer-open .inbox-drawer {
 .inbox-drawer__inner {
   height: 100%;
   overflow: hidden;
-  background: var(--bg, #08090e);
+  background: var(--bg-app, #0b0c0a);
 }
 
 .inbox-drawer__inner .dm-page {
@@ -242,7 +242,7 @@ body.inbox-drawer-open .modal-backdrop {
   background: var(--accent-gradient, var(--accent));
   color: #fff !important;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35);
-  border: 3px solid var(--bg, #08090e);
+  border: 3px solid var(--bg-app, #0b0c0a);
   display: flex;
   align-items: center;
   justify-content: center;

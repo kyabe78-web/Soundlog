@@ -328,7 +328,7 @@
     localStorage.setItem(THEME_KEY, t);
     document.documentElement.dataset.theme = t;
     const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", t === "light" ? "#e8e4dc" : "#08090e");
+    if (meta) meta.setAttribute("content", t === "light" ? "#e8e4dc" : "#0b0c0a");
     const btn = document.getElementById("theme-toggle");
     if (btn) {
       const light = t === "light";

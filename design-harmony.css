@@ -1,0 +1,334 @@
+/* =========================================================================
+   Soundlog — Harmonisation composants (charge en dernier, avant mobile-safe)
+   ========================================================================= */
+
+/* —— Boutons —— */
+.btn-primary {
+  background: var(--accent-gradient);
+  color: var(--text-on-accent);
+  border: 1px solid rgba(93, 143, 108, 0.35);
+  box-shadow: var(--shadow-sm), 0 0 0 1px rgba(0, 0, 0, 0.2);
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.btn-primary:hover {
+  filter: brightness(1.06);
+  box-shadow: var(--shadow-glow);
+}
+
+.btn-ghost {
+  color: var(--text-muted);
+  border-color: var(--border);
+}
+
+.btn-ghost:hover {
+  color: var(--text);
+  background: var(--bg-hover);
+  border-color: var(--border-strong);
+}
+
+/* —— Chips & filtres —— */
+.chip,
+.diary-filter,
+.carnet-journal-tab,
+.hub-tab {
+  font-size: var(--text-sm);
+  border-color: var(--border);
+  color: var(--text-muted);
+}
+
+.chip:hover,
+.diary-filter:hover,
+.carnet-journal-tab:hover,
+.hub-tab:hover {
+  color: var(--text);
+  border-color: var(--border-strong);
+  background: var(--bg-hover);
+}
+
+.chip.active,
+.diary-filter.is-active,
+.carnet-journal-tab.is-active,
+.hub-tab.is-active {
+  background: var(--accent-gradient);
+  color: var(--text-on-accent);
+  border-color: transparent;
+  box-shadow: var(--shadow-xs);
+}
+
+/* —— Cartes feed & carnet (éditorial, aéré) —— */
+.feed-post,
+.soc-feed-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--shadow-sm);
+  padding: var(--space-5);
+  transition:
+    border-color var(--duration) var(--ease),
+    box-shadow var(--duration) var(--ease);
+}
+
+.feed-post:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow);
+  transform: none;
+}
+
+.carnet-post {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  box-shadow: none;
+  padding: var(--space-5) var(--space-5) var(--space-4);
+}
+
+.carnet-post__caption {
+  font-size: var(--text-base);
+  line-height: var(--leading-relaxed);
+  color: var(--text);
+}
+
+.carnet-post__caption--muted {
+  color: var(--text-faint);
+  font-style: normal;
+}
+
+.carnet-post__action--like.is-on {
+  color: var(--love);
+  background: rgba(201, 123, 123, 0.1);
+}
+
+.carnet-post__action {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.carnet-post__action:hover {
+  background: var(--bg-hover);
+  color: var(--text);
+}
+
+.carnet-journal-tabs,
+.hub-tabs,
+.diary-stats .diary-stat {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+}
+
+.diary-stat {
+  box-shadow: none;
+}
+
+.diary-stat b {
+  color: var(--warm-strong);
+}
+
+/* —— Sidebar & topbar —— */
+.sidebar {
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+}
+
+.nav-link.is-active,
+.nav-link[aria-current="page"] {
+  background: var(--sidebar-accent);
+  color: var(--text);
+}
+
+.topbar {
+  background: rgba(11, 12, 10, 0.88);
+  border-bottom: 1px solid var(--border);
+  backdrop-filter: blur(14px) saturate(1.1);
+}
+
+/* —— Modales —— */
+.modal {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-lg);
+}
+
+.modal-backdrop {
+  background: var(--bg-overlay);
+}
+
+/* —— Inputs —— */
+input[type="text"],
+input[type="search"],
+input[type="email"],
+input[type="password"],
+input[type="date"],
+textarea,
+.dm-compose__input,
+.carnet-comments__form textarea {
+  background: var(--bg-sunken);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-base);
+}
+
+input:focus,
+textarea:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--forest-soft);
+  outline: none;
+}
+
+/* —— Étoiles —— */
+.stars,
+.carnet-post__stars,
+.feed-post__stars {
+  color: var(--gold);
+  text-shadow: none;
+}
+
+/* —— Stats & empty —— */
+.diary-empty,
+.carnet-feed--empty {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+}
+
+.diary-empty__title {
+  font-family: var(--font-display);
+  font-size: var(--text-xl);
+  color: var(--text);
+}
+
+/* Réduction bruit bleu résiduel */
+.soc-hero,
+.lib-hero,
+.explore-hero {
+  background-image: none;
+}
+
+.soc-feed-card::before,
+.feed-layout--unified::before {
+  display: none;
+}
+
+/* —— Albums & covers —— */
+.album-card,
+.discover-card {
+  border-radius: var(--radius-lg);
+  transition:
+    transform var(--duration) var(--ease),
+    box-shadow var(--duration) var(--ease);
+}
+
+.album-card:hover {
+  transform: translateY(-2px);
+}
+
+.cover,
+.cover-img {
+  border-radius: var(--radius-cover);
+  box-shadow: var(--shadow-cover);
+}
+
+/* —— Navigation mobile —— */
+.bottom-nav {
+  background: rgba(11, 12, 10, 0.92);
+  border-top: 1px solid var(--border);
+  backdrop-filter: blur(16px) saturate(1.05);
+}
+
+.bottom-nav__btn {
+  min-height: 44px;
+  min-width: 44px;
+  color: var(--text-faint);
+  transition: color var(--duration-quick) var(--ease);
+}
+
+.bottom-nav__btn.is-active,
+.bottom-nav__btn[aria-current="page"] {
+  color: var(--forest-strong);
+}
+
+/* —— Badges & tags —— */
+.badge,
+.tag,
+.pill {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+/* —— Micro-interactions —— */
+.btn,
+.chip,
+.nav-link,
+.carnet-post__action,
+.icon-btn {
+  transition:
+    background var(--duration-quick) var(--ease),
+    border-color var(--duration-quick) var(--ease),
+    color var(--duration-quick) var(--ease),
+    box-shadow var(--duration) var(--ease),
+    transform var(--duration-quick) var(--ease);
+}
+
+@media (hover: hover) {
+  .icon-btn:hover {
+    background: var(--bg-hover);
+    color: var(--text);
+  }
+}
+
+.hub-page,
+.diary-carnet,
+.soc-page {
+  animation: pageFadeIn var(--duration-slow) var(--ease-organic) both;
+}
+
+@keyframes pageFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* —— Mobile lisibilité —— */
+@media (max-width: 600px) {
+  .feed-post,
+  .carnet-post,
+  .soc-feed-card {
+    padding: var(--space-4);
+    border-radius: var(--radius);
+  }
+
+  .carnet-post__name {
+    font-size: var(--text-base);
+  }
+
+  .btn,
+  .carnet-post__action,
+  .diary-filter {
+    min-height: 44px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .carnet-post,
+  .feed-post,
+  .hub-page,
+  .diary-carnet,
+  .soc-page {
+    animation: none;
+  }
+
+  .album-card:hover {
+    transform: none;
+  }
+}

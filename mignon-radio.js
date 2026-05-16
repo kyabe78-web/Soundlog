@@ -20,6 +20,8 @@
   let onUiTick = null;
   let staticCtx = null;
   let endedHooked = false;
+  let playHistory = [];
+  let radioVolume = 0.72;
 
   function d() {
     return deps;
@@ -58,7 +60,12 @@
       if (!prev || score > prev.score) byAlbum.set(l.albumId, { albumId: l.albumId, score, al });
     });
     const list = Array.from(byAlbum.values()).sort((a, b) => b.score - a.score);
-    const top = list.slice(0, 40);
+    let top = list.slice(0, 40);
+    if (top.length > 3) {
+      const recent = new Set(playHistory.slice(-3));
+      top = top.filter((x) => !recent.has(x.albumId)).concat(top.filter((x) => recent.has(x.albumId)));
+    }
+    if (!top.length) top = list.slice(0, 40);
     for (let i = top.length - 1; i > 0; i--) {
       const j = Math.floor(Math.random() * (i + 1));
       [top[i], top[j]] = [top[j], top[i]];
@@ -120,7 +127,12 @@
     }
     document.querySelector("[data-mignon-page]")?.setAttribute("data-radio-playing", "true");
     setCreatureDance(true);
+    playHistory.push(albumId);
+    if (playHistory.length > 12) playHistory.shift();
     await d().playAlbumPreview(albumId);
+    setAudioVolume();
+    const audio = d().getPreviewAudio && d().getPreviewAudio();
+    if (window.SLMignonViz && audio) window.SLMignonViz.start(audio);
     updateRadioUi();
   }
 
@@ -134,14 +146,59 @@
     }, delayMs || 400);
   }
 
+  function applyAmbiance(vibe) {
+    const page = document.querySelector("[data-mignon-page]");
+    if (!page) return;
+    page.setAttribute("data-ambiance", vibe || "lofi");
+    const room = page.querySelector(".px-room");
+    if (room) room.setAttribute("data-ambiance", vibe || "lofi");
+  }
+
   function setCreatureDance(on) {
     document.querySelectorAll("[data-mignon-page] .px-radiobot, [data-mignon-page] .px-mignon-buddy").forEach((el) => {
       const vibe = document.querySelector("[data-mignon-page]")?.getAttribute("data-music-vibe") || "lofi";
-      el.setAttribute("data-anim", on ? "dance" : "idle");
-      el.setAttribute("data-dance-vibe", on ? vibe : "");
+      if (on) {
+        el.setAttribute("data-anim", "dance");
+        el.setAttribute("data-dance-vibe", vibe);
+      } else {
+        const m = getMignon();
+        const mood = (m && m.mood) || "calm";
+        const idleMap = { sleepy: "sleep", excited: "dance", bliss: "dance", listening: "listening" };
+        el.setAttribute("data-anim", idleMap[mood] || "idle");
+        el.removeAttribute("data-dance-vibe");
+      }
     });
     const page = document.querySelector("[data-mignon-page]");
     if (page) page.classList.toggle("is-music-live", !!on);
+  }
+
+  function setAudioVolume() {
+    const audio = d() && d().getPreviewAudio && d().getPreviewAudio();
+    if (audio) audio.volume = radioVolume;
+  }
+
+  function skipTrack(dir) {
+    if (!queue.length) return;
+    if (dir < 0) queueIdx = (queueIdx - 1 + queue.length) % queue.length;
+    else queueIdx = (queueIdx + 1) % queue.length;
+    if (window.SLMignonSfx) window.SLMignonSfx.play("skip");
+    playStaticBurst(80);
+    playCurrent();
+  }
+
+  function togglePause() {
+    const audio = d() && d().getPreviewAudio && d().getPreviewAudio();
+    if (!audio) return;
+    if (audio.paused) {
+      audio.play().catch(() => {});
+      setCreatureDance(true);
+      if (window.SLMignonSfx) window.SLMignonSfx.play("ui");
+    } else {
+      audio.pause();
+      setCreatureDance(false);
+      if (window.SLMignonSfx) window.SLMignonSfx.play("pause");
+    }
+    updateRadioUi();
   }
 
   function formatTime(sec) {
@@ -211,7 +268,13 @@
         <span class="mg-radio-tuner__dial"></span>
         <span class="mg-radio-tuner__freq">${on ? "FM 88.4" : "— —"}</span>
       </div>
-      <div class="mg-radio-eq${on && meta ? " is-live" : ""}" aria-hidden="true">${eqBarsHtml(12, on && meta)}</div>
+      <div class="mg-radio-viz${on && meta ? " is-live" : ""}" data-mignon-viz aria-hidden="true">${window.SLMignonViz ? window.SLMignonViz.vizBarsHtml(16) : eqBarsHtml(16, false)}</div>
+      <div class="mg-radio-transport">
+        <button type="button" id="mignon-radio-prev" title="Précédent">⏮</button>
+        <button type="button" id="mignon-radio-play" title="Lecture">${prog && !prog.paused ? "⏸" : "▶"}</button>
+        <button type="button" id="mignon-radio-next" title="Suivant">⏭</button>
+        <input type="range" class="mg-radio-volume" id="mignon-radio-volume" min="0" max="100" value="${Math.round(radioVolume * 100)}" aria-label="Volume" />
+      </div>
       <div class="mg-radio-now${meta ? "" : " is-idle"}">
         ${meta ? `<div class="mg-radio-now__art" style="${meta.artwork ? `background-image:url('${esc(meta.artwork)}')` : ""}"></div>
         <div class="mg-radio-now__meta">
@@ -256,12 +319,32 @@
         m.radioOn = !m.radioOn;
         saveMignonRadio({ radioOn: m.radioOn });
         if (window.SLMignonSfx) window.SLMignonSfx.play("ui");
-        if (m.radioOn) {
-          boot(true);
-        } else {
-          stop();
-        }
+        if (m.radioOn) boot(true);
+        else stop();
         updateRadioUi();
+      });
+    }
+    const prev = root.querySelector("#mignon-radio-prev");
+    if (prev && !prev._mgWired) {
+      prev._mgWired = true;
+      prev.addEventListener("click", () => skipTrack(-1));
+    }
+    const next = root.querySelector("#mignon-radio-next");
+    if (next && !next._mgWired) {
+      next._mgWired = true;
+      next.addEventListener("click", () => skipTrack(1));
+    }
+    const playBtn = root.querySelector("#mignon-radio-play");
+    if (playBtn && !playBtn._mgWired) {
+      playBtn._mgWired = true;
+      playBtn.addEventListener("click", () => togglePause());
+    }
+    const vol = root.querySelector("#mignon-radio-volume");
+    if (vol && !vol._mgWired) {
+      vol._mgWired = true;
+      vol.addEventListener("input", () => {
+        radioVolume = Number(vol.value) / 100;
+        setAudioVolume();
       });
     }
   }
@@ -273,6 +356,7 @@
     hookPreviewEnded();
     const profile = d().analyzeMusicProfile ? d().analyzeMusicProfile() : { genres: {}, listenCount: 0 };
     const vibe = d().computeMusicVibe ? d().computeMusicVibe(profile) : "lofi";
+    applyAmbiance(vibe);
     if (!queue.length || force) {
       queue = buildQueue(profile, vibe);
       queueIdx = 0;
@@ -305,6 +389,7 @@
     booted = false;
     if (d() && d().stopAlbumPreview) d().stopAlbumPreview();
     setCreatureDance(false);
+    if (window.SLMignonViz) window.SLMignonViz.stop();
     document.querySelector("[data-mignon-page]")?.removeAttribute("data-radio-playing");
     document.querySelector("[data-mignon-page]")?.classList.remove("is-music-live");
   }

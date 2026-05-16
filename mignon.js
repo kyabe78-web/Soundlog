@@ -6,7 +6,7 @@
 
   const VERSION = 2;
   const SYNC_COOLDOWN_MS = 45000;
-  const INTERACTION_ANIMS = new Set(["dance", "excited", "listening", "pet", "stretch", "hover", "happy"]);
+  const INTERACTION_ANIMS = new Set(["dance", "excited", "listening", "pet", "stretch", "hover", "happy", "sleep"]);
   const TAB_STORAGE_KEY = "sl_mignon_tab";
   let lastActivitySyncAt = 0;
   let rhythmCleanup = null;
@@ -204,6 +204,25 @@
     if (c) c.setAttribute("data-anim", anim);
   }
 
+  function syncCreatureMood(m, root) {
+    root = root || getMignonPageRoot();
+    if (!root || !m) return;
+    const idleAnim =
+      m.mood === "sleepy"
+        ? "sleep"
+        : m.mood === "excited" || m.mood === "bliss"
+          ? "dance"
+          : m.mood === "listening"
+            ? "listening"
+            : "idle";
+    root.querySelectorAll(".px-radiobot, .px-mignon-buddy").forEach((el) => {
+      el.setAttribute("data-mood", m.mood);
+      if (!INTERACTION_ANIMS.has(el.getAttribute("data-anim")) && el.getAttribute("data-anim") !== "dance") {
+        el.setAttribute("data-anim", idleAnim);
+      }
+    });
+  }
+
   function getMignon(uid) {
     if (!d()) return defaultMignon();
     if (uid === "me" || !uid) {
@@ -303,6 +322,7 @@
     if (opts.creature !== false) {
       const wrap = root.querySelector(".mg-stage__creature");
       if (wrap) wrap.innerHTML = creatureMarkup(m);
+      syncCreatureMood(m, root);
     }
 
     if (opts.vibe) {
@@ -1593,6 +1613,10 @@
     if (mignonPageLive) return;
     mignonPageLive = true;
     if (window.SLMignonRadio) window.SLMignonRadio.onPageMount();
+    const profile = analyzeMusicProfile();
+    const vibe = ENG() ? ENG().computeMusicVibe(profile) : "lofi";
+    const pageEl = document.querySelector("[data-mignon-page]");
+    if (pageEl) pageEl.setAttribute("data-ambiance", vibe);
     const now = Date.now();
     if (now - lastActivitySyncAt > SYNC_COOLDOWN_MS) {
       syncFromActivity({ force: true, preserveAnim: true, notify: false });

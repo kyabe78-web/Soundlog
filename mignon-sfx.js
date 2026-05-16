@@ -125,6 +125,17 @@
       tone(370, 0.05, "square", 0.08, ctx.currentTime + 0.05);
       tone(440, 0.07, "square", 0.1, ctx.currentTime + 0.1);
     },
+    skip: () => {
+      tone(660, 0.03, "square", 0.07);
+      tone(880, 0.04, "square", 0.08, ctx.currentTime + 0.04);
+    },
+    pause: () => tone(220, 0.06, "triangle", 0.06),
+    discover: () => {
+      tone(523, 0.04, "square", 0.09);
+      tone(784, 0.06, "square", 0.1, ctx.currentTime + 0.06);
+      tone(1046, 0.08, "square", 0.12, ctx.currentTime + 0.12);
+    },
+    radio_tune: () => noiseBurst(0.06, 0.04),
   };
 
   function play(id, opts) {

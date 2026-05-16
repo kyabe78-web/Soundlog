@@ -21,7 +21,7 @@
       unlockXp: 0,
       vibe: "lofi",
       weather: "none",
-      props: ["window_rain", "bed", "desk", "lamp", "posters", "plant", "cassette"],
+      props: ["window_rain", "skyline", "bed", "desk", "lamp", "posters", "plant", "cassette", "boombox", "on_air", "cables", "vinyl_stack"],
     },
     vinyl_lounge: {
       id: "vinyl_lounge",
@@ -362,6 +362,8 @@
     const weather = env.weather !== "none" ? env.weather : opts.weather || "none";
     const arch = ARCHETYPES[m.equippedSkin] || ARCHETYPES.default;
     const particle = arch.particle || "dust";
+    const hour = typeof opts.hour === "number" ? opts.hour : new Date().getHours();
+    const timeOfDay = hour >= 7 && hour < 19 ? "day" : "night";
     const propsHtml = (env.props || []).map((p) => propLayer(env, p)).join("");
     const placed = (m.roomLayout && m.roomLayout.placed) || [];
     const decorHtml = placed
@@ -371,15 +373,16 @@
       )
       .join("");
 
-    return `<div class="px-room px-room--${esc(envId)}" data-env="${esc(envId)}" data-vibe="${esc(vibe)}" data-weather="${esc(weather)}" data-particle="${esc(particle)}">
+    return `<div class="px-room px-room--${esc(envId)}" data-env="${esc(envId)}" data-vibe="${esc(vibe)}" data-weather="${esc(weather)}" data-particle="${esc(particle)}" data-time="${esc(timeOfDay)}" data-ambiance="${esc(vibe)}">
       <div class="px-room__scanlines" aria-hidden="true"></div>
       <div class="px-room__vignette" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--sky" aria-hidden="true"></div>
+      <div class="px-room__layer px-room__layer--walls" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--back" aria-hidden="true">${propsHtml}</div>
       <div class="px-room__layer px-room__layer--floor" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--mid" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--decor" aria-hidden="true">${decorHtml}</div>
-      <div class="px-room__eq-wall" aria-hidden="true">${Array.from({ length: 14 }, (_, i) => `<span class="px-eq-wall-bar" style="--eq-i:${i}"></span>`).join("")}</div>
+      <div class="px-room__eq-wall" data-mignon-viz aria-hidden="true">${Array.from({ length: 14 }, (_, i) => `<span class="px-eq-wall-bar" style="--eq-i:${i}"></span>`).join("")}</div>
       <div class="px-room__led-strip" aria-hidden="true"></div>
       <div class="px-room__crt-glow" aria-hidden="true"></div>
       <div class="px-room__layer px-room__layer--light" aria-hidden="true"></div>

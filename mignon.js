@@ -138,6 +138,7 @@
       auraScore: 0,
       miniGameStats: {},
       ambientOn: true,
+      radioOn: true,
       createdAt: new Date().toISOString(),
     };
   }
@@ -175,6 +176,7 @@
         : { owned: ["none"], equipped: [] };
     if (!m.socialLog || typeof m.socialLog !== "object") m.socialLog = { day: "", count: 0 };
     m.ambientOn = m.ambientOn !== false;
+    m.radioOn = m.radioOn !== false;
     return m;
   }
 
@@ -242,7 +244,7 @@
       tab = sessionStorage.getItem(TAB_STORAGE_KEY) || tab;
     } catch (_) {}
     if (!["sanctuary", "collection", "arcade", "decor"].includes(tab)) tab = "sanctuary";
-    root.querySelectorAll("[data-mg-tab]").forEach((t) => {
+    root.querySelectorAll("[data-mg-tab], .mg-sidebar__tab").forEach((t) => {
       const on = t.getAttribute("data-mg-tab") === tab;
       t.classList.toggle("is-active", on);
       t.setAttribute("aria-selected", on ? "true" : "false");
@@ -877,6 +879,59 @@
     }).join("");
   }
 
+  function wireMignonRadio() {
+    if (!window.SLMignonRadio || !d()) return;
+    window.SLMignonRadio.install({
+      state: d().state,
+      escapeHtml: d().escapeHtml,
+      albumById: d().albumById,
+      getMignon,
+      saveMignon,
+      analyzeMusicProfile,
+      computeMusicVibe: (profile) => (ENG() ? ENG().computeMusicVibe(profile) : "lofi"),
+      playAlbumPreview: d().playAlbumPreview,
+      stopAlbumPreview: d().stopAlbumPreview,
+      getPreviewAudio: d().getPreviewAudio,
+      getPreviewAlbumId: d().getPreviewAlbumId,
+      getCachedAlbumPreview: d().getCachedAlbumPreview,
+    });
+  }
+
+  function dexStripHtml(m) {
+    if (!ENG()) return "";
+    return Object.values(ENG().ARCHETYPES)
+      .slice(0, 5)
+      .map((a) => {
+        const owned = m.unlockedSkins.includes(a.id);
+        const active = m.equippedSkin === a.id;
+        return `<div class="mg-dex-strip__slot${active ? " is-active" : ""}${!owned ? " is-locked" : ""}" title="${d().escapeHtml(a.label)}">
+          <div class="mg-dex-strip__sprite">${owned ? creatureMarkup({ ...m, equippedSkin: a.id, anim: "idle" }, { compact: true }) : "<span>?</span>"}</div>
+          <p class="mg-dex-strip__label">${d().escapeHtml(a.label.split(" ")[0])}</p>
+        </div>`;
+      })
+      .join("");
+  }
+
+  function topbarHtml(m, profile) {
+    const xpNext = STAGES[Math.min(m.stage + 1, STAGES.length - 1)];
+    const xpCur = STAGES[m.stage];
+    const xpPct =
+      m.stage >= STAGES.length - 1
+        ? 100
+        : Math.round(((m.xp - xpCur.xp) / Math.max(1, xpNext.xp - xpCur.xp)) * 100);
+    const musicality = Math.round(profile.listenCount ? Math.min(100, profile.listenCount * 2 + m.affinity * 0.4) : m.affinity);
+    return `<header class="mg-topbar">
+      <h1 class="mg-topbar__brand">MIGNON<small>COMPAGNON MUSICAL</small></h1>
+      <span class="mg-topbar__lvl">NIV. ${m.level}</span>
+      <div class="mg-topbar__xp"><label>EXP ${m.xp} / ${xpNext.xp}</label><span style="width:${xpPct}%"></span></div>
+      <div class="mg-vitals">
+        <div class="mg-vital mg-vital--energy"><span class="mg-vital__icon">⚡</span><div class="mg-vital__bar"><i style="width:${m.energy}%"></i></div></div>
+        <div class="mg-vital mg-vital--happy"><span class="mg-vital__icon">♥</span><div class="mg-vital__bar"><i style="width:${m.happiness}%"></i></div></div>
+        <div class="mg-vital mg-vital--music"><span class="mg-vital__icon">♫</span><div class="mg-vital__bar"><i style="width:${musicality}%"></i></div></div>
+      </div>
+    </header>`;
+  }
+
   function renderVisitPage(uid) {
     const m = getMignon(uid);
     const name = peerDisplayName(uid);
@@ -949,7 +1004,7 @@
             const active = m.equippedSkin === a.id;
             const lore = a.lore || a.desc;
             const aff = a.affinity || "—";
-            return `<article class="mg-dex-card mg-dex-card--${a.rarity}${active ? " is-active" : ""}${!owned ? " is-locked" : ""}" data-mignon-skin="${a.id}">
+            return `<article class="mg-dex-card mg-dex-card--${a.rarity}${active ? " is-active" : ""}${!owned ? " is-locked mg-dex-card--silhouette" : ""}" data-mignon-skin="${a.id}">
               <header class="mg-dex-card__head">
                 <span class="mg-dex-card__no">#${String(idx + 1).padStart(2, "0")}</span>
                 <span class="mg-dex-card__rarity">${d().escapeHtml(a.rarity)}</span>
@@ -986,13 +1041,21 @@
             )
             .join("")}</ul>`;
 
-    return `<div class="mg-page mg-universe" data-mignon-page data-music-vibe="${d().escapeHtml(vibe)}">
+    const radioHtml = window.SLMignonRadio ? window.SLMignonRadio.radioPanelHtml(m, profile, vibe) : "";
+    return `<div class="mg-page mg-universe mg-console" data-mignon-page data-music-vibe="${d().escapeHtml(vibe)}">
+      <div class="mg-crt-overlay" aria-hidden="true"></div>
+      <div class="mg-crt-chroma" aria-hidden="true"></div>
       <div class="mg-handheld"><div class="mg-handheld__bezel">
-          <div class="mg-handheld__brand">
-            <p class="mg-handheld__logo">MIGNON<span> // soundlog</span></p>
-            <span class="mg-handheld__led" aria-hidden="true"></span>
-          </div>
-      <header class="mg-hud">
+      ${topbarHtml(m, profile)}
+      <div class="mg-console__grid">
+        <nav class="mg-sidebar" role="tablist">
+          <button type="button" class="mg-sidebar__tab is-active" data-mg-tab="sanctuary" role="tab"><span>◆</span> Sanctuaire</button>
+          <button type="button" class="mg-sidebar__tab" data-mg-tab="collection" role="tab"><span>◎</span> Collection</button>
+          <button type="button" class="mg-sidebar__tab" data-mg-tab="arcade" role="tab"><span>♫</span> Arcade</button>
+          <button type="button" class="mg-sidebar__tab" data-mg-tab="decor" role="tab"><span>▣</span> Déco</button>
+        </nav>
+        <div class="mg-main">
+      <header class="mg-hud mg-hud--compact">
         <div class="mg-hud__left">
           <p class="mg-hud__kicker">▸ compagnon musical</p>
           <h1 class="mg-hud__title">${d().escapeHtml(m.name)}</h1>
@@ -1012,12 +1075,6 @@
           <button type="button" class="btn btn-ghost btn-sm mg-sfx-btn${sfxOn ? " is-on" : ""}" id="mignon-sfx-toggle" aria-pressed="${sfxOn ? "true" : "false"}" title="Bips UI">♪</button>
         </div>
       </header>
-      <nav class="mg-tabs" role="tablist">
-        <button type="button" class="mg-tab is-active" data-mg-tab="sanctuary" role="tab">◆ Sanctuaire</button>
-        <button type="button" class="mg-tab" data-mg-tab="collection" role="tab">◎ Dex</button>
-        <button type="button" class="mg-tab" data-mg-tab="arcade" role="tab">♫ Arcade</button>
-        <button type="button" class="mg-tab" data-mg-tab="decor" role="tab">▣ Déco</button>
-      </nav>
       <div class="mg-panels">
         <section class="mg-panel mg-panel--sanctuary is-active" data-mg-panel="sanctuary">
           <div class="mg-stage" data-mignon-pet-zone data-mignon-decor-stage>
@@ -1031,11 +1088,11 @@
               ${statBar("Affinité", m.affinity, "affinity")}
             </div>
             <div class="mg-stage__actions">
-              <button type="button" class="mg-action" data-mignon-pet><span>✦</span> Caresser</button>
-              <button type="button" class="mg-action" data-mignon-play><span>♫</span> Danser</button>
+              <button type="button" class="mg-action" data-mignon-pet><span>♥</span> Caresser</button>
               <button type="button" class="mg-action" data-mignon-feed><span>◎</span> Nourrir</button>
+              <button type="button" class="mg-action" data-mignon-play><span>♫</span> Jouer</button>
               <button type="button" class="mg-action" data-mignon-listen><span>▶</span> Écouter</button>
-              <button type="button" class="mg-action mg-action--accent" data-mignon-stretch><span>～</span> Étirer</button>
+              <button type="button" class="mg-action mg-action--accent" data-mignon-stretch><span>z</span> Dormir</button>
             </div>
           </div>
           <p class="feed-note mg-vibe-note">Vibe : <strong>${d().escapeHtml(vibe)}</strong>${arch ? ` · ${d().escapeHtml(arch.label)}` : ""}</p>
@@ -1080,7 +1137,31 @@
           </div>
         </section>
       </div>
-      <footer class="mg-footer">
+        </div>
+        ${radioHtml}
+      </div>
+      <section class="mg-deck">
+        <div class="mg-deck__block mg-deck-collection">
+          <h3 class="mg-deck__title">◎ COLLECTION</h3>
+          <div class="mg-dex-strip">${dexStripHtml(m)}</div>
+        </div>
+        <div class="mg-deck__block mg-deck-quests">
+          <h3 class="mg-deck__title">▸ QUÊTES</h3>
+          <div class="mignon-missions">${missionsHtml(m)}</div>
+        </div>
+        <div class="mg-deck__block mg-deck-arcade">
+          <h3 class="mg-deck__title">♫ ARCADE</h3>
+          <div class="mg-deck-arcade">
+            <button type="button" data-mg-tab="arcade">Rhythm</button>
+            <button type="button" data-mg-tab="arcade">Memory</button>
+            <button type="button" data-mg-tab="arcade">Crate</button>
+            <button type="button" data-mg-tab="arcade">Tout</button>
+          </div>
+        </div>
+      </section>
+      <footer class="mg-playerbar">
+        <p class="mg-playerbar__quote">La nuit tombe, la ville brille, tu écoutes. Ton Mignon ressent ça avec toi.</p>
+        <div class="mg-affinity"><label>Vibe: ${d().escapeHtml(vibe)} · Affinité ${m.affinity}%</label><div class="mg-affinity__bar"><span style="width:${m.affinity}%"></span></div></div>
         <button type="button" class="btn btn-primary mg-retro-btn" data-nav-view="carnet">◎ Logger</button>
         <button type="button" class="btn btn-ghost mg-retro-btn" data-nav-view="social">♥ Cercle</button>
       </footer>
@@ -1262,6 +1343,7 @@
     }
     mignonPageLive = false;
     stopAmbient();
+    if (window.SLMignonRadio) window.SLMignonRadio.onPageUnmount();
   }
 
   function wireRhythmGame() {
@@ -1430,14 +1512,14 @@
       });
     }
 
-    root.querySelectorAll("[data-mg-tab]").forEach((tab) => {
+    root.querySelectorAll("[data-mg-tab], .mg-sidebar__tab").forEach((tab) => {
       tab.addEventListener("click", () => {
         const id = tab.getAttribute("data-mg-tab");
         sfx("tab");
         try {
           sessionStorage.setItem(TAB_STORAGE_KEY, id);
         } catch (_) {}
-        root.querySelectorAll("[data-mg-tab]").forEach((t) => {
+        root.querySelectorAll("[data-mg-tab], .mg-sidebar__tab").forEach((t) => {
           const on = t.getAttribute("data-mg-tab") === id;
           t.classList.toggle("is-active", on);
           t.setAttribute("aria-selected", on ? "true" : "false");
@@ -1466,15 +1548,15 @@
     if (stretch) {
       stretch.addEventListener("click", () => {
         let m = getMignon("me");
-        m.anim = "stretch";
+        m.anim = "sleep";
         saveMignon(m);
-        setCreatureAnim(root, "stretch");
+        setCreatureAnim(root, "sleep");
         setTimeout(() => {
           m = getMignon("me");
           m.anim = "idle";
           saveMignon(m);
           setCreatureAnim(root, "idle");
-        }, 2000);
+        }, 2800);
       });
     }
     const memStart = root.querySelector("#mignon-memory-start");
@@ -1506,9 +1588,11 @@
   }
 
   function onMignonPageMount(page) {
+    wireMignonRadio();
     restoreMignonTab(page);
     if (mignonPageLive) return;
     mignonPageLive = true;
+    if (window.SLMignonRadio) window.SLMignonRadio.onPageMount();
     const now = Date.now();
     if (now - lastActivitySyncAt > SYNC_COOLDOWN_MS) {
       syncFromActivity({ force: true, preserveAnim: true, notify: false });
@@ -1577,6 +1661,7 @@
 
   function install(injected) {
     deps = injected;
+    wireMignonRadio();
   }
 
   function applySettings(settings) {

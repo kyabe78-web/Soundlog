@@ -7024,6 +7024,11 @@
       scheduleCloudMignon,
       cloudSignedIn,
       refreshMignonUI: () => window.SLMignon && SLMignon.refreshMignonUI && SLMignon.refreshMignonUI(),
+      playAlbumPreview,
+      stopAlbumPreview,
+      getPreviewAudio: () => previewAudio,
+      getPreviewAlbumId: () => previewAlbumId,
+      getCachedAlbumPreview,
     });
     ensureMignon();
     try {

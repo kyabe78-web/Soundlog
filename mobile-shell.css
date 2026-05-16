@@ -1,39 +1,12 @@
-/* Mobile shell — Phase 5 */
+/* Mobile shell — layouts & scroll (safe areas → mobile-safe.css) */
 
 @media (max-width: 1023px) {
   .search-kbd {
     display: none;
   }
 
-  .topbar-row--search {
-    position: sticky;
-    top: 0;
-    z-index: 40;
-    padding-bottom: 0.35rem;
-    background: linear-gradient(180deg, var(--bg, #08090e) 85%, transparent);
-  }
-
   body.is-mobile .search-wrap {
     position: relative;
-  }
-
-  body.is-mobile .search-popover:not([hidden]) {
-    position: fixed;
-    left: 0.65rem;
-    right: 0.65rem;
-    top: auto;
-    bottom: calc(var(--bottom-nav-h, 64px) + env(safe-area-inset-bottom, 0px) + 0.5rem);
-    max-height: min(58vh, 420px);
-    margin: 0;
-    border-radius: 18px;
-    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.55);
-    z-index: 850;
-  }
-
-  body.search-focus .search-popover:not([hidden]) {
-    top: calc(var(--topbar-h, 112px) + 0.35rem);
-    bottom: auto;
-    max-height: min(62vh, 480px);
   }
 
   .hub-tabs {
@@ -53,23 +26,6 @@
 
   .hub-tab {
     flex-shrink: 0;
-  }
-
-  .bottom-nav {
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-    padding-left: env(safe-area-inset-left, 0px);
-    padding-right: env(safe-area-inset-right, 0px);
-  }
-
-  .nav-link--fab {
-    min-width: 52px;
-    min-height: 52px;
-  }
-
-  .bottom-nav .nav-link {
-    min-height: 44px;
-    padding-top: 0.35rem;
-    padding-bottom: 0.35rem;
   }
 
   .feed-layout--unified {
@@ -107,12 +63,6 @@
     flex-wrap: nowrap;
     -webkit-overflow-scrolling: touch;
     scrollbar-width: none;
-  }
-
-  .icon-btn,
-  .topbar-messages {
-    min-width: 44px;
-    min-height: 44px;
   }
 
   .diary-filters {

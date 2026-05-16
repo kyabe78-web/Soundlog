@@ -2805,7 +2805,32 @@
   function bindMobileShell() {
     const mq = window.matchMedia("(max-width: 1023px)");
     const syncViewport = () => {
-      document.documentElement.style.setProperty("--vh", `${window.innerHeight * 0.01}px`);
+      const h = window.visualViewport ? window.visualViewport.height : window.innerHeight;
+      document.documentElement.style.setProperty("--vh", `${h * 0.01}px`);
+      document.documentElement.style.setProperty("--visual-viewport-h", `${Math.round(h)}px`);
+    };
+    const syncTopbarStack = () => {
+      const tb = document.querySelector(".topbar");
+      if (!tb || !mq.matches) return;
+      const h = Math.ceil(tb.getBoundingClientRect().height);
+      if (h > 0) document.documentElement.style.setProperty("--topbar-stack-h", `${h}px`);
+    };
+    const syncKeyboard = () => {
+      if (!mq.matches) {
+        document.body.classList.remove("keyboard-open");
+        return;
+      }
+      const vv = window.visualViewport;
+      if (!vv) {
+        document.body.classList.remove("keyboard-open");
+        return;
+      }
+      const keyboardLikely = vv.height < window.innerHeight * 0.82 && document.activeElement;
+      const tag = document.activeElement && document.activeElement.tagName;
+      const typing =
+        keyboardLikely &&
+        (tag === "INPUT" || tag === "TEXTAREA" || document.activeElement.isContentEditable);
+      document.body.classList.toggle("keyboard-open", !!typing);
     };
     const syncMobile = () => {
       document.body.classList.toggle("is-mobile", mq.matches);
@@ -2813,13 +2838,46 @@
         "is-touch",
         mq.matches && ("ontouchstart" in window || navigator.maxTouchPoints > 0)
       );
-      if (!mq.matches) closeSidebar();
+      if (!mq.matches) {
+        closeSidebar();
+        document.body.classList.remove("keyboard-open");
+      }
+      syncTopbarStack();
     };
     syncViewport();
     syncMobile();
-    mq.addEventListener("change", syncMobile);
-    window.addEventListener("resize", syncViewport);
-    window.visualViewport?.addEventListener("resize", syncViewport);
+    mq.addEventListener("change", () => {
+      syncMobile();
+      syncViewport();
+    });
+    window.addEventListener("resize", () => {
+      syncViewport();
+      syncTopbarStack();
+    });
+    window.addEventListener("orientationchange", () => {
+      setTimeout(() => {
+        syncViewport();
+        syncTopbarStack();
+      }, 120);
+    });
+    const vv = window.visualViewport;
+    if (vv) {
+      vv.addEventListener("resize", () => {
+        syncViewport();
+        syncKeyboard();
+      });
+      vv.addEventListener("scroll", syncKeyboard);
+    }
+    document.addEventListener("focusin", syncKeyboard);
+    document.addEventListener("focusout", () => {
+      setTimeout(syncKeyboard, 80);
+    });
+    const topbar = document.querySelector(".topbar");
+    if (topbar && typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => syncTopbarStack());
+      ro.observe(topbar);
+    }
+    window.__slSyncTopbarStack = syncTopbarStack;
   }
 
 
@@ -5654,6 +5712,7 @@
       });
     }
     bindRecoCardEvents($main);
+    if (window.__slSyncTopbarStack) requestAnimationFrame(window.__slSyncTopbarStack);
   }
 
   // ---------- Affichage des playlists importées sur le profil ----------
@@ -7798,7 +7857,7 @@
     });
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("/sw.js?v=13")
+        .register("/sw.js?v=14")
         .then((reg) => {
           if (reg.waiting) reg.waiting.postMessage({ type: "SKIP_WAITING" });
           reg.update();

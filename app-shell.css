@@ -118,6 +118,13 @@
 }
 
 /* Drawer messagerie — backdrop only dims the app behind the panel (not the drawer itself) */
+.inbox-drawer-backdrop[hidden],
+.sidebar-backdrop[hidden] {
+  display: none !important;
+  pointer-events: none !important;
+  opacity: 0 !important;
+}
+
 .inbox-drawer-backdrop {
   position: fixed;
   top: 0;

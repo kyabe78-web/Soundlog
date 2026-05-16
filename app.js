@@ -2658,7 +2658,8 @@
   function renderSocialHub() {
     const raw = route.hubTab || state.socialTab || "community";
     const tab = raw === "live" ? "live" : "community";
-    if (route.hubTab !== tab) route.hubTab = tab;
+    route.hubTab = tab;
+    state.socialTab = tab;
     const tabs = hubTabsHtml(
       [
         { id: "community", label: "Cercle" },
@@ -2667,9 +2668,17 @@
       tab,
       "social"
     );
-    const body = tab === "live" ? renderIWasThere() : renderSocial();
+    let body = "";
+    if (tab === "live") {
+      body =
+        window.SLSocial && typeof window.SLSocial.renderLive === "function"
+          ? window.SLSocial.renderLive()
+          : renderIWasThere();
+    } else {
+      body = renderSocial();
+    }
     const title = tab === "live" ? "I was there !" : "Communauté";
-    return `<div class="hub-page view-social-themed" data-hub-page="social"><header class="hub-page__head"><p class="hub-page__kicker">Social</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
+    return `<div class="hub-page view-social-themed" data-hub-page="social" data-social-hub-tab="${tab}"><header class="hub-page__head"><p class="hub-page__kicker">Social</p><h1 class="hub-page__title">${title}</h1>${tabs}</header><div class="hub-page__body hub-page__body--nested">${body}</div></div>`;
   }
 
   function openInboxDrawer(threadId) {
@@ -2697,9 +2706,10 @@
     if (closeBtn) setTimeout(() => closeBtn.focus(), 80);
   }
 
-  function closeInboxDrawer() {
+  function closeInboxDrawer(opts) {
+    opts = opts || {};
     route.inboxDrawer = false;
-    route.dmThreadId = null;
+    if (!opts.keepThread) route.dmThreadId = null;
     document.body.classList.remove("inbox-drawer-open");
     const backdrop = document.getElementById("inbox-drawer-backdrop");
     const drawer = document.getElementById("inbox-drawer");
@@ -2716,11 +2726,40 @@
     const btn = document.getElementById("topbar-messages");
     if (btn) {
       btn.setAttribute("aria-expanded", "false");
-      btn.focus();
+      if (!opts.silent) btn.focus();
     }
-    if ((window.location.hash || "").includes("messagerie")) {
+    if (!opts.silent && (window.location.hash || "").includes("messagerie")) {
       navigate(route.view === "inbox" ? "home" : route.view);
     }
+  }
+
+  /** Ferme overlays qui bloquent les clics (drawer, sidebar, modale). */
+  function closeNavOverlays(opts) {
+    opts = opts || {};
+    if (document.body.classList.contains("inbox-drawer-open")) {
+      closeInboxDrawer({ silent: true, keepThread: !!opts.keepDmThread });
+    }
+    if (document.body.classList.contains("sidebar-open")) closeSidebar();
+    if (document.body.classList.contains("modal-open") && !opts.keepModal) closeModal();
+    const pop = document.getElementById("notif-popover");
+    const bell = document.getElementById("notif-bell");
+    if (pop && bell) {
+      pop.hidden = true;
+      bell.setAttribute("aria-expanded", "false");
+    }
+  }
+
+  function syncHubStateFromRoute() {
+    const tab = route.hubTab;
+    if (!tab) return;
+    if (route.view === "explore") state.exploreTab = tab;
+    else if (route.view === "carnet") state.carnetTab = tab;
+    else if (route.view === "social") state.socialTab = tab;
+  }
+
+  function debugNav(label, extra) {
+    if (!window.__slDebugNav) return;
+    console.info("[nav]", label, Object.assign({ view: route.view, hubTab: route.hubTab, hash: location.hash }, extra || {}));
   }
 
   /** Panneau messagerie actif (tiroir prioritaire sur la page #messagerie dupliquée dans #main). */
@@ -2831,7 +2870,10 @@
       else if (route.view === "list") titleEl.textContent = "Liste";
       else if (route.view === "explore") titleEl.textContent = "Explorer";
       else if (route.view === "carnet") titleEl.textContent = "Carnet";
-      else if (route.view === "inbox") titleEl.textContent = "Messages";
+      else if (route.view === "social") {
+        const st = route.hubTab || state.socialTab || "community";
+        titleEl.textContent = st === "live" ? "I was there !" : "Social";
+      } else if (route.view === "inbox") titleEl.textContent = "Messages";
       else titleEl.textContent = NAV_LABELS[route.view] || "Soundlog";
     }
   }
@@ -2963,6 +3005,7 @@
   }
 
   function navigate(view, extra) {
+    extra = extra || {};
     const legacyNav = {
       discover: { view: "explore", hubTab: "albums" },
       libraries: { view: "explore", hubTab: "import" },
@@ -2974,21 +3017,18 @@
     if (legacyNav[view]) {
       const m = legacyNav[view];
       view = m.view;
-      extra = Object.assign({}, m, extra || {});
+      extra = Object.assign({}, m, extra);
     }
 
-    const pop = document.getElementById("notif-popover");
-    const bell = document.getElementById("notif-bell");
-    if (pop && bell) {
-      pop.hidden = true;
-      bell.setAttribute("aria-expanded", "false");
-    }
-    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null, inboxDrawer: false, searchQuery: null }, extra || {});
-    if (!(extra && extra.keepSearch)) {
+    if (view !== "inbox") closeNavOverlays();
+    else if (document.body.classList.contains("sidebar-open")) closeSidebar();
+
+    Object.assign(route, { view, albumId: null, userId: null, listId: null, discoverGenre: null, dmThreadId: null, inboxDrawer: false, searchQuery: null }, extra);
+    if (!extra.keepSearch) {
       route.searchQuery = null;
       $search.value = "";
     }
-    if (extra && extra.hubTab != null) {
+    if (extra.hubTab != null) {
       route.hubTab = extra.hubTab;
     } else if (view === "explore") {
       route.hubTab = state.exploreTab || "albums";
@@ -2999,8 +3039,15 @@
     } else {
       route.hubTab = null;
     }
-    window.location.hash = buildHash();
-    render();
+    syncHubStateFromRoute();
+    persist();
+    debugNav("navigate", { target: view });
+    try {
+      window.location.hash = buildHash();
+    } catch (err) {
+      console.warn("[nav] hash", err);
+    }
+    render({ trustRoute: true });
   }
 
   function buildHash() {
@@ -3076,7 +3123,7 @@
     else if (h === "listes") route.view = "lists";
     else if (h === "i-was-there") route.view = "iwas";
     else if (h === "a-ecouter") route.view = "wishlist";
-    else if (h === "communaute") {
+    else if (h === "communaute" || h === "social") {
       route.view = "social";
       route.hubTab = "community";
     }
@@ -5587,9 +5634,12 @@
   // Cache simple pour la recherche cloud (partagée entre popover et page)
   let __slSearchCache = null;
 
-  function render() {
+  function render(opts) {
+    opts = opts || {};
     stopAlbumPreview();
-    parseHash();
+    if (!opts.trustRoute) parseHash();
+    else syncHubStateFromRoute();
+    debugNav("render", { trustRoute: !!opts.trustRoute });
     adaptiveTickAfterParse();
     setNavActive();
     syncAccountChrome();
@@ -5661,8 +5711,13 @@
         if (hubName === "carnet") state.carnetTab = tab;
         if (hubName === "social") state.socialTab = tab;
         persist();
-        window.location.hash = buildHash();
-        render();
+        debugNav("hub-tab", { hub: hubName, tab });
+        try {
+          window.location.hash = buildHash();
+        } catch (err) {
+          console.warn("[nav] hub hash", err);
+        }
+        render({ trustRoute: true });
       });
     }
 
@@ -8019,10 +8074,14 @@
 
   window.addEventListener("hashchange", () => {
     parseHash();
+    syncHubStateFromRoute();
     if (route.searchQuery) $search.value = route.searchQuery;
     else if (!(window.location.hash || "").includes("recherche")) $search.value = "";
     closePopover();
-    render();
+    if (route.view !== "inbox") closeNavOverlays();
+    else if (document.body.classList.contains("sidebar-open")) closeSidebar();
+    debugNav("hashchange");
+    render({ trustRoute: true });
   });
 
   document.addEventListener(

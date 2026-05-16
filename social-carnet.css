@@ -11,6 +11,21 @@
   gap: 1.5rem;
   padding-bottom: 3rem;
   animation: socPageIn 0.55s var(--soc-ease) both;
+  position: relative;
+  z-index: 0;
+}
+
+.hub-page[data-hub-page="social"] .hub-page__body--nested {
+  position: relative;
+  z-index: 1;
+}
+
+.hub-page[data-hub-page="social"] .hub-tab,
+.hub-page[data-hub-page="social"] .soc-tab,
+.hub-page[data-hub-page="social"] .soc-feed-filter,
+.hub-page[data-hub-page="social"] .soc-live-pill,
+.hub-page[data-hub-page="social"] .btn {
+  touch-action: manipulation;
 }
 
 @keyframes socPageIn {

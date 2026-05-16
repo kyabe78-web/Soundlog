@@ -193,6 +193,7 @@
         bio: "Amateur·rice de disques. Les notes restent sur ton appareil.",
         performanceVideos: [],
         favoriteAlbum: null,
+        albumWall: null,
       },
       concertLogs: [],
       invitedPeers: [],
@@ -247,6 +248,7 @@
           const prof = { ...base.profile, ...(parsed.profile || {}) };
           prof.performanceVideos = Array.isArray(prof.performanceVideos) ? prof.performanceVideos : [];
           if (prof.favoriteAlbum && typeof prof.favoriteAlbum !== "object") prof.favoriteAlbum = null;
+          if (prof.albumWall && typeof prof.albumWall !== "object") prof.albumWall = null;
           return prof;
         })(),
         concertLogs: Array.isArray(parsed.concertLogs) ? parsed.concertLogs : base.concertLogs,
@@ -991,6 +993,7 @@
     previewAlbumId = null;
     if (old) updatePreviewUi(old, null, false);
     document.querySelectorAll("[data-preview-play].is-loading").forEach((b) => b.classList.remove("is-loading"));
+    if (window.SLAlbumWall && window.SLAlbumWall.syncWallPlayingUi) SLAlbumWall.syncWallPlayingUi(null, false);
   }
 
   async function playAlbumPreview(albumId, opts) {
@@ -1024,6 +1027,7 @@
       return;
     }
     updatePreviewUi(albumId, preview, true);
+    if (window.SLAlbumWall && window.SLAlbumWall.syncWallPlayingUi) SLAlbumWall.syncWallPlayingUi(albumId, true);
   }
 
   async function playDirectPreview(url, albumId, trackName) {
@@ -1511,6 +1515,162 @@
     state.profile = state.profile || {};
     if (!Array.isArray(state.profile.performanceVideos)) state.profile.performanceVideos = [];
     if (state.profile.favoriteAlbum && typeof state.profile.favoriteAlbum !== "object") state.profile.favoriteAlbum = null;
+    if (state.profile.albumWall && typeof state.profile.albumWall !== "object") state.profile.albumWall = null;
+  }
+
+  function parseAlbumWallFromSettings(settings) {
+    if (!settings || typeof settings !== "object") return null;
+    const w = settings.albumWall || settings.album_wall;
+    if (!w || typeof w !== "object") return null;
+    const ids = Array.isArray(w.albumIds) ? w.albumIds.filter((id) => typeof id === "string") : [];
+    return {
+      albumIds: ids.slice(0, 10),
+      pinnedId: w.pinnedId || w.pinned_id || ids[0] || "",
+      entries: w.entries && typeof w.entries === "object" ? w.entries : {},
+      updatedAt: w.updatedAt || w.updated_at || null,
+    };
+  }
+
+  function getAlbumWallForUser(uid) {
+    if (uid === "me") {
+      const cloudMe = cloudMeRow();
+      const fromCloud = cloudMe ? parseAlbumWallFromSettings(cloudMe.settings) : null;
+      if (fromCloud && fromCloud.albumIds.length) return fromCloud;
+      if (state.profile.albumWall && state.profile.albumWall.albumIds && state.profile.albumWall.albumIds.length) {
+        return state.profile.albumWall;
+      }
+      return null;
+    }
+    const peer = (state.invitedPeers || []).find((p) => p.id === uid);
+    if (peer && peer.albumWall && peer.albumWall.albumIds && peer.albumWall.albumIds.length) return peer.albumWall;
+    const cp = window.__slCloudPeers && window.__slCloudPeers.get && window.__slCloudPeers.get(uid);
+    if (cp) {
+      if (cp.albumWall && cp.albumWall.albumIds && cp.albumWall.albumIds.length) return cp.albumWall;
+      const parsed = parseAlbumWallFromSettings(cp.settings);
+      if (parsed && parsed.albumIds.length) return parsed;
+    }
+    return null;
+  }
+
+  function deriveDefaultWallAlbumIds(uid) {
+    const scores = new Map();
+    state.listenings
+      .filter((l) => l.userId === uid && l.albumId)
+      .forEach((l) => {
+        const prev = scores.get(l.albumId) || { score: 0, n: 0 };
+        prev.n += 1;
+        prev.score += (l.rating || 0) * 2 + 1;
+        scores.set(l.albumId, prev);
+      });
+    return [...scores.entries()]
+      .sort((a, b) => b[1].score - a[1].score)
+      .map(([id]) => id)
+      .slice(0, 10);
+  }
+
+  function buildAlbumWallItems(uid) {
+    const wall = getAlbumWallForUser(uid);
+    let ids = wall && wall.albumIds && wall.albumIds.length ? [...wall.albumIds] : deriveDefaultWallAlbumIds(uid);
+    const fav = getFavoriteAlbumForUser(uid);
+    if (fav && fav.albumId && !ids.includes(fav.albumId)) ids.unshift(fav.albumId);
+    ids = [...new Set(ids)].slice(0, 10);
+    const pinnedId = (wall && wall.pinnedId) || (fav && fav.albumId) || ids[0] || "";
+    const entries = (wall && wall.entries) || {};
+    return {
+      pinnedId,
+      items: ids
+        .map((id) => {
+          const al = albumById(id);
+          if (!al) return null;
+          const meta = entries[id] || {};
+          if (fav && fav.albumId === id && fav.trackTitle && !meta.trackTitle) meta.trackTitle = fav.trackTitle;
+          const rows = state.listenings.filter((l) => l.userId === uid && l.albumId === id);
+          const rated = rows.filter((l) => l.rating);
+          const stats =
+            rows.length === 0
+              ? null
+              : {
+                  count: rows.length,
+                  avg:
+                    rated.length === 0
+                      ? null
+                      : (rated.reduce((a, l) => a + l.rating, 0) / rated.length).toFixed(1),
+                  review: (rows.find((l) => l.review && String(l.review).trim()) || {}).review || "",
+                };
+          return { album: al, meta, stats };
+        })
+        .filter(Boolean),
+    };
+  }
+
+  function getWallEntryMeta(uid, albumId) {
+    const wall = getAlbumWallForUser(uid);
+    if (!wall || !wall.entries) return {};
+    return wall.entries[albumId] || {};
+  }
+
+  function getWallPinnedId(uid) {
+    const wall = getAlbumWallForUser(uid);
+    return (wall && wall.pinnedId) || "";
+  }
+
+  async function saveAlbumWall(albumIds, pinnedId, entries) {
+    ensureProfileExtras();
+    const ids = [...new Set(albumIds)].slice(0, 10);
+    state.profile.albumWall = {
+      albumIds: ids,
+      pinnedId: pinnedId && ids.includes(pinnedId) ? pinnedId : ids[0] || "",
+      entries: entries || {},
+      updatedAt: new Date().toISOString(),
+    };
+    for (const id of ids) {
+      const al = albumById(id);
+      if (al && cloudSignedIn() && SLCloud.me) await SLCloud.upsertAlbum(al);
+    }
+    if (state.profile.albumWall.pinnedId && window.SLThemeEngine) {
+      const al = albumById(state.profile.albumWall.pinnedId);
+      if (al) {
+        const theme = SLThemeEngine.buildThemeFromAlbum(al);
+        theme.albumId = al.id;
+        state.profile.favoriteAlbum = {
+          albumId: al.id,
+          trackTitle: (entries && entries[al.id] && entries[al.id].trackTitle) || "",
+          theme,
+          savedAt: new Date().toISOString(),
+        };
+      }
+    }
+    persist();
+    applyIdentityTheme();
+    if (cloudSignedIn() && SLCloud.me) await pushAlbumWallToCloud();
+  }
+
+  async function pushAlbumWallToCloud() {
+    if (!SLCloud || !SLCloud.isSignedIn() || !SLCloud.me) return;
+    const prev = SLCloud.me.settings && typeof SLCloud.me.settings === "object" ? { ...SLCloud.me.settings } : {};
+    const w = state.profile.albumWall;
+    if (!w || !w.albumIds || !w.albumIds.length) {
+      delete prev.albumWall;
+      delete prev.album_wall;
+    } else {
+      prev.albumWall = {
+        albumIds: w.albumIds,
+        pinnedId: w.pinnedId || "",
+        entries: w.entries || {},
+        updatedAt: w.updatedAt || new Date().toISOString(),
+      };
+    }
+    if (state.profile.favoriteAlbum && state.profile.favoriteAlbum.theme && state.profile.favoriteAlbum.theme.hue != null) {
+      prev.favoriteAlbum = window.SLThemeEngine
+        ? SLThemeEngine.favoriteToSettingsPayload(state.profile.favoriteAlbum).favoriteAlbum
+        : prev.favoriteAlbum;
+    }
+    const patch = { settings: prev };
+    if (state.profile.favoriteAlbum && state.profile.favoriteAlbum.theme && state.profile.favoriteAlbum.theme.hue != null) {
+      patch.hue = Math.round(state.profile.favoriteAlbum.theme.hue);
+    }
+    await SLCloud.updateProfile(patch);
+    syncMeFromCloud();
   }
 
   function mergeFavoriteFromCloudSettings(settings) {
@@ -1574,14 +1734,21 @@
     if (!fav || !fav.albumId) {
       delete prev.favoriteAlbum;
       delete prev.favorite_album;
-      await SLCloud.updateProfile({ settings: prev });
     } else {
       const payload = window.SLThemeEngine.favoriteToSettingsPayload(fav);
       prev.favoriteAlbum = payload.favoriteAlbum;
-      const patch = { settings: prev };
-      if (fav.theme && fav.theme.hue != null) patch.hue = Math.round(fav.theme.hue);
-      await SLCloud.updateProfile(patch);
     }
+    if (state.profile.albumWall && state.profile.albumWall.albumIds && state.profile.albumWall.albumIds.length) {
+      prev.albumWall = {
+        albumIds: state.profile.albumWall.albumIds,
+        pinnedId: state.profile.albumWall.pinnedId || "",
+        entries: state.profile.albumWall.entries || {},
+        updatedAt: state.profile.albumWall.updatedAt || new Date().toISOString(),
+      };
+    }
+    const patch = { settings: prev };
+    if (fav && fav.theme && fav.theme.hue != null) patch.hue = Math.round(fav.theme.hue);
+    await SLCloud.updateProfile(patch);
     syncMeFromCloud();
   }
 
@@ -2763,7 +2930,7 @@
   let modalKeydownHandler = null;
 
   function closeModal() {
-    document.body.classList.remove("modal-open", "modal-open--log-listen", "modal-open--faat");
+    document.body.classList.remove("modal-open", "modal-open--log-listen", "modal-open--faat", "modal-open--wall-card", "modal-open--wall-edit");
     if (typeof window.__slLogListenCleanup === "function") {
       window.__slLogListenCleanup();
       window.__slLogListenCleanup = null;
@@ -2780,8 +2947,18 @@
     document.body.classList.add("modal-open");
     if (opts.variant === "log-listen") document.body.classList.add("modal-open--log-listen");
     if (opts.variant === "faat") document.body.classList.add("modal-open--faat");
+    if (opts.variant === "wall-card") document.body.classList.add("modal-open--wall-card");
+    if (opts.variant === "wall-edit") document.body.classList.add("modal-open--wall-edit");
     const modalCls =
-      opts.variant === "log-listen" ? " modal--log-listen" : opts.variant === "faat" ? " modal--faat" : "";
+      opts.variant === "log-listen"
+        ? " modal--log-listen"
+        : opts.variant === "faat"
+          ? " modal--faat"
+          : opts.variant === "wall-card"
+            ? " modal--wall-card"
+            : opts.variant === "wall-edit"
+              ? " modal--wall-edit"
+              : "";
     $modal.innerHTML = `<div class="modal-backdrop" id="modal-bd"><div class="modal${modalCls}">${html}</div></div>`;
     document.getElementById("modal-bd").addEventListener("click", (e) => {
       if (e.target.id === "modal-bd") closeModal();
@@ -3227,6 +3404,10 @@
 
   function navigate(view, extra) {
     extra = extra || {};
+    if (view !== "profile") {
+      stopAlbumPreview();
+      if (window.SLAlbumWall && window.SLAlbumWall.stopOnNavigate) SLAlbumWall.stopOnNavigate();
+    }
     const legacyNav = {
       discover: { view: "explore", hubTab: "albums" },
       libraries: { view: "explore", hubTab: "import" },
@@ -5599,7 +5780,7 @@
       perfVideosBlock += `<p class="perf-video-add-wrap"><button type="button" class="btn btn-primary btn-sm" id="btn-add-perf-video">+ Ajouter une vidéo YouTube</button></p>`;
     }
 
-    const photoUrl = String(u.avatar_url || "").trim();
+    const wallData = buildAlbumWallItems(isMe ? "me" : uid);
     const favForView = getFavoriteAlbumForUser(isMe ? "me" : uid);
     const hasFaat = !!(favForView && favForView.albumId && albumById(favForView.albumId));
     const faatTheme =
@@ -5608,25 +5789,22 @@
         : hasFaat && window.SLThemeEngine
           ? SLThemeEngine.buildThemeFromAlbum(albumById(favForView.albumId))
           : null;
-    const phHue = faatTheme && faatTheme.hue != null ? faatTheme.hue : u.hue;
-    const coverCls =
-      "profile-cover profile-hero__cover" +
-      (photoUrl ? " profile-cover--photo" : "") +
-      (hasFaat ? " profile-hero__cover--faat" : "");
-    const coverStyle =
-      `--ph:${phHue}` + (photoUrl ? `;--profile-photo:url(${JSON.stringify(photoUrl)})` : "");
     const profileViewCls =
-      "profile-view profile-view--premium view-themed" + (hasFaat ? " profile-view--faat" : "");
+      "profile-view profile-view--premium view-themed profile-view--wall" + (hasFaat ? " profile-view--faat" : "");
     const profileScopeAttr = hasFaat && faatTheme && !isMe ? profileThemeStyleAttr(faatTheme) : "";
     const faatBlock = renderFavoriteAlbumSection(u, isMe);
+    const wallHtml =
+      window.SLAlbumWall && window.SLAlbumWall.renderHero
+        ? SLAlbumWall.renderHero({
+            uid: isMe ? "me" : uid,
+            isMe,
+            items: wallData.items,
+            pinnedId: wallData.pinnedId,
+          })
+        : "";
 
     return `<div class="${profileViewCls}"${profileScopeAttr}>
-      <section class="profile-hero" aria-label="Bannière profil">
-        <div class="${coverCls}" style="${coverStyle}">
-          <div class="profile-hero__shine" aria-hidden="true"></div>
-          <div class="profile-hero__grain" aria-hidden="true"></div>
-        </div>
-      </section>
+      ${wallHtml}
       <div class="profile-sheet">
       <header class="profile-head">
         <div class="profile-head__main">
@@ -6051,7 +6229,15 @@
     }
     if (window.__slSyncTopbarStack) requestAnimationFrame(window.__slSyncTopbarStack);
     applyIdentityTheme();
-    if (route.view === "profile") requestAnimationFrame(() => hydrateFaatProfileAmbient());
+    if (route.view === "profile") {
+      requestAnimationFrame(() => {
+        hydrateFaatProfileAmbient();
+        if (window.SLAlbumWall && window.SLAlbumWall.bind) SLAlbumWall.bind($main);
+        if (window.SLArtwork) SLArtwork.wireCoverImages($main.querySelector(".album-wall") || $main);
+      });
+    } else if (window.SLAlbumWall && window.SLAlbumWall.stopOnNavigate) {
+      SLAlbumWall.stopOnNavigate();
+    }
   }
 
   // ---------- Affichage des playlists importées sur le profil ----------
@@ -6585,6 +6771,30 @@
       catalogHitFromResult,
       saveFavoriteAlbum,
       clearFavoriteAlbum,
+    });
+  }
+
+  if (window.SLAlbumWall && window.SLAlbumWall.install) {
+    window.SLAlbumWall.install({
+      state,
+      escapeHtml,
+      coverHtml,
+      albumById,
+      allAlbums,
+      persist,
+      toast,
+      render,
+      openModal,
+      closeModal,
+      upsertAlbumFromRemoteHit,
+      catalogHitFromResult,
+      inviteBaseUrl,
+      getAlbumWallForUser,
+      getWallEntryMeta,
+      getWallPinnedId,
+      saveAlbumWall,
+      playAlbumPreview,
+      stopAlbumPreview,
     });
   }
 
@@ -8585,6 +8795,7 @@
   function syncMeFromCloud() {
     if (!SLCloud || !SLCloud.me) return;
     const favCloud = mergeFavoriteFromCloudSettings(SLCloud.me.settings);
+    const wallCloud = parseAlbumWallFromSettings(SLCloud.me.settings);
     state.profile = {
       ...state.profile,
       displayName: SLCloud.me.name,
@@ -8592,6 +8803,7 @@
       bio: SLCloud.me.bio || "",
       cloudId: SLCloud.me.id,
       favoriteAlbum: favCloud || state.profile.favoriteAlbum || null,
+      albumWall: wallCloud || state.profile.albumWall || null,
     };
     persistLocalOnly();
     updateHeaderUser();
@@ -8802,6 +9014,8 @@
     state.profile.cloudId = cloudId;
     const favPull = mergeFavoriteFromCloudSettings(SLCloud.me.settings);
     if (favPull) state.profile.favoriteAlbum = favPull;
+    const wallPull = parseAlbumWallFromSettings(SLCloud.me.settings);
+    if (wallPull) state.profile.albumWall = wallPull;
     // Albums référencés : on les ajoute en cache local (importedAlbums) si pas déjà connus
     const knownIds = new Set();
 
@@ -9136,6 +9350,7 @@
             <button type="button" class="btn btn-ghost" id="profile-open-stats">Mes statistiques</button>
             <button type="button" class="btn btn-primary" id="profile-open-imports">Importer mes playlists</button>
             <button type="button" class="btn btn-ghost" id="profile-open-faat">Album favori (thème)</button>
+            <button type="button" class="btn btn-ghost" id="profile-open-wall">Mur d’albums (bannière)</button>
             <button type="button" class="btn btn-ghost" id="profile-post-shoutout">Publier un murmure</button>
           </p>`;
         document.getElementById("profile-avatar-btn").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openAvatar)(); });
@@ -9145,6 +9360,11 @@
           closeModal();
           navigate("profile", { userId: "me" });
           openFavoriteAlbumPicker();
+        });
+        document.getElementById("profile-open-wall").addEventListener("click", () => {
+          closeModal();
+          navigate("profile", { userId: "me" });
+          if (window.SLAlbumWall && window.SLAlbumWall.openEditor) SLAlbumWall.openEditor();
         });
         document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
         wireHandleFieldPreview("auth-handle", "auth-handle-preview");

@@ -1,0 +1,455 @@
+/* Album Wall — profile banner collage */
+
+.album-wall {
+  position: relative;
+  margin: 0 0 0.25rem;
+  min-height: clamp(220px, 32vw, 380px);
+  border-radius: var(--pf-radius-hero, 22px);
+  overflow: hidden;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: #06060a;
+  isolation: isolate;
+}
+
+.album-wall--empty {
+  display: grid;
+  place-items: center;
+  min-height: clamp(200px, 28vw, 300px);
+}
+
+.album-wall__ambient {
+  position: absolute;
+  inset: -20%;
+  z-index: 0;
+  background: radial-gradient(70% 60% at 40% 30%, var(--id-glow-soft, rgba(93, 143, 108, 0.2)) 0%, transparent 55%),
+    linear-gradient(145deg, #0a0b09 0%, #181916 100%);
+  background-size: cover;
+  background-position: center;
+  filter: blur(48px) saturate(1.35);
+  opacity: 0.45;
+  transition: opacity 0.5s ease, transform 0.8s ease;
+  pointer-events: none;
+}
+
+.album-wall__ambient.is-live {
+  opacity: 0.72;
+  transform: scale(1.04);
+}
+
+.album-wall__ambient--default {
+  filter: blur(32px);
+  opacity: 0.35;
+}
+
+.album-wall__grain,
+.album-wall__vignette {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 2;
+}
+
+.album-wall__grain {
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+.album-wall__vignette {
+  z-index: 3;
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.05) 0%, rgba(0, 0, 0, 0.35) 55%, rgba(0, 0, 0, 0.75) 100%);
+}
+
+.album-wall__stage {
+  position: relative;
+  z-index: 4;
+  width: 100%;
+  height: clamp(220px, 32vw, 380px);
+  margin: 0;
+}
+
+.album-wall__poster {
+  position: absolute;
+  left: var(--aw-x, 10%);
+  top: var(--aw-y, 10%);
+  width: var(--aw-w, 18%);
+  aspect-ratio: 1;
+  padding: 0;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  transform: rotate(var(--aw-rot, 0deg));
+  z-index: var(--aw-z, 2);
+  transition:
+    transform 0.4s cubic-bezier(0.22, 1, 0.36, 1),
+    filter 0.35s ease,
+    opacity 0.35s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.album-wall__poster-frame {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 6px;
+  overflow: hidden;
+  box-shadow:
+    0 14px 32px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.14);
+  transition: box-shadow 0.35s ease;
+}
+
+.album-wall__poster--pinned .album-wall__poster-frame {
+  box-shadow:
+    0 18px 42px rgba(0, 0, 0, 0.6),
+    0 0 0 2px var(--id-accent, var(--accent)),
+    0 0 40px var(--id-glow-soft, rgba(93, 143, 108, 0.35));
+}
+
+.album-wall__poster:hover,
+.album-wall__poster:focus-visible {
+  transform: rotate(var(--aw-rot, 0deg)) scale(1.1) translateY(-6px);
+  z-index: 20 !important;
+}
+
+.album-wall__poster.is-dimmed {
+  opacity: 0.55;
+  filter: blur(1px) saturate(0.7);
+}
+
+.album-wall__poster.is-glow .album-wall__poster-frame,
+.album-wall__poster.is-playing .album-wall__poster-frame {
+  box-shadow:
+    0 22px 48px rgba(0, 0, 0, 0.65),
+    0 0 0 2px var(--id-accent, #5d8f6c),
+    0 0 50px var(--id-glow, rgba(93, 143, 108, 0.45));
+}
+
+.album-wall__shadow {
+  position: absolute;
+  left: 8%;
+  right: 8%;
+  bottom: -8%;
+  height: 18%;
+  background: rgba(0, 0, 0, 0.45);
+  filter: blur(8px);
+  border-radius: 50%;
+  z-index: -1;
+}
+
+.album-wall__shine {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(125deg, transparent 35%, rgba(255, 255, 255, 0.12) 50%, transparent 65%);
+  pointer-events: none;
+}
+
+.album-wall__pin {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  z-index: 5;
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  background: var(--id-accent, var(--accent));
+  color: #0e1210;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.album-wall__rating {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  z-index: 5;
+  padding: 0.1rem 0.35rem;
+  border-radius: 6px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: rgba(0, 0, 0, 0.65);
+  color: var(--warm-strong, #ddd0b0);
+}
+
+.album-wall__eq {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  z-index: 6;
+  display: flex;
+  gap: 2px;
+  align-items: flex-end;
+  height: 14px;
+}
+
+.album-wall__eq span {
+  width: 3px;
+  background: var(--id-accent, #5ce0a8);
+  border-radius: 2px;
+  animation: wall-eq 0.55s ease-in-out infinite alternate;
+}
+
+.album-wall__eq span:nth-child(2) {
+  animation-delay: 0.12s;
+}
+.album-wall__eq span:nth-child(3) {
+  animation-delay: 0.22s;
+}
+.album-wall__eq span:nth-child(4) {
+  animation-delay: 0.08s;
+}
+
+@keyframes wall-eq {
+  from {
+    height: 3px;
+  }
+  to {
+    height: 14px;
+  }
+}
+
+.album-wall__tools {
+  position: absolute;
+  z-index: 10;
+  right: 0.85rem;
+  bottom: 0.75rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
+
+.album-wall__tools--solo {
+  right: 0.85rem;
+}
+
+.album-wall__empty-inner {
+  position: relative;
+  z-index: 4;
+  text-align: center;
+  padding: 2rem 1.25rem;
+}
+
+.album-wall__kicker {
+  margin: 0 0 0.35rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--id-accent, var(--accent));
+}
+
+.album-wall__empty-title {
+  margin: 0 0 0.5rem;
+  font-family: var(--font-display);
+  font-size: 1.35rem;
+}
+
+.cover-frame--wall {
+  width: 100%;
+  height: 100%;
+}
+
+.cover-frame--wall .cover,
+.cover-frame--wall .cover-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+/* Profile sheet overlap */
+.profile-view--wall .profile-sheet {
+  margin-top: clamp(-3.5rem, -6vw, -4.25rem);
+}
+
+.profile-view--wall .profile-hero {
+  display: none;
+}
+
+/* Wall card modal */
+body.modal-open--wall-card .modal,
+body.modal-open--wall-edit .modal {
+  max-width: min(520px, 96vw);
+}
+
+.wall-card {
+  position: relative;
+  padding: 0.25rem 0 0;
+}
+
+.wall-card__close {
+  position: absolute;
+  top: 0;
+  right: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 1.5rem;
+  cursor: pointer;
+  z-index: 2;
+}
+
+.wall-card__layout {
+  display: grid;
+  grid-template-columns: 120px 1fr;
+  gap: 1rem;
+  align-items: start;
+}
+
+.wall-card__cover {
+  position: relative;
+}
+
+.wall-card__eq {
+  position: absolute;
+  bottom: 6px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 3px;
+  align-items: flex-end;
+  height: 18px;
+  opacity: 0;
+  transition: opacity 0.25s;
+}
+
+.wall-card.is-playing .wall-card__eq {
+  opacity: 1;
+}
+
+.wall-card__eq span {
+  width: 4px;
+  background: var(--accent);
+  border-radius: 2px;
+  animation: wall-eq 0.5s ease-in-out infinite alternate;
+}
+
+.wall-card__badge {
+  margin: 0 0 0.35rem;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--id-accent, var(--accent));
+}
+
+.wall-card__artist {
+  color: var(--text-muted);
+  margin: 0.25rem 0 0.5rem;
+}
+
+.wall-card__track em {
+  font-style: normal;
+  color: var(--text);
+}
+
+.wall-card__review {
+  margin: 0.65rem 0 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--border-strong);
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+
+.wall-card__actions {
+  margin-top: 1rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+/* Editor */
+.wall-edit__list {
+  max-height: 220px;
+  overflow: auto;
+  margin: 0.75rem 0;
+}
+
+.wall-edit__row {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.45rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.wall-edit__rank {
+  width: 1.5rem;
+  font-weight: 700;
+  color: var(--text-faint);
+}
+
+.wall-edit__meta {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.85rem;
+}
+
+.wall-edit__row-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+}
+
+.wall-edit__search {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border-radius: 10px;
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: inherit;
+}
+
+.wall-edit__hits {
+  max-height: 160px;
+  overflow: auto;
+  margin-top: 0.35rem;
+}
+
+.wall-edit__hit {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 0.4rem 0.5rem;
+  border: none;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  border-radius: 8px;
+}
+
+.wall-edit__hit:hover {
+  background: var(--accent-soft);
+}
+
+@media (max-width: 720px) {
+  .album-wall__stage {
+    height: clamp(280px, 70vw, 360px);
+  }
+
+  .album-wall__poster {
+    width: calc(var(--aw-w, 18%) * 1.15);
+  }
+
+  .wall-card__layout {
+    grid-template-columns: 1fr;
+    text-align: center;
+  }
+
+  .wall-card__cover {
+    max-width: 160px;
+    margin: 0 auto;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .album-wall__poster,
+  .album-wall__ambient {
+    transition: none;
+  }
+  .album-wall__eq span,
+  .wall-card__eq span {
+    animation: none;
+    height: 8px;
+  }
+}

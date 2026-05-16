@@ -1,0 +1,77 @@
+/* Global identity theme (Favorite Album of All Time) */
+
+html.sl-identity-transition,
+html.sl-identity-transition * {
+  transition:
+    background-color 0.55s ease,
+    border-color 0.55s ease,
+    color 0.45s ease,
+    box-shadow 0.55s ease,
+    fill 0.45s ease !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.sl-identity-transition,
+  html.sl-identity-transition * {
+    transition: none !important;
+  }
+  .faat-profile__mesh {
+    animation: none !important;
+  }
+}
+
+html[data-identity-theme="on"] {
+  --bg-app: var(--id-bg-from, #0b0c0a);
+  --bg: var(--id-bg-from, #0b0c0a);
+  --bg-surface: color-mix(in srgb, var(--id-bg-from, #111210) 88%, var(--id-accent, #5d8f6c) 12%);
+  --bg-elevated: color-mix(in srgb, var(--id-bg-to, #181916) 90%, var(--id-primary, #4a7358) 10%);
+  --bg-card: var(--id-card, #1c1e1a);
+  --accent: var(--id-accent, #5d8f6c);
+  --accent-strong: var(--id-primary, #6fa37f);
+  --accent-soft: var(--id-glow-soft, rgba(93, 143, 108, 0.16));
+  --accent-glow: var(--id-glow, rgba(93, 143, 108, 0.28));
+  --brand: var(--id-secondary, #c9b896);
+  --brand-glow: var(--id-glow-soft, rgba(201, 184, 150, 0.2));
+  --forest-strong: var(--id-accent, #5d8f6c);
+  --forest-glow: var(--id-glow, rgba(93, 143, 108, 0.28));
+  --border-focus: color-mix(in srgb, var(--id-accent, #5d8f6c) 55%, transparent);
+}
+
+html[data-identity-theme="on"] .app-shell {
+  background:
+    radial-gradient(120% 80% at 0% 0%, var(--id-glow-soft, transparent) 0%, transparent 50%),
+    radial-gradient(90% 60% at 100% 20%, color-mix(in srgb, var(--id-primary, #4a7358) 12%, transparent) 0%, transparent 45%),
+    var(--bg-app);
+}
+
+html[data-identity-theme="on"] .btn-primary {
+  background: linear-gradient(155deg, var(--id-accent, #5d8f6c) 0%, var(--id-primary, #4a7358) 100%);
+  border-color: color-mix(in srgb, var(--id-accent, #5d8f6c) 40%, transparent);
+  color: var(--text-on-accent, #0e1210);
+  box-shadow: 0 8px 28px var(--id-glow-soft, rgba(93, 143, 108, 0.2));
+}
+
+html[data-identity-theme="on"] .btn-primary:hover {
+  box-shadow: 0 12px 36px var(--id-glow, rgba(93, 143, 108, 0.35));
+}
+
+html[data-identity-theme="on"] .sidebar-nav__link.is-active,
+html[data-identity-theme="on"] .hub-tab.is-active {
+  color: var(--id-accent, var(--accent));
+}
+
+html[data-identity-theme="on"] .profile-view--premium.profile-view--faat {
+  --pf-magenta: var(--id-accent, #e45a8c);
+  --pf-glow: var(--id-glow, rgba(228, 90, 140, 0.45));
+  --pf-glow-soft: var(--id-glow-soft, rgba(228, 90, 140, 0.12));
+}
+
+html[data-identity-theme="on"] .profile-view--premium .profile-hero__cover.profile-hero__cover--faat {
+  background:
+    radial-gradient(120% 90% at 20% 0%, var(--id-glow-soft, rgba(228, 90, 140, 0.35)) 0%, transparent 55%),
+    linear-gradient(165deg, color-mix(in srgb, var(--id-primary, #4a7358) 70%, #06060a) 0%, var(--id-bg-to, #06060a) 100%);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--id-accent, #5d8f6c) 25%, transparent) inset,
+    0 28px 70px rgba(0, 0, 0, 0.55),
+    0 0 100px var(--id-glow-soft, rgba(93, 143, 108, 0.12));
+}

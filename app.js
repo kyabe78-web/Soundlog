@@ -192,6 +192,7 @@
         handle: "moi",
         bio: "Amateur·rice de disques. Les notes restent sur ton appareil.",
         performanceVideos: [],
+        favoriteAlbum: null,
       },
       concertLogs: [],
       invitedPeers: [],
@@ -245,6 +246,7 @@
         profile: (() => {
           const prof = { ...base.profile, ...(parsed.profile || {}) };
           prof.performanceVideos = Array.isArray(prof.performanceVideos) ? prof.performanceVideos : [];
+          if (prof.favoriteAlbum && typeof prof.favoriteAlbum !== "object") prof.favoriteAlbum = null;
           return prof;
         })(),
         concertLogs: Array.isArray(parsed.concertLogs) ? parsed.concertLogs : base.concertLogs,
@@ -1508,6 +1510,211 @@
   function ensureProfileExtras() {
     state.profile = state.profile || {};
     if (!Array.isArray(state.profile.performanceVideos)) state.profile.performanceVideos = [];
+    if (state.profile.favoriteAlbum && typeof state.profile.favoriteAlbum !== "object") state.profile.favoriteAlbum = null;
+  }
+
+  function mergeFavoriteFromCloudSettings(settings) {
+    if (!window.SLThemeEngine || !settings) return null;
+    return SLThemeEngine.parseFavoriteFromSettings(settings);
+  }
+
+  function getFavoriteAlbumForUser(uid) {
+    if (uid === "me") {
+      const cloudMe = cloudMeRow();
+      const fromCloud = cloudMe ? mergeFavoriteFromCloudSettings(cloudMe.settings) : null;
+      if (fromCloud) return fromCloud;
+      return state.profile.favoriteAlbum || null;
+    }
+    const peer = (state.invitedPeers || []).find((p) => p.id === uid);
+    if (peer && peer.favoriteAlbum) return peer.favoriteAlbum;
+    const cp = window.__slCloudPeers && window.__slCloudPeers.get && window.__slCloudPeers.get(uid);
+    if (!cp) return null;
+    if (cp.favoriteAlbum) return cp.favoriteAlbum;
+    return mergeFavoriteFromCloudSettings(cp.settings);
+  }
+
+  function profileThemeStyleAttr(theme) {
+    if (!theme || !window.SLThemeEngine) return "";
+    const css = theme.css || SLThemeEngine.themeToCssVars(theme);
+    const parts = Object.entries(css).map(([k, v]) => k + ":" + v);
+    return parts.length ? ' style="' + parts.join(";") + '"' : "";
+  }
+
+  function applyIdentityTheme() {
+    if (!window.SLThemeEngine) return;
+    const fav = getFavoriteAlbumForUser("me");
+    if (!fav || !fav.albumId) {
+      SLThemeEngine.clearFromDocument();
+      return;
+    }
+    const al = albumById(fav.albumId);
+    let theme =
+      fav.theme && fav.theme.albumId === fav.albumId
+        ? fav.theme
+        : al
+          ? SLThemeEngine.buildThemeFromAlbum(al)
+          : SLThemeEngine.FALLBACK_THEME;
+    if (theme && !theme.css) theme.css = SLThemeEngine.themeToCssVars(theme);
+    SLThemeEngine.applyToDocument(theme);
+    if (al) {
+      void SLThemeEngine.refineThemeFromAlbumArtwork(al, theme).then((refined) => {
+        const cur = getFavoriteAlbumForUser("me");
+        if (!cur || cur.albumId !== fav.albumId || !refined) return;
+        state.profile.favoriteAlbum = { ...cur, theme: refined };
+        persistLocalOnly();
+        SLThemeEngine.applyToDocument(refined);
+      });
+    }
+  }
+
+  async function pushFavoriteAlbumToCloud() {
+    if (!SLCloud || !SLCloud.isSignedIn() || !SLCloud.me) return;
+    const fav = state.profile.favoriteAlbum;
+    const prev = SLCloud.me.settings && typeof SLCloud.me.settings === "object" ? { ...SLCloud.me.settings } : {};
+    if (!fav || !fav.albumId) {
+      delete prev.favoriteAlbum;
+      delete prev.favorite_album;
+      await SLCloud.updateProfile({ settings: prev });
+    } else {
+      const payload = window.SLThemeEngine.favoriteToSettingsPayload(fav);
+      prev.favoriteAlbum = payload.favoriteAlbum;
+      const patch = { settings: prev };
+      if (fav.theme && fav.theme.hue != null) patch.hue = Math.round(fav.theme.hue);
+      await SLCloud.updateProfile(patch);
+    }
+    syncMeFromCloud();
+  }
+
+  async function saveFavoriteAlbum(albumId, trackTitle) {
+    ensureProfileExtras();
+    const al = albumById(albumId);
+    if (!al) throw new Error("Album introuvable");
+    if (!window.SLThemeEngine) throw new Error("Moteur de thème indisponible");
+    const theme = SLThemeEngine.buildThemeFromAlbum(al);
+    theme.albumId = albumId;
+    state.profile.favoriteAlbum = {
+      albumId,
+      trackTitle: trackTitle || "",
+      theme,
+      savedAt: new Date().toISOString(),
+    };
+    persist();
+    applyIdentityTheme();
+    if (cloudSignedIn() && SLCloud.me) {
+      await SLCloud.upsertAlbum(al);
+      await pushFavoriteAlbumToCloud();
+    }
+    void SLThemeEngine.refineThemeFromAlbumArtwork(al, theme).then(async (refined) => {
+      if (!state.profile.favoriteAlbum || state.profile.favoriteAlbum.albumId !== albumId) return;
+      state.profile.favoriteAlbum.theme = refined;
+      persistLocalOnly();
+      applyIdentityTheme();
+      if (cloudSignedIn() && SLCloud.me) await pushFavoriteAlbumToCloud();
+    });
+  }
+
+  async function clearFavoriteAlbum() {
+    state.profile.favoriteAlbum = null;
+    persist();
+    if (window.SLThemeEngine) SLThemeEngine.clearFromDocument();
+    if (cloudSignedIn() && SLCloud.me) await pushFavoriteAlbumToCloud();
+  }
+
+  function openFavoriteAlbumPicker() {
+    if (window.SLFavoriteAlbum && window.SLFavoriteAlbum.open) {
+      SLFavoriteAlbum.open({ current: getFavoriteAlbumForUser("me") });
+    } else toast("Sélecteur indisponible.");
+  }
+
+  function renderFavoriteAlbumSection(u, isMe) {
+    const fav = getFavoriteAlbumForUser(isMe ? "me" : u.id);
+    const al = fav && fav.albumId ? albumById(fav.albumId) : null;
+    let theme = fav && fav.theme ? fav.theme : null;
+    if (!theme && al && window.SLThemeEngine) theme = SLThemeEngine.buildThemeFromAlbum(al);
+    const scopeAttr = theme ? profileThemeStyleAttr(theme) : "";
+
+    if (!al) {
+      if (!isMe) return "";
+      return (
+        '<section class="faat-profile faat-profile--empty" aria-labelledby="faat-sec-title"' +
+        scopeAttr +
+        '>' +
+        '<div class="faat-profile__mesh" aria-hidden="true"></div>' +
+        '<div class="faat-profile__grain" aria-hidden="true"></div>' +
+        '<div class="faat-profile__inner">' +
+        '<p class="faat-profile__kicker" id="faat-sec-title">Identité musicale</p>' +
+        '<h2 class="faat-profile__title">Album favori de tous les temps</h2>' +
+        '<p class="feed-note">Choisis l’album qui te représente — l’interface s’habillera de ses couleurs.</p>' +
+        '<p class="faat-profile__actions"><button type="button" class="btn btn-primary btn-sm" id="btn-faat-choose">Choisir mon album</button></p>' +
+        "</div></section>"
+      );
+    }
+
+    const trackLine = fav.trackTitle
+      ? '<p class="faat-profile__track">Morceau favori · <em>' + escapeHtml(fav.trackTitle) + "</em></p>"
+      : "";
+    const changeBtn = isMe
+      ? '<button type="button" class="btn btn-ghost btn-sm" id="btn-faat-change">Changer d’album</button>'
+      : "";
+    const shareBtn =
+      '<button type="button" class="btn btn-ghost btn-sm" data-faat-share="' +
+      escapeHtml(al.id) +
+      '">Partager</button>';
+    const openBtn =
+      '<button type="button" class="btn btn-ghost btn-sm" data-album="' + escapeHtml(al.id) + '">Voir l’album</button>';
+
+    return (
+      '<section class="faat-profile" aria-labelledby="faat-sec-title" data-faat-album="' +
+      escapeHtml(al.id) +
+      '"' +
+      scopeAttr +
+      ">" +
+      '<div class="faat-profile__mesh" aria-hidden="true"></div>' +
+      '<div class="faat-profile__grain" aria-hidden="true"></div>' +
+      '<div class="faat-profile__inner">' +
+      '<div class="faat-profile__cover-wrap" data-faat-cover="' +
+      escapeHtml(al.id) +
+      '">' +
+      '<span class="faat-profile__glow" aria-hidden="true"></span>' +
+      coverHtml(al, false, "lg") +
+      "</div>" +
+      '<div class="faat-profile__copy">' +
+      '<p class="faat-profile__kicker" id="faat-sec-title">Album favori de tous les temps</p>' +
+      '<h2 class="faat-profile__title">' +
+      escapeHtml(al.title) +
+      "</h2>" +
+      '<p class="faat-profile__artist">' +
+      escapeHtml(al.artist) +
+      (al.year ? " · " + al.year : "") +
+      "</p>" +
+      trackLine +
+      '<span class="faat-profile__badge" aria-hidden="true">♫ Identité visuelle</span>' +
+      '<p class="faat-profile__actions">' +
+      changeBtn +
+      " " +
+      openBtn +
+      " " +
+      shareBtn +
+      "</p></div></div></section>"
+    );
+  }
+
+  function hydrateFaatProfileAmbient() {
+    const block = document.querySelector(".faat-profile[data-faat-album]");
+    if (!block || !window.SLThemeEngine) return;
+    const aid = block.getAttribute("data-faat-album");
+    const al = albumById(aid);
+    if (!al) return;
+    const fav = getFavoriteAlbumForUser(route.userId || "me");
+    const base =
+      fav && fav.theme && fav.theme.albumId === aid
+        ? fav.theme
+        : SLThemeEngine.buildThemeFromAlbum(al);
+    void SLThemeEngine.refineThemeFromAlbumArtwork(al, base).then((refined) => {
+      if (!refined || !block.isConnected) return;
+      const css = refined.css || SLThemeEngine.themeToCssVars(refined);
+      Object.entries(css).forEach(([k, v]) => block.style.setProperty(k, v));
+    });
   }
 
   function ensureAdaptive() {
@@ -2237,6 +2444,7 @@
           bio: cloudMe.bio || "",
           hue: cloudMe.hue != null ? cloudMe.hue : 152,
           avatar_url: cloudMe.avatar_url || "",
+          favoriteAlbum: mergeFavoriteFromCloudSettings(cloudMe.settings) || state.profile.favoriteAlbum || null,
         };
       }
       if (cloudSignedIn()) {
@@ -2279,6 +2487,7 @@
         bio: cloudPeer.bio || "",
         hue: cloudPeer.hue != null ? cloudPeer.hue : hueFromHandle(cloudPeer.handle || cloudPeer.name || "x"),
         avatar_url: cloudPeer.avatar_url || "",
+        favoriteAlbum: mergeFavoriteFromCloudSettings(cloudPeer.settings) || cloudPeer.favoriteAlbum || null,
       };
     }
     if (isLegacyDemoUserId(id)) return null;
@@ -2554,7 +2763,7 @@
   let modalKeydownHandler = null;
 
   function closeModal() {
-    document.body.classList.remove("modal-open", "modal-open--log-listen");
+    document.body.classList.remove("modal-open", "modal-open--log-listen", "modal-open--faat");
     if (typeof window.__slLogListenCleanup === "function") {
       window.__slLogListenCleanup();
       window.__slLogListenCleanup = null;
@@ -2570,7 +2779,9 @@
     opts = opts || {};
     document.body.classList.add("modal-open");
     if (opts.variant === "log-listen") document.body.classList.add("modal-open--log-listen");
-    const modalCls = opts.variant === "log-listen" ? " modal--log-listen" : "";
+    if (opts.variant === "faat") document.body.classList.add("modal-open--faat");
+    const modalCls =
+      opts.variant === "log-listen" ? " modal--log-listen" : opts.variant === "faat" ? " modal--faat" : "";
     $modal.innerHTML = `<div class="modal-backdrop" id="modal-bd"><div class="modal${modalCls}">${html}</div></div>`;
     document.getElementById("modal-bd").addEventListener("click", (e) => {
       if (e.target.id === "modal-bd") closeModal();
@@ -5389,10 +5600,27 @@
     }
 
     const photoUrl = String(u.avatar_url || "").trim();
-    const coverCls = "profile-cover profile-hero__cover" + (photoUrl ? " profile-cover--photo" : "");
-    const coverStyle = `--ph:${u.hue}` + (photoUrl ? `;--profile-photo:url(${JSON.stringify(photoUrl)})` : "");
+    const favForView = getFavoriteAlbumForUser(isMe ? "me" : uid);
+    const hasFaat = !!(favForView && favForView.albumId && albumById(favForView.albumId));
+    const faatTheme =
+      hasFaat && favForView.theme
+        ? favForView.theme
+        : hasFaat && window.SLThemeEngine
+          ? SLThemeEngine.buildThemeFromAlbum(albumById(favForView.albumId))
+          : null;
+    const phHue = faatTheme && faatTheme.hue != null ? faatTheme.hue : u.hue;
+    const coverCls =
+      "profile-cover profile-hero__cover" +
+      (photoUrl ? " profile-cover--photo" : "") +
+      (hasFaat ? " profile-hero__cover--faat" : "");
+    const coverStyle =
+      `--ph:${phHue}` + (photoUrl ? `;--profile-photo:url(${JSON.stringify(photoUrl)})` : "");
+    const profileViewCls =
+      "profile-view profile-view--premium view-themed" + (hasFaat ? " profile-view--faat" : "");
+    const profileScopeAttr = hasFaat && faatTheme && !isMe ? profileThemeStyleAttr(faatTheme) : "";
+    const faatBlock = renderFavoriteAlbumSection(u, isMe);
 
-    return `<div class="profile-view profile-view--premium view-themed">
+    return `<div class="${profileViewCls}"${profileScopeAttr}>
       <section class="profile-hero" aria-label="Bannière profil">
         <div class="${coverCls}" style="${coverStyle}">
           <div class="profile-hero__shine" aria-hidden="true"></div>
@@ -5422,6 +5650,7 @@
         <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">♪</span><b>${stats.concerts}</b><span class="feed-note">I was there !</span></div>
         <div class="stat" role="listitem"><span class="stat__glyph" aria-hidden="true">★</span><b>${stats.avg}</b><span class="feed-note">moyenne</span></div>
       </div>
+      ${faatBlock}
       ${perfVideosBlock}
       <section class="profile-block profile-block--recent" aria-labelledby="profile-sec-recent">
       <h3 class="profile-section-title" id="profile-sec-recent">Écoutes récentes</h3>
@@ -5821,6 +6050,8 @@
       void SLCarnetSocial.hydrateCommunityFeed(socialHub);
     }
     if (window.__slSyncTopbarStack) requestAnimationFrame(window.__slSyncTopbarStack);
+    applyIdentityTheme();
+    if (route.view === "profile") requestAnimationFrame(() => hydrateFaatProfileAmbient());
   }
 
   // ---------- Affichage des playlists importées sur le profil ----------
@@ -6312,6 +6543,48 @@
       toggleListeningLike,
       SLCloud: window.SLCloud,
       timeAgo,
+    });
+  }
+
+  function catalogHitFromResult(result) {
+    const p = result.importPayload || {};
+    const title = p.title || result.title;
+    const artist = p.artist || result.artist || "";
+    const links = buildPlatformLinks(artist, title, null);
+    if (p.deezer) links.deezer = p.deezer;
+    if (p.apple) links.apple = p.apple;
+    let genre = result.genres && result.genres[0] ? result.genres[0] : "Catalogue";
+    if (result.type === "playlist") genre = "Playlist";
+    if (result.type === "artist") genre = "Artiste";
+    if (result.type === "single") genre = "Single";
+    return {
+      title,
+      artist,
+      year: p.year || result.year || new Date().getFullYear(),
+      artworkUrl: p.artworkUrl || result.artworkUrl || "",
+      links,
+      appleCollectionId: p.appleCollectionId || null,
+      deezerAlbumId: p.deezerAlbumId || null,
+      musicbrainzReleaseId: p.musicbrainzId || p.musicbrainzReleaseId || null,
+      genre,
+    };
+  }
+
+  if (window.SLFavoriteAlbum && window.SLFavoriteAlbum.install) {
+    window.SLFavoriteAlbum.install({
+      escapeHtml,
+      coverHtml,
+      albumById,
+      allAlbums,
+      persist,
+      toast,
+      render,
+      openModal,
+      closeModal,
+      upsertAlbumFromRemoteHit,
+      catalogHitFromResult,
+      saveFavoriteAlbum,
+      clearFavoriteAlbum,
     });
   }
 
@@ -6819,6 +7092,36 @@
     const btnEditProf = document.getElementById("btn-edit-profile");
     if (btnEditProf) btnEditProf.addEventListener("click", openProfileModal);
 
+    const btnFaatChoose = document.getElementById("btn-faat-choose");
+    if (btnFaatChoose) btnFaatChoose.addEventListener("click", openFavoriteAlbumPicker);
+    const btnFaatChange = document.getElementById("btn-faat-change");
+    if (btnFaatChange) btnFaatChange.addEventListener("click", openFavoriteAlbumPicker);
+    document.querySelectorAll("[data-faat-share]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const aid = btn.getAttribute("data-faat-share");
+        const al = albumById(aid);
+        if (!al) return;
+        const fav = getFavoriteAlbumForUser(route.userId || "me");
+        const text =
+          "Mon album favori de tous les temps : " +
+          al.title +
+          " — " +
+          al.artist +
+          (fav && fav.trackTitle ? " · " + fav.trackTitle : "");
+        const url = inviteBaseUrl() + "#profil/" + encodeURIComponent(route.userId || "me");
+        try {
+          if (navigator.share) {
+            await navigator.share({ title: "Soundlog", text, url });
+          } else {
+            await navigator.clipboard.writeText(text + "\n" + url);
+            toast("Texte copié.");
+          }
+        } catch (_) {
+          toast(text);
+        }
+      });
+    });
+
     const btnAddPerfVideo = document.getElementById("btn-add-perf-video");
     if (btnAddPerfVideo) btnAddPerfVideo.addEventListener("click", () => openPerformanceVideoModal());
     document.querySelectorAll("[data-del-perf-video]").forEach((b) => {
@@ -7287,10 +7590,16 @@
         <input type="checkbox" id="pf-desk" ${desk ? "checked" : ""} /> Notifications bureau (si le navigateur l’autorise)
       </label>
       <p class="feed-note" style="margin-top:0.5rem">Les dates sont croisées avec <strong>Communauté</strong> (API Bandsintown + saisie manuelle).</p>
+      <p style="margin-top:0.85rem"><button type="button" class="btn btn-ghost btn-sm" id="pf-open-faat">Album favori de tous les temps</button></p>
       <button type="button" class="btn btn-primary" id="pf-save">Enregistrer</button>
       <button type="button" class="btn btn-ghost" id="pf-cancel" style="margin-left:0.5rem">Annuler</button>`);
     wireHandleFieldPreview("pf-handle", "pf-handle-preview");
     document.getElementById("pf-cancel").addEventListener("click", closeModal);
+    document.getElementById("pf-open-faat")?.addEventListener("click", () => {
+      closeModal();
+      navigate("profile", { userId: "me" });
+      openFavoriteAlbumPicker();
+    });
     document.getElementById("pf-save").addEventListener("click", () => {
       state.profile.displayName = document.getElementById("pf-name").value.trim() || "Toi";
       const hv = validateHandleInput(document.getElementById("pf-handle").value);
@@ -8195,6 +8504,7 @@
     syncAccountChrome();
   })();
   render();
+  applyIdentityTheme();
   void syncTourAlerts({}).then(() => updateHeaderNotifications());
 
   // =======================================================================
@@ -8274,12 +8584,14 @@
 
   function syncMeFromCloud() {
     if (!SLCloud || !SLCloud.me) return;
+    const favCloud = mergeFavoriteFromCloudSettings(SLCloud.me.settings);
     state.profile = {
       ...state.profile,
       displayName: SLCloud.me.name,
       handle: SLCloud.me.handle,
       bio: SLCloud.me.bio || "",
       cloudId: SLCloud.me.id,
+      favoriteAlbum: favCloud || state.profile.favoriteAlbum || null,
     };
     persistLocalOnly();
     updateHeaderUser();
@@ -8307,6 +8619,9 @@
       state.listenings.filter((l) => l.userId === "me").forEach((l) => referencedAlbumIds.add(l.albumId));
       state.lists.filter((l) => l.userId === "me").forEach((l) => (l.albumIds || []).forEach((a) => referencedAlbumIds.add(a)));
       (state.wishlist || []).forEach((a) => referencedAlbumIds.add(a));
+      if (state.profile.favoriteAlbum && state.profile.favoriteAlbum.albumId) {
+        referencedAlbumIds.add(state.profile.favoriteAlbum.albumId);
+      }
       for (const aid of referencedAlbumIds) {
         const al = albumById(aid);
         if (al) await SLCloud.upsertAlbum(al);
@@ -8485,6 +8800,8 @@
     state.profile.handle = SLCloud.me.handle;
     state.profile.bio = SLCloud.me.bio || "";
     state.profile.cloudId = cloudId;
+    const favPull = mergeFavoriteFromCloudSettings(SLCloud.me.settings);
+    if (favPull) state.profile.favoriteAlbum = favPull;
     // Albums référencés : on les ajoute en cache local (importedAlbums) si pas déjà connus
     const knownIds = new Set();
 
@@ -8818,11 +9135,17 @@
           <p class="modal-actions modal-actions--wrap">
             <button type="button" class="btn btn-ghost" id="profile-open-stats">Mes statistiques</button>
             <button type="button" class="btn btn-primary" id="profile-open-imports">Importer mes playlists</button>
+            <button type="button" class="btn btn-ghost" id="profile-open-faat">Album favori (thème)</button>
             <button type="button" class="btn btn-ghost" id="profile-post-shoutout">Publier un murmure</button>
           </p>`;
         document.getElementById("profile-avatar-btn").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openAvatar)(); });
         document.getElementById("profile-open-stats").addEventListener("click", () => { closeModal(); (window.__sl && window.__sl.openStats)(); });
         document.getElementById("profile-open-imports").addEventListener("click", () => { closeModal(); openPlatformPickerModal(); });
+        document.getElementById("profile-open-faat").addEventListener("click", () => {
+          closeModal();
+          navigate("profile", { userId: "me" });
+          openFavoriteAlbumPicker();
+        });
         document.getElementById("profile-post-shoutout").addEventListener("click", () => { closeModal(); openShoutoutModal(); });
         wireHandleFieldPreview("auth-handle", "auth-handle-preview");
         document.getElementById("auth-cancel").addEventListener("click", closeModal);
@@ -9995,4 +10318,5 @@
   window.__sl.refreshShoutouts = refreshCloudShoutouts;
   window.__sl.cloudShoutouts = cloudShoutouts;
   window.__sl.renderCloudShoutoutsInto = renderCloudShoutoutsInto;
+  window.__sl.openFavoriteAlbum = openFavoriteAlbumPicker;
 })();

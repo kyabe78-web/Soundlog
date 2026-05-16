@@ -1,6 +1,14 @@
 // @ts-check
 const { test, expect } = require("@playwright/test");
 
+test("module social premium expose SLSocial", async ({ page }) => {
+  const res = await page.request.get("/social-premium.js?v=21");
+  const alt = res.ok() ? res : await page.request.get("/social-premium.js");
+  const body = await alt.text();
+  expect(body).toContain("window.SLSocial = {");
+  expect(body).toContain("function renderPeoplePanel()");
+});
+
 test("aperçu cercle local documenté dans le bundle", async ({ page }) => {
   const res = await page.request.get("/app.js?v=14");
   const alt = res.ok() ? res : await page.request.get("/app.js");

@@ -7,6 +7,7 @@
   let deps = null;
   let circleFetchPromise = null;
   let circleRowsCache = null;
+  let circleFetchError = null;
 
   function d() {
     return deps;
@@ -429,22 +430,90 @@
   }
 
   async function fetchCircleRows() {
-    if (!cloudOn()) return [];
-    if (circleRowsCache && Date.now() - circleRowsCache.at < 60000) return circleRowsCache.rows;
+    if (!cloudOn()) return { rows: [], error: null };
+    if (circleRowsCache && Date.now() - circleRowsCache.at < 60000) {
+      return { rows: circleRowsCache.rows, error: null };
+    }
     if (circleFetchPromise) return circleFetchPromise;
     circleFetchPromise = (async () => {
       try {
         const rows = await d().SLCloud.listCircleListenings(48);
         circleRowsCache = { at: Date.now(), rows };
-        return rows;
+        circleFetchError = null;
+        return { rows: rows || [], error: null };
       } catch (e) {
-        console.warn("[carnet-social] circle", e);
-        return [];
+        circleFetchError = e;
+        console.warn("[carnet-social] circle feed", e);
+        return { rows: [], error: e };
       } finally {
         circleFetchPromise = null;
       }
     })();
     return circleFetchPromise;
+  }
+
+  function canOfferPreviewCircle() {
+    const x = d();
+    if (!x || cloudOn()) return false;
+    if (x.state && x.state.settings && x.state.settings.previewCircle) return false;
+    try {
+      if (localStorage.getItem("soundlog.previewCircleInstalled")) return false;
+    } catch (_) {}
+    const hasCircle =
+      (x.state.follows && x.state.follows.length) ||
+      (x.state.friends && x.state.friends.length) ||
+      (x.state.invitedPeers && x.state.invitedPeers.length);
+    return !hasCircle;
+  }
+
+  function communityFeedEmptyHtml(opts) {
+    opts = opts || {};
+    const x = d();
+    const title = opts.title || "Aucune activité pour le moment";
+    const lead =
+      opts.lead ||
+      "Le feed prendra vie dès que ton cercle partagera des écoutes. Invite des ami·es ou découvre des profils.";
+    const previewBtn =
+      opts.showPreview !== false && canOfferPreviewCircle()
+        ? '<button type="button" class="btn btn-ghost btn-sm" data-sl-preview-circle>Voir un aperçu du cercle</button> '
+        : "";
+    const signed = cloudOn();
+    const cloudHint = signed
+      ? '<p class="community-feed__empty-hint feed-note">Tu es connecté·e — suis des profils ou accepte des demandes pour remplir ce fil.</p>'
+      : "";
+    return (
+      '<div class="community-feed__empty community-feed__empty--premium" data-community-feed-state="empty">' +
+      '<div class="community-feed__empty-glyph" aria-hidden="true">♫</div>' +
+      '<p class="soc-empty__title">' +
+      x.escapeHtml(title) +
+      "</p>" +
+      '<p class="feed-note">' +
+      x.escapeHtml(lead) +
+      "</p>" +
+      cloudHint +
+      '<p class="community-feed__empty-actions">' +
+      '<button type="button" class="btn btn-primary btn-sm" data-social-circle-tab="discover">Découvrir des profils</button> ' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-nav-view="inbox">Inviter / messages</button> ' +
+      previewBtn +
+      '<button type="button" class="btn btn-ghost btn-sm" data-nav-view="carnet">Mon carnet</button>' +
+      "</p></div>"
+    );
+  }
+
+  function communityFeedErrorHtml(message) {
+    const x = d();
+    const msg = message || "Impossible de charger l’activité en ligne.";
+    return (
+      '<div class="community-feed__empty community-feed__empty--fault" data-community-feed-state="error" role="alert">' +
+      '<p class="soc-empty__title">Problème de connexion</p>' +
+      '<p class="feed-note">' +
+      x.escapeHtml(msg) +
+      "</p>" +
+      '<p class="community-feed__empty-actions">' +
+      '<button type="button" class="btn btn-primary btn-sm" data-sl-retry-community-feed>Réessayer</button> ' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Accueil</button>' +
+      "</p></div>"
+    );
   }
 
   function mapCloudListening(row) {
@@ -514,25 +583,41 @@
     const stream = scope.querySelector("[data-social-community-stream]");
     if (!stream) return;
 
+    stream.setAttribute("data-community-feed-state", "loading");
     const localHtml = renderLocalCommunityPosts();
     if (!cloudOn()) {
       stream.innerHTML = localHtml
-        ? localHtml
-        : `<div class="community-feed__empty"><p class="soc-empty__title">Ton cercle est calme</p><p class="feed-note">Suis des profils ou connecte-toi pour voir l’activité des proches.</p><p><button type="button" class="btn btn-primary btn-sm" data-nav-view="carnet">Mon carnet</button> <button type="button" class="btn btn-ghost btn-sm" data-social-circle-tab="discover">Découvrir</button></p></div>`;
+        ? '<div class="community-feed__section" data-community-feed-state="success">' + localHtml + "</div>"
+        : communityFeedEmptyHtml({
+            title: "Ton cercle est calme",
+            lead: "Suis des profils, invite des ami·es ou découvre la communauté — leurs écoutes apparaîtront ici (pas ton carnet personnel).",
+          });
       if (localHtml) await hydrateFeed(scope.querySelector("[data-social-community-feed]") || scope);
       return;
     }
 
-    const rows = await fetchCircleRows();
-    const cloudItems = rows.map(mapCloudListening).filter(Boolean);
+    const { rows, error } = await fetchCircleRows();
+    if (error && !localHtml) {
+      stream.innerHTML = communityFeedErrorHtml(error.message);
+      return;
+    }
+    const cloudItems = (rows || []).map(mapCloudListening).filter(Boolean);
     const cloudHtml = cloudItems.map((it) => renderPost(it.listening, it.album, it.author)).join("");
 
     if (!cloudHtml && !localHtml) {
-      stream.innerHTML = `<div class="community-feed__empty"><p class="soc-empty__title">Aucune activité pour l’instant</p><p class="feed-note">Invite des ami·es ou découvre des profils — leur carnet apparaîtra ici.</p></div>`;
+      stream.innerHTML = communityFeedEmptyHtml({
+        title: "Aucune activité pour l’instant",
+        lead: "Invite des ami·es ou découvre des profils — leurs carnets publics alimenteront ce fil.",
+        showPreview: false,
+      });
     } else {
       stream.innerHTML =
-        (cloudHtml ? `<div class="community-feed__section"><p class="community-feed__kicker">En ligne</p>${cloudHtml}</div>` : "") +
-        (localHtml ? `<div class="community-feed__section"><p class="community-feed__kicker">Sur cet appareil</p>${localHtml}</div>` : "");
+        (cloudHtml ? '<div class="community-feed__section"><p class="community-feed__kicker">En ligne</p>' + cloudHtml + "</div>" : "") +
+        (localHtml ? '<div class="community-feed__section"><p class="community-feed__kicker">Sur cet appareil</p>' + localHtml + "</div>" : "") +
+        (error
+          ? '<p class="feed-note community-feed__partial-warn">Certaines écoutes en ligne n’ont pas pu être chargées. <button type="button" class="link" data-sl-retry-community-feed>Réessayer</button></p>'
+          : "");
+      stream.setAttribute("data-community-feed-state", "success");
     }
     await hydrateFeed(scope.querySelector("[data-social-community-feed]") || scope);
   }
@@ -555,6 +640,24 @@
     root.dataset.carnetSocialBound = "1";
 
     root.addEventListener("click", (e) => {
+      const retryFeed = e.target.closest("[data-sl-retry-community-feed]");
+      if (retryFeed) {
+        e.preventDefault();
+        circleRowsCache = null;
+        circleFetchError = null;
+        void hydrateCommunityFeed(root);
+        return;
+      }
+      const previewBtn = e.target.closest("[data-sl-preview-circle]");
+      if (previewBtn) {
+        e.preventDefault();
+        const x = d();
+        if (typeof x.installLocalPreviewCircle === "function" && x.installLocalPreviewCircle()) {
+          if (typeof x.render === "function") x.render();
+          else void hydrateCommunityFeed(root);
+        } else if (x.toast) x.toast("Aperçu déjà installé ou compte connecté.");
+        return;
+      }
       const likeBtn = e.target.closest("[data-carnet-like]");
       if (likeBtn) {
         e.preventDefault();
@@ -686,6 +789,7 @@
     bind,
     invalidateCircleCache() {
       circleRowsCache = null;
+      circleFetchError = null;
     },
   };
 })();

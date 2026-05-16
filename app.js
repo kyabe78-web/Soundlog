@@ -3683,10 +3683,24 @@
     </div>`;
   }
 
+  function renderSocialModuleError() {
+    return (
+      '<div class="view-page social-hub soc-page soc-page--fault">' +
+      '<section class="soc-fault" role="alert">' +
+      '<p class="soc-fault__kicker">Erreur technique</p>' +
+      '<h1 class="soc-fault__title">Module social indisponible</h1>' +
+      '<p class="feed-note">Le script social n’a pas pu se charger (réseau, cache ou erreur JavaScript). Ce n’est pas un fil vide — recharge la page ou réessaie.</p>' +
+      '<p class="soc-fault__actions">' +
+      '<button type="button" class="btn btn-primary btn-sm" id="soc-reload-page">Recharger</button> ' +
+      '<button type="button" class="btn btn-ghost btn-sm" data-nav-view="home">Retour accueil</button>' +
+      "</p></section></div>"
+    );
+  }
+
   function renderSocial() {
     if (window.SLSocial && window.SLSocial.renderCircle)
       return window.SLSocial.renderCircle({ compactHero: true });
-    return `<div class="view-page social-hub soc-page"><p class="empty">Module social indisponible — recharge la page.</p></div>`;
+    return renderSocialModuleError();
   }
 
   const DM_PAYLOAD_PREFIX = "SLDM:";
@@ -6290,6 +6304,8 @@
       ensureAlbumFromPublicFeedRow,
       filterDiaryListenings,
       socialFeedItems,
+      installLocalPreviewCircle,
+      render,
       userById,
       diaryDateLabel,
       isCloudUuid,
@@ -7002,6 +7018,10 @@
           toast("Impossible de demander la permission.");
         }
       });
+    }
+    const socReload = document.getElementById("soc-reload-page");
+    if (socReload) {
+      socReload.addEventListener("click", () => window.location.reload());
     }
     document.querySelectorAll("[data-social-circle-tab]").forEach((btn) => {
       btn.addEventListener("click", () => {

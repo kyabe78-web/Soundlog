@@ -272,7 +272,7 @@
     );
   }
 
- {
+  function renderPeoplePanel() {
     d.ensureSocialArrays();
     const friends =
       d.state.friends.length === 0
@@ -757,9 +757,23 @@
         const n = document.getElementById("soc-cloud-feed");
         if (n) renderCloudFeedInto(n, circleCloudCache.rows);
       })
-      .catch(() => {
+      .catch((err) => {
         circleCloudFetch = null;
-        node.innerHTML = '<p class="feed-note">Fil en ligne indisponible pour le moment.</p>';
+        const msg = (err && err.message) || "Fil en ligne indisponible pour le moment.";
+        node.innerHTML =
+          '<div class="soc-empty soc-empty--inline soc-empty--fault" data-soc-cloud-state="error" role="alert">' +
+          '<p class="soc-empty__title">Erreur réseau</p>' +
+          '<p class="feed-note">' +
+          d.escapeHtml(msg) +
+          '</p><p><button type="button" class="btn btn-primary btn-sm" data-soc-retry-cloud-feed>Réessayer</button></p></div>';
+        const retry = node.querySelector("[data-soc-retry-cloud-feed]");
+        if (retry && !retry.dataset.bound) {
+          retry.dataset.bound = "1";
+          retry.addEventListener("click", () => {
+            circleCloudCache = null;
+            injectCircleCloudFeed();
+          });
+        }
       });
   }
 
